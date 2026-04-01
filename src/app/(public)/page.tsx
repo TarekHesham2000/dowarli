@@ -1,7 +1,7 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
-
+import Banner from '@/components/shared/Banner'
 type UnitType = 'student' | 'family' | 'studio' | 'shared'
 
 type Property = {
