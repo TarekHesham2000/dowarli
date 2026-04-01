@@ -1,10 +1,8 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
-import { useRouter } from 'next/navigation'
 
 export default function LoginPage() {
-  const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({
@@ -28,18 +26,16 @@ export default function LoginPage() {
       return
     }
 
-    // جيب role السمسار
     const { data: profile } = await supabase
       .from('profiles')
       .select('role')
       .eq('id', data.user.id)
       .single()
 
-    // وجّهه حسب الـ role
     if (profile?.role === 'admin') {
-      router.push('/admin')
+      window.location.href = '/admin'
     } else {
-      router.push('/broker')
+      window.location.href = '/broker'
     }
   }
 
