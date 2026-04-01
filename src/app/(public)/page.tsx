@@ -103,7 +103,7 @@ export default function PublicPage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f9fafb', direction: 'rtl', fontFamily: 'Cairo, sans-serif' }}>
-
+      <Banner />
       {/* NAV */}
       <nav style={{ background: '#fff', borderBottom: '1px solid #e8f5e9', padding: '0 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 64, position: 'sticky', top: 0, zIndex: 100 }}>
         <div style={{ display: 'flex', gap: '0.75rem' }}>

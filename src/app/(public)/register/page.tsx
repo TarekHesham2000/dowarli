@@ -1,6 +1,7 @@
 'use client'
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import Banner from '@/components/shared/Banner'
 import { useRouter } from 'next/navigation'
 
 export default function RegisterPage() {
