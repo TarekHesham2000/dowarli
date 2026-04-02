@@ -34,11 +34,11 @@ export async function middleware(request: NextRequest) {
     if (!user) {
       return NextResponse.redirect(new URL('/login', request.url))
     }
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('id', user.id)
-      .single()
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', user.id)  
+    .maybeSingle()
 
     if (profile?.role !== 'admin') {
       return NextResponse.redirect(new URL('/login', request.url))
