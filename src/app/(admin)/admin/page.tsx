@@ -98,6 +98,7 @@ export default function AdminDashboard() {
     const trans = (transRes.data as unknown as Transaction[]) ?? []
     const allProfiles = (brokersRes.data as Broker[]) ?? []
     const brok = allProfiles.filter(b => (b.role ?? '').toLowerCase() !== 'admin')
+    setBrokers(brok)
     const lds = (leadsRes.data as Lead[]) ?? []
 
     if (brokersRes.error) {
@@ -136,44 +137,34 @@ export default function AdminDashboard() {
     setLoading(false)
   }
 
-  useEffect(() => {
-    let mounted = true
-
-    const initAuthAndLoad = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-
-      if (!mounted) return
-
-      if (!session) {
-        router.push('/login')
-        return
-      }
-
-      setAuthReady(true)
-      loadAll()
+ useEffect(() => {
+  const checkAdmin = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    
+    if (!session) {
+      router.push('/login')
+      return
     }
 
-    initAuthAndLoad()
+    // الخطوة الأهم: التأكد من الـ Role من الـ Metadata أو البروفايل
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single()
 
-    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!mounted) return
-
-      if (!session) {
-        setAuthReady(false)
-        router.push('/login')
-        return
-      }
-
-      setAuthReady(true)
-      loadAll()
-    })
-
-    return () => {
-      mounted = false
-      authListener.subscription.unsubscribe()
+    if (profile?.role !== 'admin') {
+      alert('غير مسموح لك بدخول هذه الصفحة')
+      router.push('/dashboard') // تحويل المالك لصفحته العادية
+      return
     }
-  }, [router])
 
+    setAuthReady(true)
+    loadAll()
+  }
+
+  checkAdmin()
+}, [router])
   const approveProperty = async (id: number) => {
     await supabase.from('properties').update({ status: 'active' }).eq('id', id)
     setSelectedProperty(null)
@@ -226,17 +217,18 @@ export default function AdminDashboard() {
 
   const rejectTransaction = async () => {
     if (!rejectId || !rejectReason) return
-
     if (processingTransactionId) return
-    setProcessingTransactionId(rejectId)
 
+    setProcessingTransactionId(rejectId)
     const txId = rejectId
+
+    // 1. التحديث في الداتا بيز مع استخدام .select() للتأكد
     const { data: updatedRows, error: rejectError } = await supabase
       .from('transactions')
       .update({ status: 'rejected', rejection_reason: rejectReason })
       .eq('id', txId)
-      .eq('status', 'pending')
-      .select('id')
+      .eq('status', 'pending') // أمان إضافي عشان متعدلش حاجة مقبولة أصلاً
+      .select()
 
     if (rejectError) {
       alert(`فشل رفض الشحنة: ${rejectError.message}`)
@@ -244,21 +236,22 @@ export default function AdminDashboard() {
       return
     }
 
-    setRejectId(null)
-    setRejectReason('')
-
+    // 2. لو مفيش صفوف رجعت، يبقى الـ RLS منعتك أو الشحنة اتغيرت
     if (!updatedRows || updatedRows.length === 0) {
-      alert('هذه الشحنة تم التعامل معها بالفعل')
-      setTransactions(prev => prev.filter(t => t.id !== txId))
+      alert('لم يتم التعديل. تأكد من صلاحيات الأدمن أو حالة الشحنة')
       setProcessingTransactionId(null)
       return
     }
 
-    setTransactions(prev => prev.filter(t => t.id !== txId))
-    setStats(prev => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
+    setRejectId(null)
+    setRejectReason('')
+
+    // 3. الخطوة الأهم: نحدث كل البيانات عشان العدادات والـ UI يسمعوا صح
+    await loadAll() 
+    
+    alert('تم رفض الشحنة بنجاح ✅')
     setProcessingTransactionId(null)
   }
-
   const toggleBroker = async (id: string, current: boolean) => {
     await supabase.from('profiles').update({ is_active: !current }).eq('id', id)
     loadAll()
@@ -269,51 +262,29 @@ export default function AdminDashboard() {
     loadAll()
   }
 
-  const saveSettings = async () => {
-    setSavingSettings(true)
+ const saveSettings = async () => {
+  setSavingSettings(true);
 
-    const { data: listingUpdate, error: listingError } = await supabase
-      .from('settings')
-      .update({ value: listingCost })
-      .eq('key', 'listing_cost')
-      .select('key')
-      .limit(1)
+  // نستخدم مصفوفة عشان نحدث القيمتين في طلب واحد (Request) وده أسرع وأفضل للأداء
+  const settingsToUpdate = [
+    { key: 'listing_cost', value: listingCost.toString() },
+    { key: 'banner_text', value: bannerText.trim() }
+  ];
 
-    if (listingError) {
-      alert(`فشل حفظ تكلفة الإعلان: ${listingError.message}`)
-      setSavingSettings(false)
-      return
-    }
+  const { error } = await supabase
+    .from('settings')
+    .upsert(settingsToUpdate, { onConflict: 'key' }); // لو المفتاح موجود، حدثه.. لو مش موجود، ضيفه
 
-    if (!listingUpdate || listingUpdate.length === 0) {
-      alert('تعذر حفظ تكلفة الإعلان: مفتاح listing_cost غير موجود في جدول settings')
-      setSavingSettings(false)
-      return
-    }
-
-    const { data: bannerUpdate, error: bannerError } = await supabase
-      .from('settings')
-      .update({ value: bannerText.trim() })
-      .eq('key', 'banner_text')
-      .select('key')
-      .limit(1)
-
-    if (bannerError) {
-      alert(`فشل حفظ البنر: ${bannerError.message}`)
-      setSavingSettings(false)
-      return
-    }
-
-    if (!bannerUpdate || bannerUpdate.length === 0) {
-      alert('تعذر حفظ البنر: مفتاح banner_text غير موجود في جدول settings')
-      setSavingSettings(false)
-      return
-    }
-
-    setSavingSettings(false)
-    alert('تم الحفظ ✅')
-    loadAll()
+  if (error) {
+    alert(`فشل حفظ الإعدادات: ${error.message}`);
+    setSavingSettings(false);
+    return;
   }
+
+  setSavingSettings(false);
+  alert('تم الحفظ بنجاح ✅');
+  loadAll(); // إعادة تحميل البيانات للتأكد من التحديث في الواجهة
+};
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
     { id: 'home', label: 'الرئيسية' },

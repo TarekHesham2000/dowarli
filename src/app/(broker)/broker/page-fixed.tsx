@@ -15,6 +15,7 @@ type Property = {
   address: string | null
   images: string[]
   unit_type: string
+  owner_id?: string
   owner?: {
     name: string
     phone: string
@@ -42,171 +43,36 @@ export default function BrokerDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [debugInfo, setDebugInfo] = useState<any>(null)
 
   useEffect(() => { loadDashboard() }, [])
 
   const loadDashboard = async () => {
     try {
-      console.log('🔍 === STEP 1: INSPECT AUTH ===')
       const { data: { user }, error: userError } = await supabase.auth.getUser()
       if (userError) {
-        console.error('❌ Auth Error:', userError)
+        console.error('Error fetching user:', userError)
       }
-      console.log('✅ USER:', user)
-      console.log('✅ USER ID:', user?.id)
-      console.log('✅ USER EMAIL:', user?.email)
-      console.log('✅ USER METADATA:', user?.user_metadata)
+      if (!user) { router.push('/login'); return }
+
+      // DEBUG: Print user info
+      console.log('=== DEBUG INFO ===')
+      console.log('Auth user ID:', user.id)
+      console.log('Auth user email:', user.email)
+
+      // Get profile data
+      const { data: profile, error: profileError } = await supabase
+        .from('profiles')
+        .select('name, wallet_balance, is_active, phone')
+        .eq('id', user.id)
+        .single()
       
-      if (!user) { 
-        console.log('❌ NO USER FOUND - Redirecting to login')
-        router.push('/login'); 
-        return 
-      }
-
-      console.log('\n🔍 === STEP 2: INSPECT DATABASE DATA ===')
-      // Fetch ALL properties without filters
-      const { data: allProperties, error: allPropsError } = await supabase
-        .from('properties')
-        .select('*')
-      
-      if (allPropsError) {
-        console.error('❌ All Properties Error:', allPropsError)
-      }
-      console.log('✅ ALL PROPERTIES:', allProperties)
-      console.log('✅ TOTAL PROPERTIES COUNT:', allProperties?.length)
-
-      console.log('\n🔍 === STEP 3: COMPARE IDS ===')
-      console.log('✅ USER ID FROM AUTH:', user.id)
-      console.log('✅ OWNER_ID VALUES FROM PROPERTIES:', allProperties?.map(p => ({ id: p.id, title: p.title, owner_id: p.owner_id })))
-      
-      // Check if any properties match user ID
-      const matchingProperties = allProperties?.filter(p => p.owner_id === user.id) || []
-      console.log('✅ PROPERTIES MATCHING USER ID:', matchingProperties.length)
-      console.log('✅ MATCHING PROPERTIES:', matchingProperties)
-
-      console.log('\n🔍 === STEP 4: CHECK PROFILES TABLE ===')
-      // Fetch profiles
-      const { data: profiles, error: profilesError } = await supabase.from('profiles').select('*')
-      if (profilesError) {
-        console.error('❌ Profiles Error:', profilesError)
-      }
-      console.log('✅ ALL PROFILES:', profiles)
-      console.log('✅ PROFILE IDS:', profiles?.map(p => ({ id: p.id, name: p.name, email: p.email })))
-      
-      // Check if user profile exists
-      const userProfile = profiles?.find(p => p.id === user.id)
-      console.log('✅ USER PROFILE:', userProfile)
-      console.log('✅ DOES PROFILE ID MATCH USER ID?:', userProfile ? 'YES' : 'NO')
-
-      console.log('\n🔍 === STEP 5: TEST FILTER ===')
-      // Test with user.id
-      const { data: filteredByUserId, error: filteredError } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('owner_id', user.id)
-      
-      console.log('✅ FILTERED BY USER ID:', filteredByUserId)
-      console.log('✅ FILTERED BY USER ID COUNT:', filteredByUserId?.length)
-      console.log('✅ FILTER ERROR:', filteredError)
-
-      // If no results, try with hardcoded ID from database
-      if (!filteredByUserId || filteredByUserId.length === 0) {
-        console.log('\n🔍 === STEP 5B: TRY HARDCODED ID ===')
-        const firstProperty = allProperties?.[0]
-        if (firstProperty?.owner_id) {
-          console.log('✅ TRYING WITH HARDCODED ID:', firstProperty.owner_id)
-          const { data: hardcodedTest, error: hardcodedError } = await supabase
-            .from('properties')
-            .select('*')
-            .eq('owner_id', firstProperty.owner_id)
-          
-          console.log('✅ HARDCODED TEST RESULT:', hardcodedTest)
-          console.log('✅ HARDCODED TEST COUNT:', hardcodedTest?.length)
-          console.log('✅ HARDCODED ERROR:', hardcodedError)
-          
-          if (hardcodedTest && hardcodedTest.length > 0) {
-            console.log('🎯 ROOT CAUSE: ID MISMATCH - Query works but user.id != owner_id')
-          }
-        }
-      }
-
-      console.log('\n🔍 === STEP 6: CHECK RLS ===')
-      // Try to check RLS by attempting to access system tables
-      try {
-        const { data: rlsCheck, error: rlsError } = await supabase
-          .from('properties')
-          .select('id, title')
-          .limit(1)
-        
-        console.log('✅ RLS CHECK - Can access at least 1 property?:', rlsCheck ? 'YES' : 'NO')
-        console.log('✅ RLS CHECK ERROR:', rlsError)
-      } catch (rlsException) {
-        console.error('❌ RLS EXCEPTION:', rlsException)
-      }
-
-      console.log('\n🔍 === STEP 7: DETECT ROOT CAUSE ===')
-      
-      // Root cause detection logic
-      let rootCause = 'UNKNOWN'
-      if (!user) {
-        rootCause = 'NO_USER_LOGGED_IN'
-      } else if (!allProperties || allProperties.length === 0) {
-        rootCause = 'NO_PROPERTIES_IN_DATABASE'
-      } else if (matchingProperties.length === 0 && allProperties.length > 0) {
-        if (allProperties.some(p => p.owner_id)) {
-          rootCause = 'ID_MISMATCH_BETWEEN_AUTH_AND_PROPERTIES'
-        } else {
-          rootCause = 'PROPERTIES_HAVE_NO_OWNER_ID'
-        }
-      } else if (filteredError) {
-        rootCause = 'RLS_BLOCKING_ACCESS'
-      }
-      
-      console.log('🎯 ROOT CAUSE DETECTED:', rootCause)
-
-      console.log('\n🔍 === STEP 8: APPLY FIX ===')
-      
-      let finalProperties = []
-      
-      // Apply fix based on root cause
-      switch (rootCause) {
-        case 'ID_MISMATCH_BETWEEN_AUTH_AND_PROPERTIES':
-          console.log('🔧 FIX: Using profile-based query')
-          // Try to get properties through profile relationship
-          if (userProfile) {
-            const { data: profileBasedProps } = await supabase
-              .from('properties')
-              .select('*')
-              .eq('owner_id', userProfile.id)
-            finalProperties = profileBasedProps || []
-            console.log('✅ PROFILE-BASED PROPERTIES:', finalProperties)
-          }
-          break
-          
-        case 'RLS_BLOCKING_ACCESS':
-          console.log('🔧 FIX: Attempting RLS bypass for debugging')
-          // This would need to be fixed in Supabase console
-          console.log('❌ RLS ISSUE - Must be fixed in Supabase console')
-          break
-          
-        case 'PROPERTIES_HAVE_NO_OWNER_ID':
-          console.log('🔧 FIX: Properties need owner_id assignment')
-          console.log('❌ DATA ISSUE - Properties need to be assigned to users')
-          break
-          
-        default:
-          finalProperties = matchingProperties
-          break
-      }
-
-      console.log('✅ FINAL PROPERTIES TO DISPLAY:', finalProperties)
-
-      // Get profile data for stats
-      const { data: profile, error: profileError } = await supabase.from('profiles').select('name, wallet_balance, is_active, phone').eq('id', user.id).single()
       if (profileError) {
         console.error('Error fetching profile:', profileError)
       }
       
+      console.log('Profile data:', profile)
+
       // Check if account is active
       if (profile && !profile.is_active) {
         alert('حسابك متوقف')
@@ -214,10 +80,89 @@ export default function BrokerDashboard() {
         return
       }
 
-      const propertyIds = finalProperties?.map(p => p.id) ?? []
+      // STRATEGY 1: Try filtered query first (correct approach)
+      let { data: props, error: propsError } = await supabase
+        .from('properties')
+        .select(`
+          id,
+          title,
+          area,
+          price,
+          status,
+          created_at,
+          rejection_reason,
+          description,
+          address,
+          images,
+          unit_type,
+          owner_id
+        `)
+        .eq('owner_id', user.id)
+        .order('created_at', { ascending: false })
+      
+      console.log('STRATEGY 1 - Filtered properties:', props)
+      console.log('STRATEGY 1 - Error:', propsError)
+
+      // STRATEGY 2: If no data, try without filter (for debugging)
+      if (!props || props.length === 0) {
+        const { data: allProperties, error: allPropsError } = await supabase
+          .from('properties')
+          .select(`
+            id,
+            title,
+            area,
+            price,
+            status,
+            created_at,
+            rejection_reason,
+            description,
+            address,
+            images,
+            unit_type,
+            owner_id
+          `)
+        
+        console.log('STRATEGY 2 - All properties:', allProperties)
+        console.log('STRATEGY 2 - Error:', allPropsError)
+
+        // Check if any properties match the user ID
+        const matchingProperties = allProperties?.filter(p => p.owner_id === user.id) || []
+        console.log('Properties matching user ID:', matchingProperties)
+
+        // STRATEGY 3: Try using profile ID if different from auth user ID
+        if (matchingProperties.length === 0 && profile) {
+          const profileIdMatches = allProperties?.filter(p => p.owner_id === profile.id) || []
+          console.log('Properties matching profile ID:', profileIdMatches)
+          
+          if (profileIdMatches.length > 0) {
+            props = profileIdMatches
+          }
+        } else if (matchingProperties.length > 0) {
+          props = matchingProperties
+        }
+
+        // Store debug info for display
+        setDebugInfo({
+          authUserId: user.id,
+          profileId: profile?.id,
+          totalProperties: allProperties?.length || 0,
+          matchingAuth: matchingProperties.length,
+          matchingProfile: profile?.id ? allProperties?.filter(p => p.owner_id === profile.id).length || 0 : 0,
+          allOwnerIds: [...new Set(allProperties?.map(p => p.owner_id) || [])]
+        })
+      }
+
+      if (propsError) {
+        console.error('Error fetching properties:', propsError)
+      }
+
+      const propertyIds = props?.map(p => p.id) ?? []
       let leadsCount = 0
       if (propertyIds.length > 0) {
-        const { count, error: leadsError } = await supabase.from('leads').select('*', { count: 'exact', head: true }).in('property_id', propertyIds)
+        const { count, error: leadsError } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact', head: true })
+          .in('property_id', propertyIds)
         if (leadsError) {
           console.error('Error fetching leads count:', leadsError)
         }
@@ -225,7 +170,7 @@ export default function BrokerDashboard() {
       }
 
       // Add owner data to properties
-      const propertiesWithOwner = finalProperties?.map(property => ({
+      const propertiesWithOwner = props?.map(property => ({
         ...property,
         owner: {
           name: profile?.name || '',
@@ -234,14 +179,15 @@ export default function BrokerDashboard() {
         }
       })) ?? []
 
-      setStats({ name: profile?.name ?? '', walletBalance: profile?.wallet_balance ?? 0, totalProperties: finalProperties?.length ?? 0, totalLeads: leadsCount })
+      setStats({ 
+        name: profile?.name ?? '', 
+        walletBalance: profile?.wallet_balance ?? 0, 
+        totalProperties: props?.length ?? 0, 
+        totalLeads: leadsCount 
+      })
       setProperties(propertiesWithOwner)
-      
-      console.log('\n🎉 === DASHBOARD LOADING COMPLETE ===')
-      console.log('✅ STATS:', { name: profile?.name, totalProperties: finalProperties?.length, totalLeads: leadsCount })
-      
     } catch (error) {
-      console.error('❌ FATAL ERROR IN loadDashboard:', error)
+      console.error('Error in loadDashboard:', error)
     } finally {
       setLoading(false)
     }
@@ -260,6 +206,44 @@ export default function BrokerDashboard() {
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: 'Cairo, sans-serif', direction: 'rtl' }}>
 
+      {/* DEBUG INFO PANEL */}
+      {debugInfo && (
+        <div style={{ 
+          position: 'fixed', 
+          top: 80, 
+          right: 20, 
+          background: '#1e293b', 
+          color: 'white', 
+          padding: '1rem', 
+          borderRadius: 8, 
+          fontSize: 12, 
+          zIndex: 1000,
+          maxWidth: 300,
+          maxHeight: 400,
+          overflow: 'auto'
+        }}>
+          <h4 style={{ margin: '0 0 8px', fontSize: 14 }}>Debug Info</h4>
+          <pre style={{ margin: 0, fontSize: 11, lineHeight: 1.4 }}>
+            {JSON.stringify(debugInfo, null, 2)}
+          </pre>
+          <button 
+            onClick={() => setDebugInfo(null)}
+            style={{ 
+              marginTop: 8, 
+              background: '#ef4444', 
+              color: 'white', 
+              border: 'none', 
+              padding: '4px 8px', 
+              borderRadius: 4, 
+              fontSize: 11,
+              cursor: 'pointer'
+            }}
+          >
+            Close
+          </button>
+        </div>
+      )}
+
       {/* MODAL */}
       {selectedProperty && (
         <div onClick={() => setSelectedProperty(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: '1rem' }}>
@@ -275,7 +259,7 @@ export default function BrokerDashboard() {
               {selectedProperty.images?.length > 0 && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: '1rem' }}>
                   {selectedProperty.images.map((img, i) => (
-                    <img key={i} src={img} alt="" style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 8 }} />
+                    <img key={`img-${selectedProperty.id}-${i}`} src={img} alt="" style={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 8 }} />
                   ))}
                 </div>
               )}
@@ -336,7 +320,7 @@ export default function BrokerDashboard() {
             { n: stats.totalLeads, l: 'عملاء مهتمين', icon: '👥', color: '#1d4ed8', bg: '#eff6ff' },
             { n: `${stats.walletBalance} ج.م`, l: 'رصيد المحفظة', icon: '💰', color: '#d97706', bg: '#fef3c7' },
           ].map((s, i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', border: '1px solid #f1f5f9', textAlign: 'center' }}>
+            <div key={`stat-${i}`} style={{ background: '#fff', borderRadius: 16, padding: '1.25rem', border: '1px solid #f1f5f9', textAlign: 'center' }}>
               <div style={{ width: 42, height: 42, background: s.bg, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, margin: '0 auto 10px' }}>{s.icon}</div>
               <div style={{ fontSize: 24, fontWeight: 900, color: s.color }}>{s.n}</div>
               <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3 }}>{s.l}</div>
@@ -376,7 +360,7 @@ export default function BrokerDashboard() {
           ) : (
             <div>
               {properties.map(p => (
-                <div key={p.id} onClick={() => setSelectedProperty(p)} style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'background 0.2s', gap: '1rem' }}
+                <div key={`property-${p.id}`} onClick={() => setSelectedProperty(p)} style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: 'background 0.2s', gap: '1rem' }}
                   onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                   onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                 >
