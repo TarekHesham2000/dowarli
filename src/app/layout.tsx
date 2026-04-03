@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +14,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(getSiteUrl()),
   title: "أجرلي - منصة الإيجار الأولى في مصر",
   description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
+  openGraph: {
+    type: "website",
+    locale: "ar_EG",
+    siteName: "أجرلي",
+    title: "أجرلي - منصة الإيجار الأولى في مصر",
+    description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "أجرلي - منصة الإيجار الأولى في مصر",
+    description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
+  },
 };
 
 export default function RootLayout({
@@ -31,7 +45,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="أجرلي" />
       </head>
-      <body className={`${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col`}>
+      <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col`}>
         {children}
       </body>
     </html>

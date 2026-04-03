@@ -30,6 +30,7 @@ type Broker = {
   phone: string
   wallet_balance: number
   is_active: boolean
+  role?: string | null
   created_at: string
   properties_count?: number
 }
@@ -39,12 +40,16 @@ type Lead = {
   client_name: string
   client_phone: string
   created_at: string
-  properties: { title: string; area: string }
+  property_title?: string
+  property_area?: string
 }
 
 type Stats = {
   totalBrokers: number
-  totalProperties: number
+  /** منشور على الموقع (status = active) */
+  publishedProperties: number
+  /** مرفوض من المراجعة */
+  rejectedProperties: number
   totalLeads: number
   pendingProperties: number
   pendingTransactions: number
@@ -55,7 +60,14 @@ type Tab = 'home' | 'properties' | 'brokers' | 'transactions' | 'leads' | 'setti
 export default function AdminDashboard() {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('home')
-  const [stats, setStats] = useState<Stats>({ totalBrokers: 0, totalProperties: 0, totalLeads: 0, pendingProperties: 0, pendingTransactions: 0 })
+  const [stats, setStats] = useState<Stats>({
+    totalBrokers: 0,
+    publishedProperties: 0,
+    rejectedProperties: 0,
+    totalLeads: 0,
+    pendingProperties: 0,
+    pendingTransactions: 0,
+  })
   const [properties, setProperties] = useState<Property[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [brokers, setBrokers] = useState<Broker[]>([])
@@ -68,24 +80,36 @@ export default function AdminDashboard() {
   const [listingCost, setListingCost] = useState('50')
   const [bannerText, setBannerText] = useState('')
   const [savingSettings, setSavingSettings] = useState(false)
+  const [propertyStatusFilter, setPropertyStatusFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>('all')
+  const [authReady, setAuthReady] = useState(false)
+  const [processingTransactionId, setProcessingTransactionId] = useState<number | null>(null)
+  const [profilesError, setProfilesError] = useState('')
 
-  useEffect(() => { loadAll() }, [])
-
-  const loadAll = async () => {
-    setLoading(true)
-
+  async function loadAll() {
     const [propsRes, transRes, brokersRes, leadsRes, settingsRes] = await Promise.all([
       supabase.from('properties').select('id, title, area, price, status, images, description, address, profiles(name, phone, id)').order('created_at', { ascending: false }),
       supabase.from('transactions').select('id, amount, screenshot_url, status, broker_id, profiles(name, phone)').eq('status', 'pending').order('created_at', { ascending: false }),
-      supabase.from('profiles').select('id, name, phone, wallet_balance, is_active, created_at').eq('role', 'broker').order('created_at', { ascending: false }),
-      supabase.from('leads').select('id, client_name, client_phone, created_at, properties(title, area)').order('created_at', { ascending: false }).limit(100),
+      supabase.from('profiles').select('id, name, phone, wallet_balance, is_active, role, created_at').order('created_at', { ascending: false }),
+      supabase.from('leads').select('id, client_name, client_phone, created_at').order('created_at', { ascending: false }).limit(100),
       supabase.from('settings').select('key, value'),
     ])
 
     const props = (propsRes.data as unknown as Property[]) ?? []
     const trans = (transRes.data as unknown as Transaction[]) ?? []
-    const brok = (brokersRes.data as unknown as Broker[]) ?? []
-    const lds = (leadsRes.data as unknown as Lead[]) ?? []
+    const allProfiles = (brokersRes.data as Broker[]) ?? []
+    const brok = allProfiles.filter(b => (b.role ?? '').toLowerCase() !== 'admin')
+    const lds = (leadsRes.data as Lead[]) ?? []
+
+    if (brokersRes.error) {
+      console.error('profiles query failed:', brokersRes.error.message)
+      setProfilesError(brokersRes.error.message)
+    } else {
+      setProfilesError('')
+    }
+
+    if (leadsRes.error) {
+      console.error('leads query failed:', leadsRes.error.message)
+    }
 
     setProperties(props)
     setTransactions(trans)
@@ -95,14 +119,15 @@ export default function AdminDashboard() {
     if (settingsRes.data) {
       const cost = settingsRes.data.find(s => s.key === 'listing_cost')
       if (cost) setListingCost(cost.value)
-    }
 
-    const { data: bannerData } = await supabase.from('banners').select('text').eq('is_active', true).limit(1).single()
-    if (bannerData) setBannerText(bannerData.text)
+      const banner = settingsRes.data.find(s => s.key === 'banner_text')
+      setBannerText(banner?.value ?? '')
+    }
 
     setStats({
       totalBrokers: brok.length,
-      totalProperties: props.length,
+      publishedProperties: props.filter(p => p.status === 'active').length,
+      rejectedProperties: props.filter(p => p.status === 'rejected').length,
       totalLeads: lds.length,
       pendingProperties: props.filter(p => p.status === 'pending').length,
       pendingTransactions: trans.length,
@@ -110,6 +135,44 @@ export default function AdminDashboard() {
 
     setLoading(false)
   }
+
+  useEffect(() => {
+    let mounted = true
+
+    const initAuthAndLoad = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+
+      if (!mounted) return
+
+      if (!session) {
+        router.push('/login')
+        return
+      }
+
+      setAuthReady(true)
+      loadAll()
+    }
+
+    initAuthAndLoad()
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return
+
+      if (!session) {
+        setAuthReady(false)
+        router.push('/login')
+        return
+      }
+
+      setAuthReady(true)
+      loadAll()
+    })
+
+    return () => {
+      mounted = false
+      authListener.subscription.unsubscribe()
+    }
+  }, [router])
 
   const approveProperty = async (id: number) => {
     await supabase.from('properties').update({ status: 'active' }).eq('id', id)
@@ -124,15 +187,76 @@ export default function AdminDashboard() {
   }
 
   const approveTransaction = async (id: number, brokerId: string, amount: number) => {
-    await supabase.from('transactions').update({ status: 'verified' }).eq('id', id)
-    await supabase.rpc('add_wallet', { user_id: brokerId, amount })
-    loadAll()
+    if (processingTransactionId) return
+
+    setProcessingTransactionId(id)
+
+    const { data: updatedRows, error: txError } = await supabase
+      .from('transactions')
+      .update({ status: 'verified' })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select('id')
+
+    if (txError) {
+      alert(`فشل تأكيد الشحنة: ${txError.message}`)
+      setProcessingTransactionId(null)
+      return
+    }
+
+    if (!updatedRows || updatedRows.length === 0) {
+      alert('هذه الشحنة تم التعامل معها بالفعل')
+      setTransactions(prev => prev.filter(t => t.id !== id))
+      setProcessingTransactionId(null)
+      return
+    }
+
+    const { error: walletError } = await supabase.rpc('add_wallet', { user_id: brokerId, amount })
+    if (walletError) {
+      alert(`تم تغيير حالة الشحنة لكن فشل إضافة الرصيد: ${walletError.message}`)
+      setProcessingTransactionId(null)
+      loadAll()
+      return
+    }
+
+    setTransactions(prev => prev.filter(t => t.id !== id))
+    setStats(prev => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
+    setProcessingTransactionId(null)
   }
 
   const rejectTransaction = async () => {
     if (!rejectId || !rejectReason) return
-    await supabase.from('transactions').update({ status: 'rejected', rejection_reason: rejectReason }).eq('id', rejectId)
-    setRejectId(null); setRejectReason(''); loadAll()
+
+    if (processingTransactionId) return
+    setProcessingTransactionId(rejectId)
+
+    const txId = rejectId
+    const { data: updatedRows, error: rejectError } = await supabase
+      .from('transactions')
+      .update({ status: 'rejected', rejection_reason: rejectReason })
+      .eq('id', txId)
+      .eq('status', 'pending')
+      .select('id')
+
+    if (rejectError) {
+      alert(`فشل رفض الشحنة: ${rejectError.message}`)
+      setProcessingTransactionId(null)
+      return
+    }
+
+    setRejectId(null)
+    setRejectReason('')
+
+    if (!updatedRows || updatedRows.length === 0) {
+      alert('هذه الشحنة تم التعامل معها بالفعل')
+      setTransactions(prev => prev.filter(t => t.id !== txId))
+      setProcessingTransactionId(null)
+      return
+    }
+
+    setTransactions(prev => prev.filter(t => t.id !== txId))
+    setStats(prev => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
+    setProcessingTransactionId(null)
   }
 
   const toggleBroker = async (id: string, current: boolean) => {
@@ -147,11 +271,48 @@ export default function AdminDashboard() {
 
   const saveSettings = async () => {
     setSavingSettings(true)
-    await supabase.from('settings').upsert({ key: 'listing_cost', value: listingCost })
-    await supabase.from('banners').update({ is_active: false }).neq('id', 0)
-    if (bannerText) await supabase.from('banners').insert({ text: bannerText, is_active: true })
+
+    const { data: listingUpdate, error: listingError } = await supabase
+      .from('settings')
+      .update({ value: listingCost })
+      .eq('key', 'listing_cost')
+      .select('key')
+      .limit(1)
+
+    if (listingError) {
+      alert(`فشل حفظ تكلفة الإعلان: ${listingError.message}`)
+      setSavingSettings(false)
+      return
+    }
+
+    if (!listingUpdate || listingUpdate.length === 0) {
+      alert('تعذر حفظ تكلفة الإعلان: مفتاح listing_cost غير موجود في جدول settings')
+      setSavingSettings(false)
+      return
+    }
+
+    const { data: bannerUpdate, error: bannerError } = await supabase
+      .from('settings')
+      .update({ value: bannerText.trim() })
+      .eq('key', 'banner_text')
+      .select('key')
+      .limit(1)
+
+    if (bannerError) {
+      alert(`فشل حفظ البنر: ${bannerError.message}`)
+      setSavingSettings(false)
+      return
+    }
+
+    if (!bannerUpdate || bannerUpdate.length === 0) {
+      alert('تعذر حفظ البنر: مفتاح banner_text غير موجود في جدول settings')
+      setSavingSettings(false)
+      return
+    }
+
     setSavingSettings(false)
     alert('تم الحفظ ✅')
+    loadAll()
   }
 
   const TABS: { id: Tab; label: string; badge?: number }[] = [
@@ -163,7 +324,11 @@ export default function AdminDashboard() {
     { id: 'settings', label: 'الإعدادات' },
   ]
 
-  if (loading) return (
+  const filteredProperties = propertyStatusFilter === 'all'
+    ? properties
+    : properties.filter(p => p.status === propertyStatusFilter)
+
+  if (!authReady || loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cairo, sans-serif' }}>
       <p style={{ color: '#64748b' }}>جاري التحميل...</p>
     </div>
@@ -253,7 +418,8 @@ export default function AdminDashboard() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
               {[
                 { n: stats.totalBrokers, l: 'ملاك مسجلين', icon: '👥', color: '#1d4ed8', bg: '#eff6ff' },
-                { n: stats.totalProperties, l: 'إجمالي الإعلانات', icon: '🏠', color: '#166534', bg: '#f0fdf4' },
+                { n: stats.publishedProperties, l: 'إعلانات منشورة', icon: '✅', color: '#166534', bg: '#f0fdf4' },
+                { n: stats.rejectedProperties, l: 'إعلانات مرفوضة', icon: '❌', color: '#991b1b', bg: '#fef2f2' },
                 { n: stats.totalLeads, l: 'إجمالي العملاء', icon: '📊', color: '#7e22ce', bg: '#faf5ff' },
                 { n: stats.pendingProperties, l: 'إعلانات معلقة', icon: '⏳', color: '#d97706', bg: '#fef3c7' },
                 { n: stats.pendingTransactions, l: 'شحنات معلقة', icon: '💳', color: '#dc2626', bg: '#fef2f2' },
@@ -278,12 +444,21 @@ export default function AdminDashboard() {
         {tab === 'properties' && (
           <div style={{ background: 'white', borderRadius: 16, border: '1px solid #f1f5f9', overflow: 'hidden' }}>
             <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0 }}>الإعلانات ({properties.length})</h2>
-              <select onChange={e => {}} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13 }}>
-                <option>الكل</option><option value="pending">معلق</option><option value="active">نشط</option><option value="rejected">مرفوض</option>
+              <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0 }}>
+                الإعلانات ({filteredProperties.length})
+              </h2>
+              <select
+                value={propertyStatusFilter}
+                onChange={e => setPropertyStatusFilter(e.target.value as 'all' | 'pending' | 'active' | 'rejected')}
+                style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13 }}
+              >
+                <option value="all">الكل</option>
+                <option value="pending">معلق</option>
+                <option value="active">نشط</option>
+                <option value="rejected">مرفوض</option>
               </select>
             </div>
-            {properties.map(p => (
+            {filteredProperties.map(p => (
               <div key={p.id} onClick={() => setSelectedProperty(p)} style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', gap: '1rem' }}
                 onMouseEnter={e => e.currentTarget.style.background = '#f8fafc'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -306,6 +481,11 @@ export default function AdminDashboard() {
             <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc' }}>
               <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0 }}>الملاك ({brokers.length})</h2>
             </div>
+            {profilesError && (
+              <div style={{ margin: '1rem', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: 10, padding: '10px 12px', fontSize: 13 }}>
+                تعذر تحميل بيانات الملاك بسبب الصلاحيات: {profilesError}
+              </div>
+            )}
             {brokers.map(b => (
               <div key={b.id} style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
                 <div style={{ flex: 1 }}>
@@ -347,8 +527,8 @@ export default function AdminDashboard() {
                 </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <a href={t.screenshot_url} target="_blank" rel="noreferrer" style={{ background: '#f8fafc', color: '#374151', border: '1px solid #e2e8f0', borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>عرض الإيصال</a>
-                  <button onClick={() => approveTransaction(t.id, t.broker_id, t.amount)} style={{ background: '#166534', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>تأكيد ✅</button>
-                  <button onClick={() => { setRejectId(t.id); setRejectType('transaction') }} style={{ background: '#dc2626', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>رفض ❌</button>
+                  <button disabled={processingTransactionId === t.id} onClick={() => approveTransaction(t.id, t.broker_id, t.amount)} style={{ background: '#166534', opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer' }}>{processingTransactionId === t.id ? 'جاري...' : 'تأكيد ✅'}</button>
+                  <button disabled={processingTransactionId === t.id} onClick={() => { setRejectId(t.id); setRejectType('transaction') }} style={{ background: '#dc2626', opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer' }}>رفض ❌</button>
                 </div>
               </div>
             ))}
@@ -366,9 +546,6 @@ export default function AdminDashboard() {
                 <div>
                   <p style={{ fontSize: 14, fontWeight: 800, margin: '0 0 3px' }}>{l.client_name}</p>
                   <p style={{ fontSize: 13, color: '#166534', fontWeight: 700, margin: '0 0 3px' }}>{l.client_phone}</p>
-                  <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
-                    {(l.properties as any)?.title} · {(l.properties as any)?.area}
-                  </p>
                 </div>
                 <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>{new Date(l.created_at).toLocaleDateString('ar-EG')}</p>
               </div>

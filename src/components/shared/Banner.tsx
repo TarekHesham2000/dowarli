@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 
 type Banner = {
-  id: number
+  id: string
   text: string
 }
 
@@ -14,13 +14,14 @@ export default function Banner() {
   useEffect(() => {
     const load = async () => {
       const { data } = await supabase
-        .from('banners')
-        .select('id, text')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single()
-      if (data) setBanner(data)
+        .from('settings')
+        .select('key, value')
+        .eq('key', 'banner_text')
+        .maybeSingle()
+
+      const text = data?.value?.trim()
+      if (text) setBanner({ id: 'settings-banner', text })
+      else setBanner(null)
     }
     load()
   }, [])

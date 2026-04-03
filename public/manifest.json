@@ -1,6 +1,11 @@
-<link rel="manifest" href="/manifest.json" />
-<meta name="theme-color" content="#1B783C" />
-<meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="أجرلي" />
+{
+  "name": "أجرلي",
+  "short_name": "أجرلي",
+  "description": "منصة إيجار عقارات لسكن الطلاب والمغتربين في مصر",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#1B783C",
+  "lang": "ar",
+  "dir": "rtl"
+}

@@ -61,7 +61,26 @@ export default function AddPropertyPage() {
       return
     }
 
-    // 2. احسب كم إعلان عنده (منطق الـ 2 مجاناً)
+    // 2. تحقق أن الحساب مازال نشط + هات الرصيد الحالي
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('wallet_balance, is_active')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profile) {
+      setError('تعذر التحقق من حالة الحساب حالياً، حاول مرة أخرى')
+      setLoading(false)
+      return
+    }
+
+    if (!profile.is_active) {
+      setError('تم إيقاف حسابك مؤقتاً ولا يمكنك إضافة إعلانات حالياً')
+      setLoading(false)
+      return
+    }
+
+    // 3. احسب كم إعلان عنده (منطق الـ 2 مجاناً)
     const { count } = await supabase
       .from('properties')
       .select('*', { count: 'exact', head: true })
@@ -71,22 +90,16 @@ export default function AddPropertyPage() {
     const publishedCount = count ?? 0
     const isFree = publishedCount < 2
 
-    // 3. لو مش مجاني، تحقق من الرصيد
+    // 4. لو مش مجاني، تحقق من الرصيد
     if (!isFree) {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('wallet_balance')
-        .eq('id', user.id)
-        .single()
-
-      if (!profile || profile.wallet_balance < 50) {
+      if (profile.wallet_balance < 50) {
         setError(`رصيدك غير كافٍ ❌ — رصيدك الحالي ${profile?.wallet_balance ?? 0} ج.م، تحتاج 50 ج.م`)
         setLoading(false)
         return
       }
     }
 
-    // 4. ارفع الإعلان
+    // 5. ارفع الإعلان
     const { data: property, error: propError } = await supabase
       .from('properties')
       .insert({
@@ -110,7 +123,7 @@ export default function AddPropertyPage() {
       return
     }
 
-    // 5. ارفع الصور
+    // 6. ارفع الصور
     if (images.length > 0) {
       const imageUrls = await uploadImages(property.id)
       await supabase
@@ -119,7 +132,7 @@ export default function AddPropertyPage() {
         .eq('id', property.id)
     }
 
-    // 6. لو مدفوع، اخصم من الرصيد
+    // 7. لو مدفوع، اخصم من الرصيد
     if (!isFree) {
       await supabase.rpc('deduct_wallet', { user_id: user.id, amount: 50 })
     }
