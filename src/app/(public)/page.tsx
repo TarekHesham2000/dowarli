@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Banner from "@/components/shared/Banner";
 type UnitType = "student" | "family" | "studio" | "shared";
@@ -53,6 +54,7 @@ const TYPE_COLORS: Record<
 };
 
 export default function PublicPage() {
+  const router = useRouter()
   const [properties, setProperties] = useState<Property[]>([]);
   const [loading, setLoading] = useState(true);
   const [area, setArea] = useState("الكل");
@@ -350,7 +352,7 @@ export default function PublicPage() {
               return (
                 <div
                   key={p.id}
-                  onClick={() => setSelectedProperty(p)}
+                  onClick={() => router.push(`/property/${p.id}`)}
                   style={{
                     background: "#fff",
                     borderRadius: 16,
