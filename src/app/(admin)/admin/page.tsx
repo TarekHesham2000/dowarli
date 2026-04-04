@@ -58,6 +58,8 @@ type Tab = 'home' | 'properties' | 'brokers' | 'transactions' | 'leads' | 'setti
 export default function AdminDashboard() {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('home')
+  const [leads, setLeads] = useState<{id: number, client_name: string, client_phone: string, property_id: number}[]>([])
+
   const [stats, setStats] = useState<Stats>({
     totalBrokers: 0,
     publishedProperties: 0,
@@ -69,7 +71,6 @@ export default function AdminDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [brokers, setBrokers] = useState<Broker[]>([])
-  const [leads, setLeads] = useState<Lead[]>([])
   const [loading, setLoading] = useState(true)
   const [rejectId, setRejectId] = useState<number | null>(null)
   const [rejectReason, setRejectReason] = useState('')
@@ -138,34 +139,41 @@ export default function AdminDashboard() {
     }
   }
 
-  useEffect(() => {
-    const checkAdmin = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
+useEffect(() => {
+  const checkAdmin = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) { router.push('/login'); return }
 
-      if (!session) {
-        router.push('/login')
-        return
-      }
+    const { data: profile } = await supabase
+      .from('profiles').select('role').eq('id', session.user.id).single()
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', session.user.id)
-        .single()
-
-      if (profile?.role !== 'admin') {
-        alert('غير مسموح لك بدخول هذه الصفحة')
-        router.push('/broker')
-        return
-      }
-
-      setAuthReady(true)
-      loadAll()
+    if (profile?.role !== 'admin') {
+      alert('غير مسموح لك بدخول هذه الصفحة')
+      router.push('/broker'); return
     }
 
-    checkAdmin()
-  }, [router])
+    setAuthReady(true)
+    loadAll()
+  }
 
+  checkAdmin()
+
+  const channel = supabase
+    .channel(`admin-realtime-${Date.now()}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'properties' },
+      () => loadAll()
+    )
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'transactions' },
+      () => loadAll()
+    )
+    .subscribe()
+
+  return () => { supabase.removeChannel(channel) }
+}, [router])
   const approveProperty = async (id: number) => {
     await supabase.from('properties').update({ status: 'active' }).eq('id', id)
     setSelectedProperty(null)
@@ -520,12 +528,31 @@ export default function AdminDashboard() {
         )}
 
         {/* LEADS TAB */}
+        {/* LEADS TAB */}
         {tab === 'leads' && (
           <div style={{ background: 'white', borderRadius: 16, border: '1px solid #f1f5f9', overflow: 'hidden' }}>
-            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc' }}>
+            <div style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0 }}>العملاء المهتمين ({leads.length})</h2>
+              <button
+                onClick={() => {
+                  if (leads.length === 0) return
+                  const csv = 'الاسم,رقم الهاتف,التاريخ\n' + leads.map(l => `${l.client_name},${l.client_phone},${new Date(l.created_at).toLocaleDateString('ar-EG')}`).join('\n')
+                  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = 'العملاء.csv'
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}
+                style={{ background: '#166534', color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}
+              >
+                📥 تحميل Excel
+              </button>
             </div>
-            {leads.map(l => (
+            {leads.length === 0 ? (
+              <p style={{ textAlign: 'center', color: '#94a3b8', padding: '2rem' }}>مفيش عملاء لحد دلوقتي</p>
+            ) : leads.map(l => (
               <div key={l.id} style={{ padding: '1rem 1.25rem', borderBottom: '1px solid #f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div>
                   <p style={{ fontSize: 14, fontWeight: 800, margin: '0 0 3px' }}>{l.client_name}</p>

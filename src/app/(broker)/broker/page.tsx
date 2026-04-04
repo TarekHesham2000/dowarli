@@ -42,7 +42,7 @@ export default function BrokerDashboard() {
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
-
+  const [listingCost, setListingCost] = useState(50)
   useEffect(() => { loadDashboard() }, [])
 
   const loadDashboard = async () => {
@@ -203,6 +203,13 @@ export default function BrokerDashboard() {
 
       // Get profile data for stats
       const { data: profile, error: profileError } = await supabase.from('profiles').select('name, wallet_balance, is_active, phone').eq('id', user.id).single()
+      const { data: costSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'listing_cost')
+        .single()
+
+      setListingCost(Number(costSetting?.value ?? 50))
       if (profileError) {
         console.error('Error fetching profile:', profileError)
       }
@@ -214,16 +221,19 @@ export default function BrokerDashboard() {
         return
       }
 
-      const propertyIds = finalProperties?.map(p => p.id) ?? []
-      let leadsCount = 0
-      if (propertyIds.length > 0) {
-        const { count, error: leadsError } = await supabase.from('leads').select('*', { count: 'exact', head: true }).in('property_id', propertyIds)
-        if (leadsError) {
-          console.error('Error fetching leads count:', leadsError)
-        }
-        leadsCount = count ?? 0
+    const propertyIds = finalProperties?.map(p => p.id) ?? []
+    let leadsCount = 0
+    if (propertyIds.length > 0) {
+      const { data: leadsData, count, error: leadsError } = await supabase
+        .from('leads')
+        .select('id, client_name, client_phone, property_id', { count: 'exact' })
+        .in('property_id', propertyIds)
+      if (leadsError) {
+        console.error('Error fetching leads count:', leadsError)
       }
-
+      leadsCount = count ?? 0
+      setLeads(leadsData ?? [])
+    }
       // Add owner data to properties
       const propertiesWithOwner = finalProperties?.map(property => ({
         ...property,
@@ -349,8 +359,7 @@ export default function BrokerDashboard() {
           <div>
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)', margin: '0 0 4px' }}>رصيد المحفظة</p>
             <p style={{ fontSize: 32, fontWeight: 900, color: 'white', margin: 0 }}>{stats.walletBalance} ج.م</p>
-            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', margin: '4px 0 0' }}>كل إعلان بعد المجاني = 50 ج.م</p>
-          </div>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', margin: '4px 0 0' }}>كل إعلان بعد المجاني = {listingCost} ج.م</p>          </div>
           <button onClick={() => router.push('/broker/wallet')} style={{ background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: 'white', borderRadius: 12, padding: '10px 22px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
             شحن رصيد
           </button>

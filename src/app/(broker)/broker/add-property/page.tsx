@@ -44,7 +44,7 @@ export default function AddPropertyPage() {
     return urls
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.SyntheticEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
@@ -76,6 +76,15 @@ export default function AddPropertyPage() {
         return
       }
 
+      // ✅ جلب تكلفة الإعلان من settings ديناميكياً
+      const { data: costSetting } = await supabase
+        .from('settings')
+        .select('value')
+        .eq('key', 'listing_cost')
+        .single()
+
+      const listingCost = Number(costSetting?.value ?? 50)
+
       // 3. احسب عدد الإعلانات
       const { count } = await supabase
         .from('properties')
@@ -87,8 +96,8 @@ export default function AddPropertyPage() {
       const isFree = publishedCount < 2
 
       // 4. تحقق من الرصيد لو مش مجاني
-      if (!isFree && profile.wallet_balance < 50) {
-        setError(`رصيدك غير كافٍ ❌ — رصيدك الحالي ${profile.wallet_balance} ج.م، تحتاج 50 ج.م`)
+      if (!isFree && profile.wallet_balance < listingCost) {
+        setError(`رصيدك غير كافٍ ❌ — رصيدك الحالي ${profile.wallet_balance} ج.م، تحتاج ${listingCost} ج.م`)
         setLoading(false)
         return
       }
@@ -111,8 +120,6 @@ export default function AddPropertyPage() {
         .select('id')
         .single()
 
-      console.log('Insert result:', insertResult)
-
       if (insertResult.error) {
         setError(insertResult.error.message)
         setLoading(false)
@@ -132,7 +139,7 @@ export default function AddPropertyPage() {
 
       // 7. اخصم الرصيد لو مدفوع
       if (!isFree) {
-        await supabase.rpc('deduct_wallet', { user_id: user.id, amount: 50 })
+        await supabase.rpc('deduct_wallet', { user_id: user.id, amount: listingCost })
       }
 
       router.push('/broker')
