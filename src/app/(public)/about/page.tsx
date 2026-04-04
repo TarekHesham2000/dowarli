@@ -3,9 +3,9 @@ import Link from "next/link";
 import FooterLinks from "@/components/shared/FooterLinks";
 
 export const metadata: Metadata = {
-  title: "من نحن - أجرلي",
+  title: "من نحن - دَورلي",
   description:
-    "تعرف على منصة أجرلي المتخصصة في إيجار سكن الطلاب والمغتربين في مصر.",
+    "تعرف على منصة دَورلي المتخصصة في إيجار سكن الطلاب والمغتربين في مصر.",
 };
 
 export default function AboutPage() {
@@ -13,7 +13,7 @@ export default function AboutPage() {
     <div className="min-h-screen bg-gray-50" dir="rtl">
       <nav className="bg-white border-b px-4 py-4 flex items-center justify-between">
         <Link href="/" className="font-bold text-green-800 text-lg">
-          أجرلي
+          دَورلي
         </Link>
         <Link href="/" className="text-sm text-green-700 hover:underline">
           العودة للرئيسية
@@ -26,7 +26,7 @@ export default function AboutPage() {
             من نحن
           </h1>
           <p className="text-gray-700 leading-8 mb-4">
-            أجرلي منصة مصرية متخصصة في تأجير العقارات المناسبة للطلاب
+            دَورلي منصة مصرية متخصصة في تأجير العقارات المناسبة للطلاب
             والمغتربين، مع التركيز على السهولة، الثقة، وسرعة الوصول للسكن
             المناسب.
           </p>
@@ -41,7 +41,7 @@ export default function AboutPage() {
         </div>
       </main>
       <footer className="bg-green-900 text-green-100 py-6 px-4 text-center text-sm mt-10">
-        <p>© 2025 أجرلي — منصة الإيجار العقاري المصرية</p>
+        <p>© 2025 دَورلي — منصة الإيجار العقاري المصرية</p>
         <FooterLinks className="flex justify-center gap-4 mt-2 text-xs opacity-70" />
       </footer>
     </div>

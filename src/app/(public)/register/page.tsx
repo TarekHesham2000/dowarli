@@ -38,7 +38,7 @@ export default function RegisterPage() {
       
       {/* NAV */}
       <nav style={{ background: '#fff', borderBottom: '1px solid #dcfce7', padding: '0 1.5rem', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <a href="/" style={{ fontSize: 22, fontWeight: 900, color: '#166534', textDecoration: 'none' }}>أجرلي</a>
+        <a href="/" style={{ fontSize: 22, fontWeight: 900, color: '#166534', textDecoration: 'none' }}>دَورلي</a>
         <a href="/login" style={{ fontSize: 13, color: '#166534', fontWeight: 700, textDecoration: 'none' }}>عندك حساب؟ سجّل دخول</a>
       </nav>
 

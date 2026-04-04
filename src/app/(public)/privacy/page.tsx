@@ -3,8 +3,8 @@ import Link from "next/link";
 import FooterLinks from "@/components/shared/FooterLinks";
 
 export const metadata: Metadata = {
-  title: "سياسة الخصوصية - أجرلي",
-  description: "سياسة الخصوصية وحماية البيانات لمنصة أجرلي للإيجار العقاري في مصر",
+  title: "سياسة الخصوصية - دَورلي",
+  description: "سياسة الخصوصية وحماية البيانات لمنصة دَورلي للإيجار العقاري في مصر",
 };
 
 export default function PrivacyPage() {
@@ -23,7 +23,7 @@ export default function PrivacyPage() {
               />
             </svg>
           </div>
-          <span className="font-bold text-green-800 text-lg">أجرلي</span>
+          <span className="font-bold text-green-800 text-lg">دَورلي</span>
         </Link>
         <Link href="/" className="text-sm text-green-700 hover:underline">
           العودة للرئيسية
@@ -41,7 +41,7 @@ export default function PrivacyPage() {
             <section>
               <h2 className="text-lg font-bold text-gray-900 mb-3">١. مقدمة</h2>
               <p className="text-sm leading-7">
-                نرحب بكم في منصة <strong>أجرلي</strong>، المنصة المتخصصة في
+                نرحب بكم في منصة <strong>دَورلي</strong>، المنصة المتخصصة في
                 الإيجار العقاري في مصر. نحن نأخذ خصوصية مستخدمينا بجدية تامة،
                 وتوضح هذه السياسة كيفية جمع بياناتكم واستخدامها وحمايتها عند
                 استخدام خدماتنا.
@@ -156,7 +156,7 @@ export default function PrivacyPage() {
       </div>
 
       <footer className="bg-green-900 text-green-100 py-6 px-4 text-center text-sm mt-10">
-        <p>© 2025 أجرلي — منصة الإيجار العقاري المصرية</p>
+        <p>© 2025 دَورلي — منصة الإيجار العقاري المصرية</p>
         <FooterLinks className="flex justify-center gap-4 mt-2 text-xs opacity-70" />
       </footer>
     </div>

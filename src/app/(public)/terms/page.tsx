@@ -3,8 +3,8 @@ import Link from "next/link";
 import FooterLinks from "@/components/shared/FooterLinks";
 
 export const metadata: Metadata = {
-  title: "الشروط والأحكام - أجرلي",
-  description: "الشروط والأحكام المنظمة لاستخدام منصة أجرلي.",
+  title: "الشروط والأحكام - دَورلي",
+  description: "الشروط والأحكام المنظمة لاستخدام منصة دَورلي.",
 };
 
 export default function TermsPage() {
@@ -12,7 +12,7 @@ export default function TermsPage() {
     <div className="min-h-screen bg-gray-50" dir="rtl">
       <nav className="bg-white border-b px-4 py-4 flex items-center justify-between">
         <Link href="/" className="font-bold text-green-800 text-lg">
-          أجرلي
+          دَورلي
         </Link>
         <Link href="/" className="text-sm text-green-700 hover:underline">
           العودة للرئيسية
@@ -32,7 +32,7 @@ export default function TermsPage() {
                 1. قبول الشروط
               </h2>
               <p>
-                باستخدامك منصة أجرلي، فأنت توافق على الالتزام بهذه الشروط
+                باستخدامك منصة دَورلي، فأنت توافق على الالتزام بهذه الشروط
                 والأحكام وجميع السياسات المرتبطة بها.
               </p>
             </section>
@@ -62,7 +62,7 @@ export default function TermsPage() {
                 4. استخدام المنصة
               </h2>
               <p>
-                يُمنع استخدام المنصة لأي أنشطة غير قانونية أو مسيئة، ويحق لأجرلي
+                يُمنع استخدام المنصة لأي أنشطة غير قانونية أو مسيئة، ويحق لدَورلي
                 تعليق أو إيقاف الحسابات المخالفة.
               </p>
             </section>
@@ -83,7 +83,7 @@ export default function TermsPage() {
         </div>
       </main>
       <footer className="bg-green-900 text-green-100 py-6 px-4 text-center text-sm mt-10">
-        <p>© 2025 أجرلي — منصة الإيجار العقاري المصرية</p>
+        <p>© 2025 دَورلي — منصة الإيجار العقاري المصرية</p>
         <FooterLinks className="flex justify-center gap-4 mt-2 text-xs opacity-70" />
       </footer>
     </div>

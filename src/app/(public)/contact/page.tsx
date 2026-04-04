@@ -3,8 +3,8 @@ import Link from "next/link";
 import FooterLinks from "@/components/shared/FooterLinks";
 
 export const metadata: Metadata = {
-  title: "تواصل معنا - أجرلي",
-  description: "تواصل مع فريق أجرلي للدعم والاستفسارات.",
+  title: "تواصل معنا - دَورلي",
+  description: "تواصل مع فريق دَورلي للدعم والاستفسارات.",
 };
 
 export default function ContactPage() {
@@ -12,7 +12,7 @@ export default function ContactPage() {
     <div className="min-h-screen bg-gray-50" dir="rtl">
       <nav className="bg-white border-b px-4 py-4 flex items-center justify-between">
         <Link href="/" className="font-bold text-green-800 text-lg">
-          أجرلي
+          دَورلي
         </Link>
         <Link href="/" className="text-sm text-green-700 hover:underline">
           العودة للرئيسية
@@ -45,7 +45,7 @@ export default function ContactPage() {
         </div>
       </main>
       <footer className="bg-green-900 text-green-100 py-6 px-4 text-center text-sm mt-10">
-        <p>© 2025 أجرلي — منصة الإيجار العقاري المصرية</p>
+        <p>© 2025 دَورلي — منصة الإيجار العقاري المصرية</p>
         <FooterLinks className="flex justify-center gap-4 mt-2 text-xs opacity-70" />
       </footer>
     </div>

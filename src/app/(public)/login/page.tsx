@@ -36,7 +36,7 @@ export default function LoginPage() {
 
       {/* NAV */}
       <nav style={{ background: '#fff', borderBottom: '1px solid #dcfce7', padding: '0 1.5rem', height: 56, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <a href="/" style={{ fontSize: 22, fontWeight: 900, color: '#166534', textDecoration: 'none' }}>أجرلي</a>
+        <a href="/" style={{ fontSize: 22, fontWeight: 900, color: '#166534', textDecoration: 'none' }}>دَورلي</a>
         <a href="/register" style={{ fontSize: 13, color: '#166534', fontWeight: 700, textDecoration: 'none' }}>مش عندك حساب؟ سجّل دلوقتي</a>
       </nav>
 
@@ -51,7 +51,7 @@ export default function LoginPage() {
                 <path d="M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1"/>
               </svg>
             </div>
-            <h1 style={{ fontSize: 26, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>أهلاً بك في أجرلي</h1>
+            <h1 style={{ fontSize: 26, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>أهلاً بك في دَورلي</h1>
             <p style={{ fontSize: 14, color: '#64748b' }}>سجّل دخولك لإدارة إعلاناتك</p>
           </div>
 
