@@ -185,7 +185,7 @@ export default function AdminDashboard() {
     }
   }
 
-  useEffect(() => {
+useEffect(() => {
     const checkAdmin = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) { router.push('/login'); return }
@@ -202,13 +202,17 @@ export default function AdminDashboard() {
 
     const channel = supabase
       .channel(`admin-rt-${Date.now()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'properties' }, () => loadAll())
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, () => loadAll())
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'properties' }, (payload) => {
+        // بس لو إعلان جديد اتضاف، مش لو اتحذف
+        loadAll()
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, () => {
+        loadAll()
+      })
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
   }, [router])
-
   // ── approveProperty ────────────────────────────────────────
   const approveProperty = async (property: Property) => {
     setLoading(true)
@@ -336,19 +340,29 @@ export default function AdminDashboard() {
   }
 
   // ── Phase 2: Delete property ──────────────────────────────────
-  const deleteProperty = async () => {
+const deleteProperty = async () => {
     if (deletePropertyId === null) return
     setDeletingProperty(true)
-    const { error } = await supabase.from('properties').delete().eq('id', deletePropertyId)
-    if (error) {
-      alert(`فشل الحذف: ${error.message}`)
-    } else {
-      setProperties(prev => prev.filter(p => p.id !== deletePropertyId))
-      setSelectedProperty(null)
-    }
+
+    const idToDelete = deletePropertyId
+
+    // امسح من الـ UI فوراً قبل ما نكلم الداتابيز
+    setProperties(prev => prev.filter(p => p.id !== idToDelete))
     setDeletePropertyId(null)
     setDeletingProperty(false)
-    loadAll()
+    setSelectedProperty(null)
+
+    // احذف من الداتابيز في الخلفية
+    const { error } = await supabase
+      .from('properties')
+      .delete()
+      .eq('id', idToDelete)
+
+    if (error) {
+      alert(`فشل الحذف: ${error.message}`)
+      loadAll() // لو فشل بس، رجّع الداتا
+    }
+    // ❌ مفيش loadAll() هنا
   }
 
   // ── Phase 2: Filter owner click ─────────────────────────────
