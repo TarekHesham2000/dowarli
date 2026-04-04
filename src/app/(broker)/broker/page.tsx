@@ -38,6 +38,7 @@ const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> =
 
 export default function BrokerDashboard() {
   const router = useRouter()
+  const [leads, setLeads] = useState<any[]>([]);
   const [stats, setStats] = useState<Stats>({ totalProperties: 0, totalLeads: 0, walletBalance: 0, name: '' })
   const [properties, setProperties] = useState<Property[]>([])
   const [loading, setLoading] = useState(true)

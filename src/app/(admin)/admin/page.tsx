@@ -41,6 +41,7 @@ type Lead = {
   client_phone: string
   created_at: string
   property_title?: string
+  property_id: number;
   property_area?: string
 }
 
@@ -58,7 +59,7 @@ type Tab = 'home' | 'properties' | 'brokers' | 'transactions' | 'leads' | 'setti
 export default function AdminDashboard() {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>('home')
-  const [leads, setLeads] = useState<{id: number, client_name: string, client_phone: string, property_id: number}[]>([])
+  const [leads, setLeads] = useState<{id: number, client_name: string, client_phone: string, property_id: number,created_at: string;}[]>([])
 
   const [stats, setStats] = useState<Stats>({
     totalBrokers: 0,
