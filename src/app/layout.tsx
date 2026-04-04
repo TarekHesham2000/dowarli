@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Cairo } from "next/font/google";
 import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
@@ -11,6 +11,11 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const cairo = Cairo({
+  variable: "--font-cairo",
+  subsets: ["latin", "arabic"],
 });
 
 export const metadata: Metadata = {
@@ -45,7 +50,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="أجرلي" />
       </head>
-      <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col`}>
+      <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} ${cairo.variable} min-h-full flex flex-col`}>
         {children}
       </body>
     </html>

@@ -152,82 +152,82 @@ export default function AddPropertyPage() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', fontFamily: 'Cairo, sans-serif', direction: 'rtl' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)', fontFamily: 'inherit', direction: 'rtl' }}>
 
       {/* NAV */}
-      <nav style={{ background: '#fff', borderBottom: '1px solid #f1f5f9', padding: '0 1.5rem', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 40 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <a href="/" style={{ fontSize: 20, fontWeight: 900, color: '#166534', textDecoration: 'none' }}>أجرلي</a>
-          <span style={{ background: '#f0fdf4', color: '#166534', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, border: '1px solid #bbf7d0' }}>إعلان جديد</span>
+      <nav style={{ background: '#ffffff', borderBottom: '1px solid #f1f5f9', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', padding: '0 1.5rem', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 40 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <a href="/" style={{ fontSize: 22, fontWeight: 900, color: '#065f46', textDecoration: 'none' }}>أجرلي</a>
+          <span style={{ background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)', color: '#065f46', fontSize: 11, fontWeight: 700, padding: '4px 12px', borderRadius: 20, border: '1px solid #bbf7d0' }}>إعلان جديد</span>
         </div>
-        <button onClick={() => router.push('/broker')} style={{ background: 'none', border: 'none', color: '#166534', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
+        <button onClick={() => router.push('/broker')} style={{ background: 'none', border: 'none', color: '#065f46', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', transition: 'color 0.3s ease' }} onMouseEnter={e => e.currentTarget.style.color = '#047857'} onMouseLeave={e => e.currentTarget.style.color = '#065f46'}>
           ← لوحة التحكم
         </button>
       </nav>
 
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '1.5rem 1rem' }}>
-        <div style={{ background: '#fff', borderRadius: 16, padding: '1.5rem', border: '1px solid #f1f5f9' }}>
-          <h1 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: '0 0 6px' }}>رفع عقار جديد 🏠</h1>
-          <p style={{ fontSize: 13, color: '#94a3b8', margin: '0 0 1.5rem' }}>أول إعلانين مجاناً — بعد كده 50 ج.م للإعلان</p>
+      <div style={{ maxWidth: 600, margin: '0 auto', padding: '2rem 1rem' }}>
+        <div style={{ background: '#ffffff', borderRadius: 20, padding: '2rem', border: '1px solid #f1f5f9', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+          <h1 style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', margin: '0 0 8px' }}>رفع عقار جديد 🏠</h1>
+          <p style={{ fontSize: 14, color: '#64748b', margin: '0 0 1.5rem', fontWeight: 500 }}>أول إعلانين مجاناً — بعد كده 50 ج.م للإعلان</p>
 
           {error && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#dc2626', marginBottom: '1rem' }}>
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#dc2626', marginBottom: '1.5rem', fontWeight: 600 }}>
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>عنوان الإعلان</label>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 8 }}>عنوان الإعلان</label>
               <input
                 type="text"
                 placeholder="مثال: شقة مفروشة في المنصورة"
                 required
                 value={form.title}
                 onChange={e => setForm({ ...form, title: e.target.value })}
-                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', fontSize: 14, fontFamily: 'Cairo, sans-serif', outline: 'none' }}
-                onFocus={e => e.target.style.borderColor = '#166534'}
-                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', transition: 'all 0.3s ease', background: '#ffffff' }}
+                onFocus={e => { e.target.style.borderColor = '#065f46'; e.target.style.boxShadow = '0 0 0 3px rgba(6, 95, 70, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>وصف العقار</label>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 8 }}>وصف العقار</label>
               <textarea
                 placeholder="اكتب تفاصيل العقار..."
-                rows={3}
+                rows={4}
                 value={form.description}
                 onChange={e => setForm({ ...form, description: e.target.value })}
-                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', fontSize: 14, fontFamily: 'Cairo, sans-serif', outline: 'none', resize: 'vertical' }}
-                onFocus={e => e.target.style.borderColor = '#166534'}
-                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', resize: 'vertical', transition: 'all 0.3s ease', background: '#ffffff' }}
+                onFocus={e => { e.target.style.borderColor = '#065f46'; e.target.style.boxShadow = '0 0 0 3px rgba(6, 95, 70, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>السعر الشهري (ج.م)</label>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 8 }}>السعر الشهري (ج.م)</label>
               <input
                 type="number"
                 placeholder="مثال: 2000"
                 required
                 value={form.price}
                 onChange={e => setForm({ ...form, price: e.target.value })}
-                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', fontSize: 14, fontFamily: 'Cairo, sans-serif', outline: 'none' }}
-                onFocus={e => e.target.style.borderColor = '#166534'}
-                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', transition: 'all 0.3s ease', background: '#ffffff' }}
+                onFocus={e => { e.target.style.borderColor = '#065f46'; e.target.style.boxShadow = '0 0 0 3px rgba(6, 95, 70, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>المنطقة</label>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 8 }}>المنطقة</label>
               <select
                 required
                 value={form.area}
                 onChange={e => setForm({ ...form, area: e.target.value })}
-                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', fontSize: 14, fontFamily: 'Cairo, sans-serif', outline: 'none', background: 'white' }}
-                onFocus={e => e.target.style.borderColor = '#166534'}
-                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#ffffff', transition: 'all 0.3s ease' }}
+                onFocus={e => { e.target.style.borderColor = '#065f46'; e.target.style.boxShadow = '0 0 0 3px rgba(6, 95, 70, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
               >
                 <option value="">اختار المنطقة</option>
                 {AREAS.map(area => (
@@ -237,27 +237,27 @@ export default function AddPropertyPage() {
             </div>
 
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>العنوان التفصيلي</label>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 8 }}>العنوان التفصيلي</label>
               <input
                 type="text"
                 placeholder="مثال: شارع النصر، بجوار المسجد"
                 value={form.address}
                 onChange={e => setForm({ ...form, address: e.target.value })}
-                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', fontSize: 14, fontFamily: 'Cairo, sans-serif', outline: 'none' }}
-                onFocus={e => e.target.style.borderColor = '#166534'}
-                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', transition: 'all 0.3s ease', background: '#ffffff' }}
+                onFocus={e => { e.target.style.borderColor = '#065f46'; e.target.style.boxShadow = '0 0 0 3px rgba(6, 95, 70, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>نوع الوحدة</label>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 8 }}>نوع الوحدة</label>
               <select
                 required
                 value={form.unit_type}
                 onChange={e => setForm({ ...form, unit_type: e.target.value })}
-                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 10, padding: '12px 14px', fontSize: 14, fontFamily: 'Cairo, sans-serif', outline: 'none', background: 'white' }}
-                onFocus={e => e.target.style.borderColor = '#166534'}
-                onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+                style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', outline: 'none', background: '#ffffff', transition: 'all 0.3s ease' }}
+                onFocus={e => { e.target.style.borderColor = '#065f46'; e.target.style.boxShadow = '0 0 0 3px rgba(6, 95, 70, 0.1)'; }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.boxShadow = 'none'; }}
               >
                 <option value="">اختار النوع</option>
                 {UNIT_TYPES.map(type => (
@@ -267,12 +267,12 @@ export default function AddPropertyPage() {
             </div>
 
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>صور العقار (حتى 5 صور)</label>
-              <label htmlFor="images" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, border: '1.5px dashed #bbf7d0', borderRadius: 10, padding: '1rem', cursor: 'pointer', background: images.length > 0 ? '#f0fdf4' : '#fafafa' }}>
-                <svg viewBox="0 0 24 24" fill="none" stroke={images.length > 0 ? '#166534' : '#94a3b8'} strokeWidth="2" style={{ width: 20, height: 20 }}>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', display: 'block', marginBottom: 8 }}>صور العقار (حتى 5 صور)</label>
+              <label htmlFor="images" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, border: '2px dashed #bbf7d0', borderRadius: 12, padding: '2rem 1rem', cursor: 'pointer', background: images.length > 0 ? 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)' : '#fafafa', transition: 'all 0.3s ease' }} onMouseEnter={e => { e.currentTarget.style.borderColor = '#065f46'; e.currentTarget.style.background = 'linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%)'; }} onMouseLeave={e => { e.currentTarget.style.borderColor = '#bbf7d0'; if (images.length === 0) e.currentTarget.style.background = '#fafafa'; }}>
+                <svg viewBox="0 0 24 24" fill="none" stroke={images.length > 0 ? '#065f46' : '#94a3b8'} strokeWidth="2" style={{ width: 24, height: 24, transition: 'all 0.3s ease' }}>
                   <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />
                 </svg>
-                <span style={{ fontSize: 13, fontWeight: 700, color: images.length > 0 ? '#166534' : '#94a3b8' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: images.length > 0 ? '#065f46' : '#94a3b8', transition: 'all 0.3s ease' }}>
                   {images.length > 0 ? `تم اختيار ${images.length} صورة ✅` : 'اضغط لرفع الصور'}
                 </span>
               </label>
@@ -282,7 +282,7 @@ export default function AddPropertyPage() {
             <button
               type="submit"
               disabled={loading}
-              style={{ width: '100%', background: loading ? '#86efac' : '#166534', color: 'white', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 900, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'Cairo, sans-serif', marginTop: 4 }}
+              style={{ width: '100%', background: loading ? 'linear-gradient(135deg, #d1fae5 0%, #c7f0e0 100%)' : 'linear-gradient(135deg, #065f46 0%, #047857 100%)', color: loading ? '#047857' : 'white', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 900, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'inherit', marginTop: 8, transition: 'all 0.3s ease', boxShadow: loading ? 'none' : '0 4px 12px rgba(6, 95, 70, 0.2)' }} onMouseEnter={e => { if (!loading) { e.currentTarget.style.transform = 'scale(1.02)'; e.currentTarget.style.boxShadow = '0 12px 24px rgba(6, 95, 70, 0.3)'; } }} onMouseLeave={e => { if (!loading) { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(6, 95, 70, 0.2)'; } }}
             >
               {loading ? 'جاري الرفع...' : 'رفع الإعلان 🚀'}
             </button>

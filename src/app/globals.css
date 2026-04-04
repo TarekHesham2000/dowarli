@@ -3,12 +3,24 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --primary: #065f46;
+  --primary-light: #047857;
+  --success: #10b981;
+  --pending: #f59e0b;
+  --error: #ef4444;
+  --info: #3b82f6;
+  --slate-dark: #0f172a;
+  --slate-medium: #64748b;
+  --slate-light: #94a3b8;
+  --slate-bg: #f1f5f9;
+  --white: #ffffff;
+  --soft-white: #f8fafc;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-cairo), 'Cairo', sans-serif;
   --font-mono: var(--font-geist-mono);
 }
 
@@ -22,5 +34,63 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-cairo), 'Cairo', Arial, sans-serif;
+}
+
+/* Glassmorphism utility */
+.glass {
+  backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+/* Smooth transitions */
+.transition-smooth {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Status indicators */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.status-active {
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.status-pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.status-archived {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+/* Pulsing indicator */
+.pulse-active {
+  animation: pulse-active 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse-active {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
