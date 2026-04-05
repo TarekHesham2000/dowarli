@@ -186,33 +186,66 @@ export default function AdminDashboard() {
   }
 
 useEffect(() => {
-    const checkAdmin = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) { router.push('/login'); return }
-      const { data: profile } = await supabase
-        .from('profiles').select('role').eq('id', session.user.id).single()
-      if (profile?.role !== 'admin') {
-        alert('غير مسموح لك بدخول هذه الصفحة')
-        router.push('/broker'); return
-      }
-      setAuthReady(true)
-      loadAll()
+  const checkAdmin = async () => {
+    // 1. التأكد من وجود جلسة دخول (Session)
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    if (!session) {
+      router.push('/login');
+      return;
     }
-    checkAdmin()
 
-    const channel = supabase
-      .channel(`admin-rt-${Date.now()}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'properties' }, (payload) => {
-        // بس لو إعلان جديد اتضاف، مش لو اتحذف
-        loadAll()
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'transactions' }, () => {
-        loadAll()
-      })
-      .subscribe()
+    // 2. التحقق من رتبة المستخدم في جدول الـ profiles
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single();
 
-    return () => { supabase.removeChannel(channel) }
-  }, [router])
+    if (error || profile?.role !== 'admin') {
+      console.error("Access denied or profile error:", error);
+      alert('⚠️ غير مسموح لك بدخول لوحة التحكم، سيتم توجيهك لصفحة البروكر');
+      router.push('/broker');
+      return;
+    }
+
+    // 3. إذا كان أدمن، نجهز الصفحة ونحمل البيانات
+    setAuthReady(true);
+    loadAll(); // الدالة اللي بتجيب العقارات والعملاء والترانزاكشنز
+  };
+
+  checkAdmin();
+
+  // 4. إعداد القنوات اللحظية (Real-time Channels)
+  // بنعمل ID فريد للقناة عشان نتجنب تكرار الاتصال
+  const channelId = `admin-dashboard-${Date.now()}`;
+  const channel = supabase
+    .channel(channelId)
+    // مراقبة أي تغيير (إضافة/حذف/تعديل) في العقارات
+    .on('postgres_changes', { 
+      event: '*', 
+      schema: 'public', 
+      table: 'properties' 
+    }, (payload) => {
+      console.log('Change detected in properties:', payload);
+      loadAll(); 
+    })
+    // مراقبة أي عمليات مالية جديدة (شحن محفظة / دفع إعلان)
+    .on('postgres_changes', { 
+      event: 'INSERT', 
+      schema: 'public', 
+      table: 'transactions' 
+    }, () => {
+      console.log('New transaction recorded');
+      loadAll();
+    })
+    .subscribe();
+
+  // 5. Cleanup: قفل القناة عند مغادرة الصفحة لتوفير موارد السيرفر
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [router]);
   // ── approveProperty ────────────────────────────────────────
   const approveProperty = async (property: Property) => {
     setLoading(true)

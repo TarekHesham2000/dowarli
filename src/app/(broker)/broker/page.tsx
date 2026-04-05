@@ -46,218 +46,91 @@ export default function BrokerDashboard() {
   const [listingCost, setListingCost] = useState(50)
   useEffect(() => { loadDashboard() }, [])
 
-  const loadDashboard = async () => {
+const loadDashboard = async () => {
     try {
-      console.log('🔍 === STEP 1: INSPECT AUTH ===')
-      const { data: { user }, error: userError } = await supabase.auth.getUser()
-      if (userError) {
-        console.error('❌ Auth Error:', userError)
-      }
-      console.log('✅ USER:', user)
-      console.log('✅ USER ID:', user?.id)
-      console.log('✅ USER EMAIL:', user?.email)
-      console.log('✅ USER METADATA:', user?.user_metadata)
+      setLoading(true);
       
-      if (!user) { 
-        console.log('❌ NO USER FOUND - Redirecting to login')
-        router.push('/login'); 
-        return 
+      // 1. التأكد من هوية المستخدم
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError || !user) {
+        console.error('Auth Error:', userError);
+        router.push('/login');
+        return;
       }
 
-      console.log('\n🔍 === STEP 2: INSPECT DATABASE DATA ===')
-      // Fetch ALL properties without filters
-      const { data: allProperties, error: allPropsError } = await supabase
-        .from('properties')
-        .select('*')
-      
-      if (allPropsError) {
-        console.error('❌ All Properties Error:', allPropsError)
-      }
-      console.log('✅ ALL PROPERTIES:', allProperties)
-      console.log('✅ TOTAL PROPERTIES COUNT:', allProperties?.length)
+      // 2. جلب بيانات البروفايل والإعدادات في نفس الوقت (Parallel Fetching)
+      const [profileRes, settingsRes] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('settings').select('value').eq('key', 'listing_cost').single()
+      ]);
 
-      console.log('\n🔍 === STEP 3: COMPARE IDS ===')
-      console.log('✅ USER ID FROM AUTH:', user.id)
-      console.log('✅ OWNER_ID VALUES FROM PROPERTIES:', allProperties?.map(p => ({ id: p.id, title: p.title, owner_id: p.owner_id })))
-      
-      // Check if any properties match user ID
-      const matchingProperties = allProperties?.filter(p => p.owner_id === user.id) || []
-      console.log('✅ PROPERTIES MATCHING USER ID:', matchingProperties.length)
-      console.log('✅ MATCHING PROPERTIES:', matchingProperties)
+      const profile = profileRes.data;
+      const listingCost = Number(settingsRes.data?.value ?? 50);
+      setListingCost(listingCost);
 
-      console.log('\n🔍 === STEP 4: CHECK PROFILES TABLE ===')
-      // Fetch profiles
-      const { data: profiles, error: profilesError } = await supabase.from('profiles').select('*')
-      if (profilesError) {
-        console.error('❌ Profiles Error:', profilesError)
-      }
-      console.log('✅ ALL PROFILES:', profiles)
-      console.log('✅ PROFILE IDS:', profiles?.map(p => ({ id: p.id, name: p.name, email: p.email })))
-      
-      // Check if user profile exists
-      const userProfile = profiles?.find(p => p.id === user.id)
-      console.log('✅ USER PROFILE:', userProfile)
-      console.log('✅ DOES PROFILE ID MATCH USER ID?:', userProfile ? 'YES' : 'NO')
+      if (profileRes.error) throw profileRes.error;
 
-      console.log('\n🔍 === STEP 5: TEST FILTER ===')
-      // Test with user.id
-      const { data: filteredByUserId, error: filteredError } = await supabase
-        .from('properties')
-        .select('*')
-        .eq('owner_id', user.id)
-      
-      console.log('✅ FILTERED BY USER ID:', filteredByUserId)
-      console.log('✅ FILTERED BY USER ID COUNT:', filteredByUserId?.length)
-      console.log('✅ FILTER ERROR:', filteredError)
-
-      // If no results, try with hardcoded ID from database
-      if (!filteredByUserId || filteredByUserId.length === 0) {
-        console.log('\n🔍 === STEP 5B: TRY HARDCODED ID ===')
-        const firstProperty = allProperties?.[0]
-        if (firstProperty?.owner_id) {
-          console.log('✅ TRYING WITH HARDCODED ID:', firstProperty.owner_id)
-          const { data: hardcodedTest, error: hardcodedError } = await supabase
-            .from('properties')
-            .select('*')
-            .eq('owner_id', firstProperty.owner_id)
-          
-          console.log('✅ HARDCODED TEST RESULT:', hardcodedTest)
-          console.log('✅ HARDCODED TEST COUNT:', hardcodedTest?.length)
-          console.log('✅ HARDCODED ERROR:', hardcodedError)
-          
-          if (hardcodedTest && hardcodedTest.length > 0) {
-            console.log('🎯 ROOT CAUSE: ID MISMATCH - Query works but user.id != owner_id')
-          }
-        }
-      }
-
-      console.log('\n🔍 === STEP 6: CHECK RLS ===')
-      // Try to check RLS by attempting to access system tables
-      try {
-        const { data: rlsCheck, error: rlsError } = await supabase
-          .from('properties')
-          .select('id, title')
-          .limit(1)
-        
-        console.log('✅ RLS CHECK - Can access at least 1 property?:', rlsCheck ? 'YES' : 'NO')
-        console.log('✅ RLS CHECK ERROR:', rlsError)
-      } catch (rlsException) {
-        console.error('❌ RLS EXCEPTION:', rlsException)
-      }
-
-      console.log('\n🔍 === STEP 7: DETECT ROOT CAUSE ===')
-      
-      // Root cause detection logic
-      let rootCause = 'UNKNOWN'
-      if (!user) {
-        rootCause = 'NO_USER_LOGGED_IN'
-      } else if (!allProperties || allProperties.length === 0) {
-        rootCause = 'NO_PROPERTIES_IN_DATABASE'
-      } else if (matchingProperties.length === 0 && allProperties.length > 0) {
-        if (allProperties.some(p => p.owner_id)) {
-          rootCause = 'ID_MISMATCH_BETWEEN_AUTH_AND_PROPERTIES'
-        } else {
-          rootCause = 'PROPERTIES_HAVE_NO_OWNER_ID'
-        }
-      } else if (filteredError) {
-        rootCause = 'RLS_BLOCKING_ACCESS'
-      }
-      
-      console.log('🎯 ROOT CAUSE DETECTED:', rootCause)
-
-      console.log('\n🔍 === STEP 8: APPLY FIX ===')
-      
-      let finalProperties = []
-      
-      // Apply fix based on root cause
-      switch (rootCause) {
-        case 'ID_MISMATCH_BETWEEN_AUTH_AND_PROPERTIES':
-          console.log('🔧 FIX: Using profile-based query')
-          // Try to get properties through profile relationship
-          if (userProfile) {
-            const { data: profileBasedProps } = await supabase
-              .from('properties')
-              .select('*')
-              .eq('owner_id', userProfile.id)
-            finalProperties = profileBasedProps || []
-            console.log('✅ PROFILE-BASED PROPERTIES:', finalProperties)
-          }
-          break
-          
-        case 'RLS_BLOCKING_ACCESS':
-          console.log('🔧 FIX: Attempting RLS bypass for debugging')
-          // This would need to be fixed in Supabase console
-          console.log('❌ RLS ISSUE - Must be fixed in Supabase console')
-          break
-          
-        case 'PROPERTIES_HAVE_NO_OWNER_ID':
-          console.log('🔧 FIX: Properties need owner_id assignment')
-          console.log('❌ DATA ISSUE - Properties need to be assigned to users')
-          break
-          
-        default:
-          finalProperties = matchingProperties
-          break
-      }
-
-      console.log('✅ FINAL PROPERTIES TO DISPLAY:', finalProperties)
-
-      // Get profile data for stats
-      const { data: profile, error: profileError } = await supabase.from('profiles').select('name, wallet_balance, is_active, phone').eq('id', user.id).single()
-      const { data: costSetting } = await supabase
-        .from('settings')
-        .select('value')
-        .eq('key', 'listing_cost')
-        .single()
-
-      setListingCost(Number(costSetting?.value ?? 50))
-      if (profileError) {
-        console.error('Error fetching profile:', profileError)
-      }
-      
-      // Check if account is active
+      // التأكد من حالة الحساب
       if (profile && !profile.is_active) {
-        alert('حسابك متوقف')
-        router.push('/login')
-        return
+        alert('حسابك متوقف، يرجى التواصل مع الإدارة');
+        router.push('/login');
+        return;
       }
 
-    const propertyIds = finalProperties?.map(p => p.id) ?? []
-    let leadsCount = 0
-    if (propertyIds.length > 0) {
-      const { data: leadsData, count, error: leadsError } = await supabase
-        .from('leads')
-        .select('id, client_name, client_phone, property_id', { count: 'exact' })
-        .in('property_id', propertyIds)
-      if (leadsError) {
-        console.error('Error fetching leads count:', leadsError)
+      // 3. جلب العقارات (الإعلانات) الخاصة بهذا المستخدم فقط
+      const { data: userProperties, error: propsError } = await supabase
+        .from('properties')
+        .select('*')
+        .eq('owner_id', user.id) // الربط الأساسي
+        .order('created_at', { ascending: false });
+
+      if (propsError) throw propsError;
+
+      // 4. جلب الطلبات (Leads) المرتبطة بهذه العقارات
+      let leadsData = [];
+      let totalLeadsCount = 0;
+
+      if (userProperties && userProperties.length > 0) {
+        const propertyIds = userProperties.map(p => p.id);
+        const { data: leads, error: leadsError, count } = await supabase
+          .from('leads')
+          .select('*', { count: 'exact' })
+          .in('property_id', propertyIds);
+
+        if (leadsError) console.error('Leads Error:', leadsError);
+        leadsData = leads || [];
+        totalLeadsCount = count || 0;
       }
-      leadsCount = count ?? 0
-      setLeads(leadsData ?? [])
-    }
-      // Add owner data to properties
-      const propertiesWithOwner = finalProperties?.map(property => ({
-        ...property,
+
+      // 5. تجهيز البيانات للعرض في الـ State
+      const formattedProperties = userProperties.map(prop => ({
+        ...prop,
         owner: {
-          name: profile?.name || '',
-          phone: profile?.phone || '',
-          is_active: profile?.is_active || false
+          name: profile.name,
+          phone: profile.phone,
+          is_active: profile.is_active
         }
-      })) ?? []
+      }));
 
-      setStats({ name: profile?.name ?? '', walletBalance: profile?.wallet_balance ?? 0, totalProperties: finalProperties?.length ?? 0, totalLeads: leadsCount })
-      setProperties(propertiesWithOwner)
-      
-      console.log('\n🎉 === DASHBOARD LOADING COMPLETE ===')
-      console.log('✅ STATS:', { name: profile?.name, totalProperties: finalProperties?.length, totalLeads: leadsCount })
-      
+      // تحديث الـ States مرة واحدة
+      setProperties(formattedProperties);
+      setLeads(leadsData);
+      setStats({
+        name: profile.name,
+        walletBalance: profile.wallet_balance || 0,
+        totalProperties: userProperties.length,
+        totalLeads: totalLeadsCount
+      });
+
     } catch (error) {
-      console.error('❌ FATAL ERROR IN loadDashboard:', error)
+      // الحل 2: التحقق من نوع الخطأ (أكثر أماناً واحترافية)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      console.error('❌ Dashboard Loading Failed:', errorMessage);
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
-
+  };
   if (loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cairo, sans-serif' }}>
       <div style={{ textAlign: 'center' }}>
