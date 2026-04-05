@@ -7,8 +7,7 @@ import Image from "next/image";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type UnitType = "student" | "family" | "studio" | "shared";
-
+type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 type Property = {
   id: number;
   title: string;
@@ -30,6 +29,7 @@ const TYPES: { value: UnitType | ""; label: string; icon: string }[] = [
   { value: "family",  label: "سكن عائلي",icon: "🏡" },
   { value: "studio",  label: "ستوديو",   icon: "🛋️" },
   { value: "shared",  label: "مشترك",    icon: "🤝" },
+  { value: 'employee', label: 'سكن موظفين', icon: "💼" },
 ];
 
 const TYPE_LABELS: Record<UnitType, string> = {
@@ -37,6 +37,7 @@ const TYPE_LABELS: Record<UnitType, string> = {
   family:  "سكن عائلي",
   studio:  "ستوديو",
   shared:  "مشترك",
+  employee: 'سكن موظفين',
 };
 
 const TYPE_COLORS: Record<UnitType, { bg: string; text: string; border: string }> = {
@@ -44,6 +45,7 @@ const TYPE_COLORS: Record<UnitType, { bg: string; text: string; border: string }
   family:  { bg: "rgba(59,130,246,0.18)",  text: "#60a5fa", border: "rgba(59,130,246,0.4)"  },
   studio:  { bg: "rgba(167,139,250,0.18)", text: "#c084fc", border: "rgba(167,139,250,0.4)" },
   shared:  { bg: "rgba(251,146,60,0.18)",  text: "#fb923c", border: "rgba(251,146,60,0.4)"  },
+  employee: { bg: 'rgba(234,179,8,0.18)', text: '#eab308', border: 'rgba(234,179,8,0.4)' },
 };
 
 // ─── Framer Motion Variants ───────────────────────────────────────────────────

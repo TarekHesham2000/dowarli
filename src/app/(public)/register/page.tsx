@@ -2,34 +2,68 @@
 import { useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
-
+// ── Egyptian Phone Validation ──────────────────────────────
+// Regex يقبل بس: 010, 011, 012, 015 + 8 أرقام بعدهم = 11 رقم إجمالي
+const EGYPTIAN_PHONE_REGEX = /^(010|011|012|015)\d{8}$/
 export default function RegisterPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({ name: '', phone: '', email: '', password: '' })
-
+  const validatePhone = (phone: string): string => {
+  const cleaned = phone.replace(/\s|-/g, '') // شيل المسافات والـ dashes
+  if (!cleaned) return 'رقم الهاتف مطلوب'
+  if (!EGYPTIAN_PHONE_REGEX.test(cleaned)) 
+    return 'رقم غير صحيح — يجب أن يبدأ بـ 010، 011، 012، أو 015 ويكون 11 رقم'
+  return ''
+  }
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
+
+    // ── Phone Validation (Client-side) ──────────────────────
+    // بنعمل validation قبل ما نكلم Supabase عشان نوفر API calls
+    const phoneError = validatePhone(form.phone)
+    if (phoneError) {
+      setError(phoneError)
+      setLoading(false)
+      return
+    }
+
+    const cleanedPhone = form.phone.replace(/\s|-/g, '')
 
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: form.email,
       password: form.password,
     })
 
-    if (signUpError) { setError(signUpError.message); setLoading(false); return }
+    if (signUpError) { 
+      setError(signUpError.message)
+      setLoading(false)
+      return 
+    }
 
     const { error: profileError } = await supabase.from('profiles').insert({
       id: data.user!.id,
       name: form.name,
-      phone: form.phone,
+      phone: cleanedPhone, // بنحفظ الرقم بعد تنظيفه
       role: 'broker',
       wallet_balance: 0,
     })
 
-    if (profileError) { setError(profileError.message); setLoading(false); return }
+    // ── Handle Duplicate Phone (DB Unique Constraint) ────────
+    // لو الرقم مكرر Supabase بترجع error code 23505
+    if (profileError) { 
+      if (profileError.code === '23505') {
+        setError('رقم الهاتف ده مسجل بالفعل — جرب تسجيل الدخول')
+      } else {
+        setError(profileError.message)
+      }
+      setLoading(false)
+      return 
+    }
+
     router.push('/login')
   }
 
