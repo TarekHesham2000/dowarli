@@ -20,6 +20,38 @@ type Property = {
   profiles: { name: string; phone: string };
 };
 
+// ─── Parsed Filters Type ─────────────────────────────────────────────────────
+type ParsedFilters = {
+  area: string;
+  maxPrice: number | null;
+  unitType: string;
+  keywords: string;
+};
+
+// مناطق موسّعة للـ Parsing — لماذا؟ → المستخدم يكتب طبيعي مش بالقائمة
+const EXTENDED_AREAS: Record<string, string> = {
+  // المناطق الرسمية في DB
+  "المنصورة": "المنصورة", "القاهرة": "القاهرة",
+  "الإسكندرية": "الإسكندرية", "الجيزة": "الجيزة",
+  "أسيوط": "أسيوط", "سوهاج": "سوهاج", "المنيا": "المنيا",
+  // أحياء شائعة — mapped للـ canonical area
+  "المعادي": "القاهرة", "مدينة نصر": "القاهرة",
+  "الزمالك": "القاهرة", "الدقي": "الجيزة",
+  "المهندسين": "الجيزة", "الهرم": "الجيزة",
+  "شبرا": "القاهرة", "عين شمس": "القاهرة",
+  "التجمع": "القاهرة", "الرحاب": "القاهرة",
+  "أكتوبر": "الجيزة", "الشيخ زايد": "الجيزة",
+};
+
+// كلمات → unit_type — مرتبة من الأكثر تحديداً للأقل
+const UNIT_TYPE_KEYWORDS: [string, UnitType][] = [
+  ["سكن طلاب", "student"], ["طلاب", "student"], ["طالب", "student"], ["طلبة", "student"],
+  ["موظفين", "employee"], ["موظف", "employee"], ["للعمل", "employee"],
+  ["مشترك", "shared"], ["شيرينج", "shared"], ["سرير", "shared"],
+  ["ستوديو", "studio"], ["استوديو", "studio"],
+  ["عائلي", "family"], ["عائلة", "family"], ["أسرة", "family"], ["شقة", "family"],
+];
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 const AREAS = ["الكل","المنصورة","القاهرة","الإسكندرية","الجيزة","أسيوط","سوهاج","المنيا"];
 
@@ -95,39 +127,210 @@ const modalVariants: Variants = {
     transition: { duration: 0.4 } 
   }
 };
+// ─── Smart Query Parser ───────────────────────────────────────────────────────
+// لماذا خارج الـ Component؟ → pure function، لا تحتاج re-render، سهلة الـ testing
+function parseSearchQuery(query: string): ParsedFilters {
+  if (!query.trim()) return { area: "", maxPrice: null, unitType: "", keywords: "" };
 
+  let remaining = query.trim();
+
+  // ── 1. استخراج السعر (يدعم: 6000، 6 آلاف، 6k) ──────────────────────────────
+  let maxPrice: number | null = null;
+  const priceMatch = remaining.match(/(\d+(?:[.,]\d+)?)\s*(?:آلاف|الف|ألف|k)/i);
+  const rawMatch   = remaining.match(/(\d{3,})/); 
+
+  if (priceMatch) {
+    maxPrice = parseFloat(priceMatch[1]) * 1000;
+    remaining = remaining.replace(priceMatch[0], " ");
+  } else if (rawMatch) {
+    maxPrice = parseFloat(rawMatch[1]);
+    remaining = remaining.replace(rawMatch[0], " ");
+  }
+
+  // ── 2. خريطة المناطق (AREAS_MAP) ──────────────────────────────────────────
+const AREAS_MAP: Record<string, string> = {
+    // --- الدقهلية والمنصورة (قلب المشروع) ---
+    "المنصورة": "المنصورة", "منصورة": "المنصورة", "طلخا": "المنصورة","طلخا": "المنصورة","جامعة المنصورة": "المنصورة", "جامعة المنصوره": "المنصورة", "جامعة المنصوره": "المنصورة",
+    "المشاية": "المنصورة", "توريل": "المنصورة", "حي الجامعة": "المنصورة", "المشايه": "المنصورة","الجامعه": "المنصورة",
+    "الترعة": "المنصورة", "الترعه": "المنصورة", "جديلة": "المنصورة", "سندوب": "المنصورة",
+    "المجزر": "المنصورة", "الدراسات": "المنصورة", "عزبة عقل": "المنصورة",
+
+    // --- القاهرة الكبرى (العاصمة والأحياء) ---
+    "القاهرة": "القاهرة", "قاهرة": "القاهرة", "مدينة نصر": "القاهرة", "مدينه نصر": "القاهرة",
+    "التجمع": "القاهرة", "تجمع": "القاهرة", "الخامس": "القاهرة", "الرحاب": "القاهرة",
+    "مدينتي": "القاهرة", "مدينتى": "القاهرة", "المعادي": "القاهرة", "المعادى": "القاهرة",
+    "حلوان": "القاهرة", "شبرا": "القاهرة", "وسط البلد": "القاهرة", "الزمالك": "القاهرة",
+    "مصر الجديدة": "القاهرة", "مصر الجديده": "القاهرة", "عين شمس": "القاهرة", "المقطم": "القاهرة",
+
+    // --- الجيزة وضواحيها ---
+    "الجيزة": "الجيزة", "جيزة": "الجيزة", "الدقي": "الجيزة", "الدقى": "الجيزة",
+    "المهندسين": "الجيزة", "مهندسين": "الجيزة", "الهرم": "الجيزة", "فيصل": "الجيزة",
+    "أكتوبر": "الجيزة", "اكتوبر": "الجيزة", "زايد": "الجيزة", "الشيخ زايد": "الجيزة",
+    "حدائق الأهرام": "الجيزة", "المنيب": "الجيزة",
+
+    // --- الإسكندرية والساحل (المصايف) ---
+    "الإسكندرية": "الإسكندرية", "اسكندرية": "الإسكندرية", "إسكندرية": "الإسكندرية",
+    "سموحة": "الإسكندرية", "سموحه": "الإسكندرية", "ميامي": "الإسكندرية", "ميامى": "الإسكندرية",
+    "المنتدة": "الإسكندرية", "العجمي": "الإسكندرية", "السيوف": "الإسكندرية",
+    "الساحل": "الإسكندرية", "الساحل الشمالي": "الإسكندرية", "الساحل الشمالى": "الإسكندرية",
+    "مارينا": "الإسكندرية", "سيدي جابر": "الإسكندرية",
+
+    // --- محافظات الدلتا والقناة ---
+    "طنطا": "الغربية", "المحلة": "الغربية", "الزقازيق": "الشرقية", "بنها": "القليوبية",
+    "بورسعيد": "بورسعيد", "الإسماعيلية": "الإسماعيلية", "السويس": "السويس", "دمياط": "دمياط",
+    "راس البر": "دمياط", "رأس البر": "دمياط",
+
+    // --- الصعيد ---
+    "أسيوط": "أسيوط", "اسيوط": "أسيوط", "المنيا": "المنيا", "منيا": "المنيا",
+    "سوهاج": "سوهاج", "قنا": "قنا", "الأقصر": "الأقصر", "اسوان": "أسوان", "أسوان": "أسوان",
+
+    // --- مناطق ساحلية أخرى ---
+    "الغردقة": "البحر الأحمر", "شرم الشيخ": "جنوب سيناء", "مرسى مطروح": "مطروح", "مطروح": "مطروح"
+  };
+
+  let area = "";
+  for (const [keyword, canonical] of Object.entries(AREAS_MAP)) {
+    if (remaining.includes(keyword)) {
+      area = canonical;
+      remaining = remaining.replace(new RegExp(keyword, 'g'), " ");
+      break; 
+    }
+  }
+
+  // ── 3. تحديد نوع الوحدة (TYPE_MAP) ────────────────────────────────────────
+  const TYPE_MAP: [string[], UnitType][] = [
+    [["سكن طلاب","طلاب","طالب","طلبة","جامعة"], "student"],
+    [["موظفين","موظف","للعمل","عمال"], "employee"],
+    [["مشترك","شيرينج","شير"], "shared"],
+    [["ستوديو","استوديو"], "studio"],
+    [["عائلي","عائلة","أسرة","عيلة"], "family"],
+  ];
+
+  let unitType: UnitType | "" = "";
+  for (const [keywords, type] of TYPE_MAP) {
+    if (keywords.some(k => remaining.includes(k))) {
+      unitType = type;
+      keywords.forEach(k => { remaining = remaining.replace(new RegExp(k, 'g'), " "); });
+      break;
+    }
+  }
+
+  // ── 4. الكلمات الدالة والكلمات التي يجب تجاهلها (Stop Words) ───────────────
+  const stopWords = [
+    // 1. أفعال الطلب والبحث (User Intent)
+    "عايز", "عاوز", "محتاج", "ابحث", "لاقي", "دورلي", "شوفلي", "بدور", "ببحث", 
+    "محتاجين", "عاوزين", "نفسي", "نفسنا", "دور", "فتش", "ألاقي", "الاقي", "متاح", "موجود",
+
+    // 2. حروف الجر والروابط (العامية والفصحى)
+    "في", "فى", "بـ", "ب", "على", "ع", "من", "إلى", "الى", "و", "أو", "او", 
+    "مع", "عند", "جنب", "بجوار", "قدام", "ورا", "تحت", "فوق", "بين",
+
+    // 3. كلمات وصف العقار الحشوية (Object Fillers)
+    "شقة", "شقه", "وحدة", "وحده", "عقار", "مكان", "سكن", "أوضة", "اوضة", "غرفة", "غرفه",
+    "بيت", "منزل", "عمارة", "عماره", "دور", "ارضي", "أرضي", "روف", "سطوح", "بلكونة", "بلكونه",
+
+    // 4. كلمات المال والأسعار (Financial Fillers)
+    "ايجار", "إيجار", "بإيجار", "سعر", "سعرها", "سعره", "تمن", "ثمن", "فلوس", "رخيص", 
+    "غالي", "لقطة", "لقطه", "حدود", "بحدود", "رينج", "رينج", "تقريبا", "حوالي", "جنيه", 
+    "جم", "ج.م", "كاش", "قسط", "مطلوب", "بكام",
+
+    // 5. الضمائر والأسماء الموصولة
+    "اللي", "اللى", "الذي", "التي", "هو", "هي", "ده", "دي", "دى", "هنا", "هناك",
+
+    // 6. كلمات الحشو والذوقيات (Politeness & Fillers)
+    "لو سمحت", "من فضلك", "يا", "ياريت", "يا ريت", "بقولك", "ممكن", "العلم", "بص", 
+    "كده", "كدا", "حاجة", "حاجه", "تمام", "أوي", "قوي", "خالص", "جداً", "جدا", "يكون", "تكون",
+
+    // 7. كلمات النفي والاستدراك (Crucial for filtering)
+    "مش", "لا", "لأ", "مفيش", "بدون", "غير", "إلا", "الا", "بس",
+
+    // 8. كلمات الحالة (Status words)
+    "نضيف", "نظيف", "جديد", "لوكس", "سوبر", "مفروش", "فاضي", "فاضى", "هادي", "هادى",
+    // 📍 كلمات الموقع والمسافة (اللي سألت عليها)
+    "جنب", "جمب", "بجوار", "قريب", "قريبة", "قريبه", "عند", "عندي", "قدام", 
+    "ورا", "خلف", "أمام", "ناحية", "ناحيه", "على", "ع", "بين", 
+    "وسط", "قلب", "داخل", "برا", "بره", "حوالين", "من", "بتاع", "بتاعة",
+    // كلمات عامة
+    "في", "فى", "بـ", "ب", "حدود", "جنيه", "اللي", "ده", "دي", "ممكن", "ياريت"
+  ];
+
+  let keywords = remaining;
+  
+  // التنظيف باستخدام Regex الذكي اللي بيحافظ على الكلمات المستقلة
+  stopWords.forEach(w => {
+    const regex = new RegExp(`(^|\\s)${w}(\\s|$)`, "gi");
+    keywords = keywords.replace(regex, " ");
+  });
+
+  // التنظيف النهائي
+  keywords = keywords.replace(/\d+/g, " ").replace(/\s+/g, " ").trim();
+
+  return { area, maxPrice, unitType, keywords };
+}
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function PublicPageClient() {
   const router = useRouter();
   const [properties, setProperties]         = useState<Property[]>([]);
   const [loading, setLoading]               = useState(true);
-  const [area, setArea]                     = useState("الكل");
-  const [type, setType]                     = useState<UnitType | "">("");
-  const [maxPrice, setMaxPrice]             = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [parsedFilters, setParsedFilters] = useState<ParsedFilters>({
+    area: "", maxPrice: null, unitType: "", keywords: ""
+  });
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [leadForm, setLeadForm]             = useState({ name: "", phone: "" });
   const [leadSubmitted, setLeadSubmitted]   = useState(false);
   const [leadLoading, setLeadLoading]       = useState(false);
+  const [activeFilter, setActiveFilter] = useState<UnitType | "all">("all");
+  useEffect(() => { loadProperties(); },[activeFilter]);
 
-  useEffect(() => { loadProperties(); }, [area, type, maxPrice]);
-
-  const loadProperties = async () => {
-    setLoading(true);
+const loadProperties = async () => {
+  setLoading(true);
+  try {
+    const parsed = parseSearchQuery(searchQuery);
+    
     let query = supabase
       .from("properties")
-      .select("id, title, description, price, area, address, unit_type, images, profiles(name, phone)")
-      .eq("status", "active")
-      .order("created_at", { ascending: false });
+      .select("*, profiles(name, phone)");
 
-    if (area !== "الكل") query = query.eq("area", area);
-    if (type)            query = query.eq("unit_type", type);
-    if (maxPrice)        query = query.lte("price", Number(maxPrice));
+    // 1. فلترة المنطقة
+    if (parsed.area) {
+      query = query.eq("area", parsed.area);
+    }
 
-    const { data } = await query;
-    setProperties((data as unknown as Property[]) ?? []);
+    // 2. فلترة السعر
+    if (parsed.maxPrice) {
+      query = query.lte("price", parsed.maxPrice);
+    }
+
+    // 3. فلترة النوع
+    const selectedType = activeFilter !== "all" ? activeFilter : parsed.unitType;
+    if (selectedType && selectedType !== "all") {
+      query = query.eq("unit_type", selectedType);
+    }
+
+    // 4. البحث النصي (السطر الحساس)
+    const cleanKeywords = parsed.keywords.trim();
+    if (cleanKeywords.length > 2) {
+      // تأكد إن مفيش مسافات بعد الفواصل جوه الـ string بتاع الـ or
+      query = query.or(`title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%`);
+    }
+
+    const { data, error } = await query.order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Supabase Error:", error.message);
+      throw error;
+    }
+    
+    setProperties(data || []);
+
+  }  catch (error: any) {
+  // ده هيطبع لك رسالة الخطأ واضحة بدل {}
+  console.error("Error details:", error.message || error);
+} finally {
     setLoading(false);
-  };
-
+  }
+};
  const handleLeadSubmit = async (e: React.FormEvent) => {
 
     e.preventDefault();
@@ -426,118 +629,136 @@ export default function PublicPageClient() {
           </p>
 
           {/* ── SEARCH BOX ── */}
+          {/* ── SMART SEARCH BOX ── */}
           <section
-            aria-label="بحث عن عقارات"
-            style={{
-              background: "rgba(255,255,255,0.04)",
-              backdropFilter: "blur(24px)",
-              WebkitBackdropFilter: "blur(24px)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              borderRadius: 20,
-              padding: "1.1rem 1.25rem",
-              display: "flex",
-              gap: "0.75rem",
-              flexWrap: "wrap",
-              maxWidth: 840,
-              margin: "0 auto",
-              boxShadow: "0 32px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
-            }}
+            aria-label="بحث ذكي عن عقارات"
+            style={{ maxWidth: 780, margin: "0 auto" }}
           >
-            {[
-              {
-                tag: "select" as const,
-                value: area,
-                onChange: (e: React.ChangeEvent<HTMLSelectElement>) => setArea(e.target.value),
-                label: "اختر المنطقة",
-                children: AREAS.map((a) => <option key={a} value={a}>{a}</option>),
-              },
-              {
-                tag: "select" as const,
-                value: type,
-                onChange: (e: React.ChangeEvent<HTMLSelectElement>) =>
-                  setType(e.target.value as UnitType | ""),
-                label: "اختر نوع الوحدة",
-                children: TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>),
-              },
-            ].map((field, i) => (
-              <select
-                key={i}
-                value={field.value}
-                onChange={field.onChange}
-                aria-label={field.label}
+            {/* Marketing text */}
+            <motion.p
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.5, duration: 0.6 }}
+              style={{
+                fontSize: 14, color: "#64748b", textAlign: "center",
+                marginBottom: "0.9rem", lineHeight: 1.7,
+              }}
+            >
+              خلي الذكاء الاصطناعي يساعدك تلاقي سكن مناسب لميزانيتك 🤖✨
+            </motion.p>
+
+            {/* Input Row */}
+            <div
+              style={{
+                background: "rgba(255,255,255,0.04)",
+                backdropFilter: "blur(24px)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 20,
+                padding: "0.75rem 0.75rem 0.75rem 0.9rem",
+                display: "flex",
+                gap: "0.65rem",
+                alignItems: "center",
+                boxShadow: "0 32px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
+                transition: "border-color 0.25s",
+              }}
+              onFocus={() => {/* يمكن إضافة glow لاحقاً */}}
+            >
+              {/* Search icon */}
+              <span style={{ fontSize: 18, flexShrink: 0, opacity: 0.5 }}>🔍</span>
+
+              {/* The Smart Input */}
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && loadProperties()}
+                placeholder="جرب تكتب: شقة بـ 5000 في المعادي 🏠"
+                aria-label="بحث ذكي"
                 className="field"
                 style={{
                   flex: 1,
-                  minWidth: 140,
-                  background: "rgba(15,23,42,0.7)",
-                  border: "1px solid rgba(255,255,255,0.09)",
-                  borderRadius: 12,
-                  padding: "12px 14px",
-                  fontFamily: "'Cairo', sans-serif",
-                  fontSize: 14,
-                  color: "#f8fafc",
+                  background: "transparent",
+                  border: "none",
                   outline: "none",
-                  cursor: "pointer",
-                  transition: "border-color 0.2s, box-shadow 0.2s",
+                  fontSize: 15,
+                  fontFamily: "'Cairo', sans-serif",
+                  color: "#f8fafc",
+                  padding: "8px 4px",
+                }}
+              />
+
+              {/* Clear button */}
+              {searchQuery && (
+                <button
+                  onClick={async () => {
+                    setSearchQuery("");
+                    setParsedFilters({ area: "", maxPrice: null, unitType: "", keywords: "" });
+                    setType("");
+                    // شغّل البحث بدون فلاتر مباشرة
+                    setLoading(true);
+                    const { data } = await supabase
+                      .from("properties")
+                      .select("id, title, description, price, area, address, unit_type, images, profiles(name, phone)")
+                      .eq("status", "active")
+                      .order("created_at", { ascending: false });
+                    setProperties((data as unknown as Property[]) ?? []);
+                    setLoading(false);
+                  }}
+                >✕</button>
+              )}
+
+              {/* Search Button */}
+              <button
+                onClick={loadProperties}
+                style={{
+                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  color: "#fff", border: "none", borderRadius: 14,
+                  padding: "11px 28px", fontFamily: "'Cairo', sans-serif",
+                  fontSize: 14, fontWeight: 700, cursor: "pointer",
+                  whiteSpace: "nowrap", flexShrink: 0,
+                  boxShadow: "0 0 0 1px rgba(16,185,129,0.4), 0 8px 28px rgba(16,185,129,0.45)",
+                  transition: "box-shadow 0.25s, transform 0.2s",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(16,185,129,0.6), 0 12px 36px rgba(16,185,129,0.6)";
+                  e.currentTarget.style.transform = "translateY(-1px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(16,185,129,0.4), 0 8px 28px rgba(16,185,129,0.45)";
+                  e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                {field.children}
-              </select>
-            ))}
+                بحث
+              </button>
+            </div>
 
-            <input
-              type="number"
-              placeholder="أقصى سعر (ج.م)"
-              value={maxPrice}
-              onChange={(e) => setMaxPrice(e.target.value)}
-              aria-label="أقصى سعر بالجنيه المصري"
-              className="field"
-              style={{
-                flex: 1,
-                minWidth: 140,
-                background: "rgba(15,23,42,0.7)",
-                border: "1px solid rgba(255,255,255,0.09)",
-                borderRadius: 12,
-                padding: "12px 14px",
-                fontFamily: "'Cairo', sans-serif",
-                fontSize: 14,
-                color: "#f8fafc",
-                outline: "none",
-                transition: "border-color 0.2s, box-shadow 0.2s",
-              }}
-            />
-
-            <button
-              onClick={loadProperties}
-              aria-label="بحث"
-              style={{
-                background: "linear-gradient(135deg, #10b981, #059669)",
-                color: "#fff",
-                border: "none",
-                borderRadius: 12,
-                padding: "12px 30px",
-                fontFamily: "'Cairo', sans-serif",
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                /* Emerald glow on the search button */
-                boxShadow: "0 0 0 1px rgba(16,185,129,0.4), 0 8px 28px rgba(16,185,129,0.45)",
-                transition: "box-shadow 0.25s, transform 0.2s",
-              }}
-              onMouseEnter={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                  "0 0 0 1px rgba(16,185,129,0.6), 0 12px 36px rgba(16,185,129,0.6)";
-                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(-1px)";
-              }}
-              onMouseLeave={(e) => {
-                (e.currentTarget as HTMLButtonElement).style.boxShadow =
-                  "0 0 0 1px rgba(16,185,129,0.4), 0 8px 28px rgba(16,185,129,0.45)";
-                (e.currentTarget as HTMLButtonElement).style.transform = "translateY(0)";
-              }}
-            >
-              🔍 بحث
-            </button>
+            {/* Parsed Filters Feedback — يوضح للمستخدم إيه اللي فهمه */}
+            {(parsedFilters.area || parsedFilters.maxPrice || parsedFilters.unitType) && (
+              <motion.div
+                initial={{ opacity: 0, y: -6 }}
+                animate={{ opacity: 1, y: 0 }}
+                style={{
+                  display: "flex", gap: 8, flexWrap: "wrap",
+                  marginTop: "0.75rem", justifyContent: "center",
+                }}
+              >
+                {parsedFilters.area && (
+                  <span style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 99, fontSize: 11, fontWeight: 700, color: "#10b981", padding: "4px 12px" }}>
+                    📍 {parsedFilters.area}
+                  </span>
+                )}
+                {parsedFilters.maxPrice && (
+                  <span style={{ background: "rgba(251,146,60,0.12)", border: "1px solid rgba(251,146,60,0.3)", borderRadius: 99, fontSize: 11, fontWeight: 700, color: "#fb923c", padding: "4px 12px" }}>
+                    💰 حتى {parsedFilters.maxPrice.toLocaleString()} ج.م
+                  </span>
+                )}
+                {parsedFilters.unitType && (
+                  <span style={{ background: "rgba(96,165,250,0.12)", border: "1px solid rgba(96,165,250,0.3)", borderRadius: 99, fontSize: 11, fontWeight: 700, color: "#60a5fa", padding: "4px 12px" }}>
+                    🏠 {TYPE_LABELS[parsedFilters.unitType as UnitType]}
+                  </span>
+                )}
+              </motion.div>
+            )}
           </section>
         </motion.header>
 
@@ -562,37 +783,39 @@ export default function PublicPageClient() {
               marginBottom: "2.5rem",
             }}
           >
-            {TYPES.map((t) => {
-              const active = type === t.value;
-              return (
-                <button
-                  key={t.value}
-                  onClick={() => setType(t.value as UnitType | "")}
-                  aria-pressed={active}
-                  className={active ? "chip-active" : ""}
-                  style={{
-                    padding: "10px 22px",
-                    borderRadius: 99,
-                    border: `1.5px solid ${active ? "rgba(16,185,129,0.7)" : "rgba(255,255,255,0.09)"}`,
-                    background: active ? "rgba(16,185,129,0.14)" : "rgba(255,255,255,0.04)",
-                    color: active ? "#10b981" : "#94a3b8",
-                    fontFamily: "'Cairo', sans-serif",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    cursor: "pointer",
-                    backdropFilter: "blur(12px)",
-                    WebkitBackdropFilter: "blur(12px)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "0.4rem",
-                    transition: "all 0.22s ease",
-                  }}
-                >
-                  <span>{t.icon}</span>
-                  {t.label}
-                </button>
-              );
-            })}
+              {TYPES.map((t) => {
+                // التعديل هنا: نستخدم activeFilter بدل type
+                const isActive = activeFilter === (t.value || "all"); 
+                
+                return (
+                  <button
+                    key={t.value || "all"}
+                    // التعديل هنا: نحدث الحالة الجديدة عند الضغط
+                    onClick={() => setActiveFilter((t.value || "all") as UnitType | "all")}
+                    className={isActive ? "chip-active" : ""}
+                    style={{
+                      cursor: "pointer",
+                      padding: "0.8rem 1.6rem",
+                      borderRadius: "1.2rem",
+                      fontSize: "0.95rem",
+                      fontWeight: 600,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.6rem",
+                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
+                      // التعديل هنا: نربط الألوان بـ isActive الجديدة
+                      border: `1.5px solid ${isActive ? "rgba(16,185,129,0.7)" : "rgba(255,255,255,0.06)"}`,
+                      background: isActive ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.03)",
+                      color: isActive ? "#10b981" : "#94a3b8",
+                      whiteSpace: "nowrap",
+                      boxShadow: isActive ? "0 0 20px rgba(16,185,129,0.15)" : "none",
+                    }}
+                  >
+                    <span style={{ fontSize: "1.2rem" }}>{t.icon}</span>
+                    {t.label}
+                  </button>
+                );
+              })}
           </div>
 
           {/* Results count */}
@@ -620,10 +843,26 @@ export default function PublicPageClient() {
               <p style={{ color: "#64748b", fontSize: 14 }}>جاري التحميل...</p>
             </div>
           ) : properties.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "6rem 0" }}>
-              <div style={{ fontSize: 60, marginBottom: "1rem" }}>🏚️</div>
-              <p style={{ color: "#64748b", fontSize: 16, fontWeight: 600 }}>لا توجد إعلانات مطابقة حالياً</p>
-            </div>
+              <div style={{ textAlign: "center", padding: "6rem 0" }}>
+                <div style={{ fontSize: 60, marginBottom: "1rem" }}>🏚️</div>
+                <p style={{ color: "#64748b", fontSize: 16, fontWeight: 700, marginBottom: 12 }}>
+                  ملقناش طلبك بالظبط
+                </p>
+                <p style={{ color: "#475569", fontSize: 13, lineHeight: 1.8, marginBottom: 20 }}>
+                  سيب مواصفاتك في &quot;اطلب شقتك&quot; وهنبلغك فوراً 📩
+                </p>
+                <button
+                  onClick={() => setSearchQuery("")}
+                  style={{
+                    background: "rgba(16,185,129,0.1)", color: "#10b981",
+                    border: "1px solid rgba(16,185,129,0.3)", borderRadius: 12,
+                    padding: "10px 24px", fontSize: 13, fontWeight: 700,
+                    cursor: "pointer", fontFamily: "'Cairo', sans-serif",
+                  }}
+                >
+                  إلغاء الفلاتر وعرض الكل
+                </button>
+              </div>
           ) : (
             /* Staggered grid */
             <motion.section
