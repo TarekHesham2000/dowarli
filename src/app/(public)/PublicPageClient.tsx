@@ -5,7 +5,7 @@ import { supabase } from "@/lib/supabase";
 import Banner from "@/components/shared/Banner";
 import Image from "next/image";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
-
+import ChatBot from '@/components/shared/ChatBot'
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 type Property = {
@@ -624,8 +624,7 @@ const loadProperties = async () => {
               lineHeight: 1.85,
             }}
           >
-            آلاف الإعلانات من ملاك موثوقين في كل مكان —{" "}
-            <strong style={{ color: "#f8fafc" }}>مع دَورلي</strong>
+
           </p>
 
           {/* ── SEARCH BOX ── */}
@@ -1464,6 +1463,21 @@ const loadProperties = async () => {
             </a>
           ))}
         </nav>
+        <ChatBot
+            properties={properties}
+            onActiveFilterChange={(filter) => setActiveFilter(filter)}
+            onSearchQueryChange={(query) => setSearchQuery(query)}
+            onFilter={async ({ unitType, area, maxPrice, keywords }) => {
+              // يغير الفلاتر مباشرة ويعمل search
+              if (unitType) setActiveFilter(unitType)
+              
+              const parts = [area, keywords, maxPrice?.toString()].filter(Boolean)
+              setSearchQuery(parts.join(' '))
+              
+              // شغّل loadProperties بعد ما الـ state تتحدث
+              setTimeout(() => loadProperties(), 50)
+            }}
+        />
       </div>
     </>
   );
