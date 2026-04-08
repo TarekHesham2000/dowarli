@@ -59,31 +59,33 @@ type Tab = 'home' | 'properties' | 'brokers' | 'transactions' | 'leads' | 'setti
 
 // ── Design tokens ──────────────────────────────────────────────
 const C = {
-  bg: '#f1f5f9',
+  bg: '#f8fafc',
   white: '#ffffff',
   border: '#e2e8f0',
-  navBg: '#1e293b',
+  navBg: '#0f172a',
   navText: '#f8fafc',
-  accent: '#3b82f6',
-  accentLight: '#eff6ff',
-  accentBorder: '#bfdbfe',
-  green: '#16a34a',
-  greenLight: '#f0fdf4',
-  greenBorder: '#bbf7d0',
+  accent: '#2563eb',
+  accentLight: '#dbeafe',
+  accentBorder: '#93c5fd',
+  green: '#059669',
+  greenLight: '#ecfdf5',
+  greenBorder: '#a7f3d0',
   red: '#dc2626',
-  redLight: '#fef2f2',
+  redLight: '#fee2e2',
   amber: '#d97706',
   amberLight: '#fef3c7',
-  text: '#0f172a',
+  text: '#1e293b',
   muted: '#64748b',
   faint: '#94a3b8',
+  darkText: '#0f172a',
 }
 
 const card: React.CSSProperties = {
   background: C.white,
-  borderRadius: 16,
+  borderRadius: 14,
   border: `1px solid ${C.border}`,
   overflow: 'hidden',
+  boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
 }
 
 export default function AdminDashboard() {
@@ -439,36 +441,39 @@ const deleteProperty = async () => {
     : null
 
   if (!authReady || loading) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cairo, sans-serif', background: C.bg }}>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cairo, sans-serif', background: 'linear-gradient(135deg, #f8fafc 0%, #ecf7fb 100%)' }}>
       <div style={{ textAlign: 'center' }}>
-        <div style={{ width: 40, height: 40, border: `3px solid ${C.accentBorder}`, borderTop: `3px solid ${C.accent}`, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 12px' }} />
-        <p style={{ color: C.muted, fontSize: 14 }}>جاري التحميل...</p>
+        <div style={{ width: 48, height: 48, border: `3px solid ${C.accentBorder}`, borderTop: `3px solid ${C.accent}`, borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px' }} />
+        <p style={{ color: C.muted, fontSize: 15, fontWeight: 600 }}>⏳ جاري تحميل لوحة التحكم...</p>
       </div>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, fontFamily: 'Cairo, sans-serif', direction: 'rtl' }}>
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%)', fontFamily: 'Cairo, sans-serif', direction: 'rtl' }}>
 
       {/* ── REJECT MODAL ── */}
       {rejectId && (
         <div onClick={() => { setRejectId(null); setRejectReason('') }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: C.white, borderRadius: 20, padding: '1.75rem', width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h2 style={{ fontSize: 17, fontWeight: 900, marginBottom: '1rem', color: C.text }}>سبب الرفض</h2>
-            <textarea rows={3} placeholder="اكتب سبب الرفض..." value={rejectReason}
+            style={{ background: C.white, borderRadius: 16, padding: '2rem', width: '100%', maxWidth: 450, boxShadow: '0 20px 80px rgba(0,0,0,0.25)', border: `1px solid ${C.border}` }}>
+            <h2 style={{ fontSize: 18, fontWeight: 900, marginBottom: '0.5rem', color: C.text }}>❌ سبب الرفض</h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: '1.5rem', margin: '0 0 1.5rem' }}>يرجى توضيح السبب وراء الرفض للمالك</p>
+            <textarea rows={4} placeholder="اكتب سبب الرفض بوضوح..." value={rejectReason}
               onChange={e => setRejectReason(e.target.value)}
-              style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '12px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 14, outline: 'none', resize: 'none', marginBottom: '1rem', boxSizing: 'border-box' }} />
+              style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 14, outline: 'none', resize: 'none', marginBottom: '1.5rem', boxSizing: 'border-box', color: C.text, fontWeight: 500, transition: 'all 0.2s' }}
+              onFocus={e => e.target.style.borderColor = C.accent}
+              onBlur={e => e.target.style.borderColor = C.border} />
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={rejectType === 'property' ? rejectProperty : rejectTransaction}
-                style={{ flex: 1, background: C.red, color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                تأكيد الرفض
+                style={{ flex: 1, background: C.red, color: 'white', border: 'none', borderRadius: 8, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: `0 2px 8px rgba(220,38,38,0.3)` }}>
+                ✅ تأكيد الرفض
               </button>
               <button onClick={() => { setRejectId(null); setRejectReason('') }}
-                style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                إلغاء
+                style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
+                ❌ إلغاء
               </button>
             </div>
           </div>
@@ -478,23 +483,23 @@ const deleteProperty = async () => {
       {/* ── Phase 2: DELETE CONFIRM MODAL ── */}
       {deletePropertyId !== null && (
         <div onClick={() => setDeletePropertyId(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: '1rem' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: '1rem' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: C.white, borderRadius: 20, padding: '2rem', width: '100%', maxWidth: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', textAlign: 'center' }}>
-            <div style={{ width: 56, height: 56, background: C.redLight, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, margin: '0 auto 1rem' }}>🗑️</div>
-            <h2 style={{ fontSize: 17, fontWeight: 900, color: C.text, marginBottom: 8 }}>حذف الإعلان</h2>
-            <p style={{ fontSize: 13, color: C.muted, marginBottom: '1.5rem', lineHeight: 1.7 }}>
-              هل أنت متأكد من حذف هذا الإعلان؟<br />
-              <strong style={{ color: C.red }}>لا يمكن التراجع عن هذا الإجراء.</strong>
+            style={{ background: C.white, borderRadius: 16, padding: '2.5rem', width: '100%', maxWidth: 420, boxShadow: '0 20px 80px rgba(0,0,0,0.25)', textAlign: 'center', border: `1px solid ${C.border}` }}>
+            <div style={{ width: 64, height: 64, background: C.redLight, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32, margin: '0 auto 1.5rem' }}>🗑️</div>
+            <h2 style={{ fontSize: 18, fontWeight: 900, color: C.text, marginBottom: 10 }}>حذف الإعلان نهائياً</h2>
+            <p style={{ fontSize: 14, color: C.muted, marginBottom: '2rem', lineHeight: 1.8 }}>
+              هل أنت متأكد من حذف هذا الإعلان بشكل نهائي؟<br />
+              <strong style={{ color: C.red }}>⚠️ لا يمكن التراجع عن هذا الإجراء.</strong>
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={deleteProperty} disabled={deletingProperty}
-                style={{ flex: 1, background: C.red, color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: deletingProperty ? 'not-allowed' : 'pointer', opacity: deletingProperty ? 0.6 : 1 }}>
-                {deletingProperty ? 'جاري الحذف...' : 'نعم، احذف'}
+                style={{ flex: 1, background: C.red, color: 'white', border: 'none', borderRadius: 8, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: deletingProperty ? 'not-allowed' : 'pointer', opacity: deletingProperty ? 0.6 : 1, transition: 'all 0.2s', boxShadow: deletingProperty ? 'none' : `0 2px 8px rgba(220,38,38,0.3)` }}>
+                {deletingProperty ? '⏳ جاري الحذف...' : '✅ نعم، احذف'}
               </button>
               <button onClick={() => setDeletePropertyId(null)}
-                style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                إلغاء
+                style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
+                ❌ إلغاء
               </button>
             </div>
           </div>
@@ -504,53 +509,54 @@ const deleteProperty = async () => {
       {/* ── PROPERTY MODAL ── */}
       {selectedProperty && (
         <div onClick={() => setSelectedProperty(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' }}>
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' }}>
           <div onClick={e => e.stopPropagation()}
-            style={{ background: C.white, borderRadius: 20, width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <div style={{ background: 'linear-gradient(135deg, #1e40af, #1d4ed8)', padding: '1.25rem', borderRadius: '20px 20px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h2 style={{ fontSize: 16, fontWeight: 900, color: 'white', margin: '0 0 4px' }}>{selectedProperty.title}</h2>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', margin: 0 }}>📍 {selectedProperty.area} — {selectedProperty.address}</p>
+            style={{ background: C.white, borderRadius: 16, width: '100%', maxWidth: 540, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 80px rgba(0,0,0,0.25)', border: `1px solid ${C.border}` }}>
+            <div style={{ background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', padding: '1.5rem', borderRadius: '16px 16px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 900, color: 'white', margin: '0 0 6px' }}>🏠 {selectedProperty.title}</h2>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.85)', margin: 0, display: 'flex', gap: 8, alignItems: 'center' }}>📍 {selectedProperty.area} — {selectedProperty.address}</p>
               </div>
               <button onClick={() => setSelectedProperty(null)}
-                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', width: 36, height: 36, borderRadius: '50%', cursor: 'pointer', fontSize: 16, fontWeight: 600, transition: 'all 0.2s' }}>✕</button>
             </div>
-            <div style={{ padding: '1.25rem' }}>
+            <div style={{ padding: '1.5rem' }}>
               {selectedProperty.images?.length > 0 && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 8, marginBottom: '1rem' }}>
-                  {selectedProperty.images.map((img, i) => <img key={i} src={img} alt="" style={{ width: '100%', height: 90, objectFit: 'cover', borderRadius: 8 }} />)}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: '1.5rem' }}>
+                  {selectedProperty.images.map((img, i) => <img key={i} src={img} alt="" style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 10 }} />)}
                 </div>
               )}
-              <div style={{ display: 'flex', gap: 10, marginBottom: '1rem' }}>
-                <div style={{ flex: 1, background: C.accentLight, borderRadius: 10, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 11, color: C.muted }}>السعر</div>
-                  <div style={{ fontSize: 18, fontWeight: 900, color: C.accent }}>{selectedProperty.price?.toLocaleString()} ج.م</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: '1.5rem' }}>
+                <div style={{ background: C.accentLight, borderRadius: 12, padding: '14px 16px', border: `1px solid ${C.accentBorder}` }}>
+                  <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>💰 السعر</div>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: C.accent, letterSpacing: '-0.5px' }}>{selectedProperty.price?.toLocaleString()}</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>ج.م</div>
                 </div>
-                <div style={{ flex: 1, background: C.bg, borderRadius: 10, padding: '10px 14px' }}>
-                  <div style={{ fontSize: 11, color: C.muted }}>المالك</div>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{selectedProperty.profiles?.name}</div>
-                  <div style={{ fontSize: 12, color: C.muted }}>{selectedProperty.profiles?.phone}</div>
+                <div style={{ background: C.bg, borderRadius: 12, padding: '14px 16px', border: `1px solid ${C.border}` }}>
+                  <div style={{ fontSize: 12, color: C.muted, fontWeight: 600, marginBottom: 4 }}>👤 المالك</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: C.text }}>{selectedProperty.profiles?.name}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>📱 {selectedProperty.profiles?.phone}</div>
                 </div>
               </div>
-              {selectedProperty.description && <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.8, marginBottom: '1rem' }}>{selectedProperty.description}</p>}
+              {selectedProperty.description && <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.8, marginBottom: '1.5rem', background: C.bg, padding: '12px 14px', borderRadius: 10 }}>{selectedProperty.description}</p>}
 
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                 {selectedProperty.status === 'pending' && (
                   <>
                     <button onClick={() => approveProperty(selectedProperty)}
-                      style={{ flex: 1, background: C.green, color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                      موافقة ✅
+                      style={{ flex: 1, background: 'linear-gradient(135deg, #059669 0%, #047857 100%)', color: 'white', border: 'none', borderRadius: 9, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: `0 2px 8px rgba(5,150,105,0.3)` }}>
+                      ✅ موافقة
                     </button>
                     <button onClick={() => { setRejectId(selectedProperty.id); setRejectType('property'); setSelectedProperty(null) }}
-                      style={{ flex: 1, background: C.red, color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                      رفض ❌
+                      style={{ flex: 1, background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)', color: 'white', border: 'none', borderRadius: 9, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: `0 2px 8px rgba(220,38,38,0.3)` }}>
+                      ❌ رفض
                     </button>
                   </>
                 )}
                 {/* Phase 2: Delete button visible for ALL statuses */}
                 <button onClick={() => { setDeletePropertyId(selectedProperty.id); setSelectedProperty(null) }}
-                  style={{ flex: selectedProperty.status === 'pending' ? '0 0 auto' : 1, background: C.redLight, color: C.red, border: `1px solid #fecaca`, borderRadius: 10, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ flex: selectedProperty.status === 'pending' ? '0 0 auto' : 1, background: C.redLight, color: C.red, border: `1px solid #fecaca`, borderRadius: 9, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
                   🗑️ حذف الإعلان
                 </button>
               </div>
@@ -560,40 +566,43 @@ const deleteProperty = async () => {
       )}
 
       {/* ── NAV ── */}
-      <nav style={{ background: C.navBg, padding: '0 1.5rem', height: 60, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 2px 12px rgba(0,0,0,0.15)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, background: C.accent, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>🏘️</div>
-          <span style={{ fontSize: 18, fontWeight: 900, color: C.navText }}>دورلي</span>
-          <span style={{ background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 20 }}>لوحة الأدمن</span>
+      <nav style={{ background: C.navBg, padding: '0 1.5rem', height: 64, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 4px 20px rgba(0,0,0,0.1)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, background: 'linear-gradient(135deg, #2563eb 0%, #1e40af 100%)', borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900, color: 'white', boxShadow: '0 4px 12px rgba(37,99,235,0.3)' }}>🏘️</div>
+          <div>
+            <span style={{ fontSize: 16, fontWeight: 900, color: C.navText, display: 'block', lineHeight: 1 }}>دورلي</span>
+            <span style={{ background: 'rgba(59,130,246,0.2)', color: 'rgba(255,255,255,0.8)', fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 4, display: 'inline-block', marginTop: 2 }}>Admin</span>
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
           <button onClick={loadAll}
-            style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: C.navText, borderRadius: 8, padding: '6px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 13, cursor: 'pointer' }}>
+            style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: C.navText, borderRadius: 8, padding: '8px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
             🔄 تحديث
           </button>
           <button onClick={() => supabase.auth.signOut().then(() => router.push('/login'))}
-            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.5)', fontSize: 13, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
+            style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.6)', fontSize: 13, cursor: 'pointer', fontFamily: 'Cairo, sans-serif', fontWeight: 600, transition: 'color 0.2s' }}>
             خروج
           </button>
         </div>
       </nav>
 
       {/* ── TABS ── */}
-      <div style={{ background: C.white, borderBottom: `1px solid ${C.border}`, padding: '0 1.5rem', display: 'flex', gap: 2, overflowX: 'auto' }}>
+      <div style={{ background: C.white, borderBottom: `1px solid ${C.border}`, padding: '0 1.5rem', display: 'flex', gap: 0, overflowX: 'auto', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{
-              padding: '14px 16px', border: 'none', background: 'none',
+              padding: '14px 18px', border: 'none', background: 'none',
               fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700,
               cursor: 'pointer', whiteSpace: 'nowrap',
               color: tab === t.id ? C.accent : C.faint,
-              borderBottom: tab === t.id ? `2px solid ${C.accent}` : '2px solid transparent',
+              borderBottom: tab === t.id ? `3px solid ${C.accent}` : `3px solid transparent`,
               display: 'flex', alignItems: 'center', gap: 6,
-              transition: 'color 0.15s',
+              transition: 'all 0.2s ease',
+              position: 'relative',
             }}>
             <span>{t.icon}</span> {t.label}
             {t.badge ? (
-              <span style={{ background: C.red, color: 'white', borderRadius: '50%', width: 18, height: 18, fontSize: 10, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <span style={{ background: C.red, color: 'white', borderRadius: '50%', width: 18, height: 18, fontSize: 9, fontWeight: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 18 }}>
                 {t.badge}
               </span>
             ) : null}
@@ -601,33 +610,33 @@ const deleteProperty = async () => {
         ))}
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem 1rem' }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '2rem 1.5rem' }}>
 
         {/* ══ HOME ══ */}
         {tab === 'home' && (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1.25rem', marginBottom: '2rem' }}>
               {[
                 { n: stats.totalBrokers, l: 'ملاك مسجلين', icon: '👥', color: C.accent, bg: C.accentLight },
                 { n: stats.publishedProperties, l: 'إعلانات نشطة', icon: '✅', color: C.green, bg: C.greenLight },
                 { n: stats.rejectedProperties, l: 'مرفوضة', icon: '❌', color: C.red, bg: C.redLight },
-                { n: stats.totalLeads, l: 'عملاء مهتمين', icon: '📋', color: '#7e22ce', bg: '#faf5ff' },
+                { n: stats.totalLeads, l: 'عملاء مهتمين', icon: '📋', color: '#0891b2', bg: '#ecf7fb' },
                 { n: stats.pendingProperties, l: 'إعلانات معلقة', icon: '⏳', color: C.amber, bg: C.amberLight },
                 { n: stats.pendingTransactions, l: 'شحنات معلقة', icon: '💳', color: C.red, bg: C.redLight },
               ].map((s, i) => (
-                <div key={i} style={{ ...card, padding: '1.25rem', textAlign: 'center', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                  <div style={{ width: 44, height: 44, background: s.bg, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, margin: '0 auto 10px' }}>{s.icon}</div>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: s.color }}>{s.n}</div>
-                  <div style={{ fontSize: 12, color: C.faint, marginTop: 4 }}>{s.l}</div>
+                <div key={i} style={{ ...card, padding: '1.5rem', textAlign: 'center', boxShadow: '0 2px 8px rgba(0,0,0,0.06)', transition: 'all 0.2s ease', border: `1px solid ${C.border}` }}>
+                  <div style={{ width: 52, height: 52, background: s.bg, borderRadius: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, margin: '0 auto 12px' }}>{s.icon}</div>
+                  <div style={{ fontSize: 32, fontWeight: 900, color: s.color, letterSpacing: '-0.5px' }}>{s.n}</div>
+                  <div style={{ fontSize: 13, color: C.muted, marginTop: 6, fontWeight: 500 }}>{s.l}</div>
                 </div>
               ))}
             </div>
             {stats.pendingProperties > 0 && (
-              <div style={{ background: C.amberLight, border: `1px solid #fde68a`, borderRadius: 12, padding: '12px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <p style={{ fontSize: 14, fontWeight: 700, color: '#92400e', margin: 0 }}>⚠️ {stats.pendingProperties} إعلان ينتظر مراجعتك</p>
+              <div style={{ background: 'linear-gradient(135deg, #fef3c7 0%, #fde68a 100%)', border: `2px solid #fcd34d`, borderRadius: 12, padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 8px rgba(217,119,6,0.15)' }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#92400e', margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>⚠️ <strong>{stats.pendingProperties}</strong> إعلان ينتظر مراجعتك</p>
                 <button onClick={() => setTab('properties')}
-                  style={{ background: C.amber, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                  راجع الآن
+                  style={{ background: 'linear-gradient(135deg, #d97706 0%, #b45309 100%)', color: 'white', border: 'none', borderRadius: 8, padding: '9px 18px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s', boxShadow: `0 2px 8px rgba(217,119,6,0.3)` }}>
+                  🔍 راجع الآن
                 </button>
               </div>
             )}
@@ -638,12 +647,12 @@ const deleteProperty = async () => {
         {tab === 'properties' && (
           <div style={card}>
             {/* Header + controls */}
-            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexWrap: 'wrap', gap: 8 }}>
-                <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: C.text }}>
-                  الإعلانات ({filteredProperties.length})
+            <div style={{ padding: '1.5rem 1.5rem', borderBottom: `1px solid ${C.border}`, background: 'linear-gradient(135deg, rgba(37,99,235,0.02) 0%, transparent 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: 8 }}>
+                <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0, color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  🏠 الإعلانات ({filteredProperties.length})
                   {ownerFilterName && (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, background: C.accentLight, borderRadius: 20, padding: '2px 10px', marginRight: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: C.accent, background: C.accentLight, borderRadius: 6, padding: '4px 10px', marginRight: 0 }}>
                       👤 {ownerFilterName}
                     </span>
                   )}
@@ -651,13 +660,13 @@ const deleteProperty = async () => {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   {ownerFilter && (
                     <button onClick={clearOwnerFilter}
-                      style={{ background: C.redLight, color: C.red, border: '1px solid #fecaca', borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                      ✕ إلغاء فلتر المالك
+                      style={{ background: C.redLight, color: C.red, border: '1px solid #fecaca', borderRadius: 8, padding: '7px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
+                      ✕ إلغاء فلتر
                     </button>
                   )}
                   <select value={propertyStatusFilter}
                     onChange={e => setPropertyStatusFilter(e.target.value as 'all' | 'pending' | 'active' | 'rejected')}
-                    style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, background: C.bg, color: C.text }}>
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: '7px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, background: C.bg, color: C.text, fontWeight: 500, transition: 'border-color 0.2s' }}>
                     <option value="all">كل الحالات</option>
                     <option value="pending">معلق</option>
                     <option value="active">نشط</option>
@@ -667,57 +676,60 @@ const deleteProperty = async () => {
               </div>
               {/* Phase 2: Search input */}
               <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: C.faint, pointerEvents: 'none' }}>🔍</span>
+                <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: C.faint, pointerEvents: 'none' }}>🔍</span>
                 <input
                   type="text"
                   placeholder="ابحث باسم الإعلان أو اسم المالك..."
                   value={propertySearch}
                   onChange={e => setPropertySearch(e.target.value)}
-                  style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '9px 38px 9px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg, color: C.text, boxSizing: 'border-box', transition: 'border-color 0.15s' }}
+                  style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 38px 10px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg, color: C.text, boxSizing: 'border-box', transition: 'all 0.2s', fontWeight: 500 }}
                   onFocus={e => e.target.style.borderColor = C.accent}
                   onBlur={e => e.target.style.borderColor = C.border}
                 />
                 {propertySearch && (
                   <button onClick={() => setPropertySearch('')}
-                    style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: C.faint, fontSize: 14 }}>✕</button>
+                    style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: C.faint, fontSize: 14, transition: 'color 0.2s' }}>✕</button>
                 )}
               </div>
             </div>
 
             {filteredProperties.length === 0 ? (
-              <p style={{ textAlign: 'center', color: C.faint, padding: '2rem' }}>لا توجد إعلانات مطابقة 🔍</p>
+              <p style={{ textAlign: 'center', color: C.faint, padding: '3rem 1rem', fontSize: 14 }}>لا توجد إعلانات مطابقة 🔍</p>
             ) : filteredProperties.map(p => (
               <div key={p.id}
-                style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', transition: 'background 0.15s' }}
-                onMouseEnter={e => e.currentTarget.style.background = C.bg}
+                style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1.25rem', transition: 'all 0.2s', cursor: 'pointer' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,99,235,0.02)'}
                 onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 {/* Clickable info area */}
                 <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setSelectedProperty(p)}>
-                  <p style={{ fontSize: 14, fontWeight: 800, margin: '0 0 3px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.text }}>{p.title}</p>
-                  <p style={{ fontSize: 12, color: C.faint, margin: 0 }}>
+                  <p style={{ fontSize: 15, fontWeight: 800, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: C.text }}>{p.title}</p>
+                  <p style={{ fontSize: 13, color: C.muted, margin: 0, display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
                     {/* Phase 2: Owner name is clickable to filter */}
                     <span
                       onClick={e => { e.stopPropagation(); filterByOwner(p.profiles?.id) }}
-                      style={{ color: C.accent, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                      style={{ color: C.accent, fontWeight: 600, cursor: 'pointer', textDecoration: 'none', transition: 'all 0.2s' }}
                       title="اعرض كل إعلانات هذا المالك">
-                      {p.profiles?.name}
+                      👤 {p.profiles?.name}
                     </span>
-                    {' · '}{p.area} · {p.price?.toLocaleString()} ج.م
+                    <span style={{ color: C.faint }}>•</span>
+                    <span>{p.area}</span>
+                    <span style={{ color: C.faint }}>•</span>
+                    <span style={{ fontWeight: 700, color: C.text }}>{p.price?.toLocaleString()} ج.م</span>
                   </p>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                   <span style={{
                     background: p.status === 'active' ? C.greenLight : p.status === 'pending' ? C.amberLight : C.redLight,
                     color: p.status === 'active' ? C.green : p.status === 'pending' ? C.amber : C.red,
-                    borderRadius: 20, fontSize: 11, fontWeight: 700, padding: '4px 12px', whiteSpace: 'nowrap',
+                    borderRadius: 6, fontSize: 11, fontWeight: 700, padding: '5px 11px', whiteSpace: 'nowrap',
                   }}>
-                    {p.status === 'active' ? 'نشط' : p.status === 'pending' ? 'معلق' : 'مرفوض'}
+                    {p.status === 'active' ? '✅ نشط' : p.status === 'pending' ? '⏳ معلق' : '❌ مرفوض'}
                   </span>
                   {/* Phase 2: Inline delete button */}
                   <button
                     onClick={e => { e.stopPropagation(); setDeletePropertyId(p.id) }}
                     title="حذف الإعلان"
-                    style={{ background: C.redLight, color: C.red, border: '1px solid #fecaca', borderRadius: 8, padding: '5px 10px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                    style={{ background: C.redLight, color: C.red, border: '1px solid #fecaca', borderRadius: 6, padding: '6px 10px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.2s' }}>
                     🗑️
                   </button>
                 </div>
@@ -729,25 +741,25 @@ const deleteProperty = async () => {
         {/* ══ BROKERS ══ */}
         {tab === 'brokers' && (
           <div style={card}>
-            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-                <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: C.text }}>الملاك ({filteredBrokers.length})</h2>
+            <div style={{ padding: '1.5rem 1.5rem', borderBottom: `1px solid ${C.border}`, background: 'linear-gradient(135deg, rgba(37,99,235,0.02) 0%, transparent 100%)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+                <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0, color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>👥 الملاك ({filteredBrokers.length})</h2>
               </div>
               {/* Phase 2: Broker search */}
               <div style={{ position: 'relative' }}>
-                <span style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: C.faint, pointerEvents: 'none' }}>🔍</span>
+                <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: C.faint, pointerEvents: 'none' }}>🔍</span>
                 <input
                   type="text"
                   placeholder="ابحث باسم المالك أو رقم التليفون..."
                   value={brokerSearch}
                   onChange={e => setBrokerSearch(e.target.value)}
-                  style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '9px 38px 9px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg, color: C.text, boxSizing: 'border-box', transition: 'border-color 0.15s' }}
+                  style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '10px 38px 10px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg, color: C.text, boxSizing: 'border-box', transition: 'all 0.2s', fontWeight: 500 }}
                   onFocus={e => e.target.style.borderColor = C.accent}
                   onBlur={e => e.target.style.borderColor = C.border}
                 />
                 {brokerSearch && (
                   <button onClick={() => setBrokerSearch('')}
-                    style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: C.faint, fontSize: 14 }}>✕</button>
+                    style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: C.faint, fontSize: 14, transition: 'color 0.2s' }}>✕</button>
                 )}
               </div>
             </div>
@@ -757,28 +769,34 @@ const deleteProperty = async () => {
               </div>
             )}
             {filteredBrokers.length === 0 ? (
-              <p style={{ textAlign: 'center', color: C.faint, padding: '2rem' }}>لا يوجد ملاك مطابقون</p>
+              <p style={{ textAlign: 'center', color: C.faint, padding: '3rem 1rem', fontSize: 14 }}>لا يوجد ملاك مطابقون</p>
             ) : filteredBrokers.map(b => (
-              <div key={b.id} style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+              <div key={b.id} style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', transition: 'all 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,99,235,0.02)'}
+                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                 <div style={{ flex: 1, minWidth: 200 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-                    <div style={{ width: 38, height: 38, background: C.accentLight, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 900, color: C.accent, flexShrink: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                    <div style={{ width: 42, height: 42, background: 'linear-gradient(135deg, rgba(37,99,235,0.1) 0%, rgba(37,99,235,0.05) 100%)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, fontWeight: 900, color: C.accent, flexShrink: 0, border: `2px solid ${C.accentLight}` }}>
                       {b.name?.charAt(0)}
                     </div>
                     <div>
                       {/* Phase 2: Broker name is clickable to filter his properties */}
                       <p
                         onClick={() => filterByOwner(b.id)}
-                        style={{ fontSize: 14, fontWeight: 800, margin: 0, color: C.accent, cursor: 'pointer', textDecoration: 'underline', textUnderlineOffset: 2 }}
+                        style={{ fontSize: 15, fontWeight: 800, margin: 0, color: C.accent, cursor: 'pointer', textDecoration: 'none', transition: 'all 0.2s' }}
                         title="عرض كل إعلانات هذا المالك">
                         {b.name}
                       </p>
-                      <p style={{ fontSize: 12, color: C.faint, margin: 0 }}>{b.phone}</p>
+                      <p style={{ fontSize: 12, color: C.muted, margin: 0, marginTop: 2 }}>📱 {b.phone}</p>
                     </div>
                   </div>
-                  <p style={{ fontSize: 12, color: C.muted, margin: 0, marginRight: 48 }}>
-                    الرصيد: <strong style={{ color: C.green }}>{b.wallet_balance} ج.م</strong>
-                  </p>
+                  <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, color: C.muted }}>
+                    <span><strong style={{ color: C.green }}>💰 {b.wallet_balance} ج.م</strong></span>
+                    <span style={{ color: C.faint }}>•</span>
+                    <span style={{ background: b.is_active ? '#ecfdf5' : '#fee2e2', color: b.is_active ? C.green : C.red, padding: '3px 8px', borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
+                      {b.is_active ? '✅ نشط' : '❌ موقوف'}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Manual wallet input — Phase 2: confirmed working */}
@@ -817,30 +835,32 @@ const deleteProperty = async () => {
         {/* ══ TRANSACTIONS ══ */}
         {tab === 'transactions' && (
           <div style={card}>
-            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}` }}>
-              <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: C.text }}>الشحنات المعلقة ({transactions.length})</h2>
+            <div style={{ padding: '1.5rem 1.5rem', borderBottom: `1px solid ${C.border}`, background: 'linear-gradient(135deg, rgba(37,99,235,0.02) 0%, transparent 100%)' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0, color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>💳 الشحنات المعلقة ({transactions.length})</h2>
             </div>
             {transactions.length === 0
-              ? <p style={{ textAlign: 'center', color: C.faint, padding: '2rem' }}>لا توجد شحنات معلقة ✅</p>
+              ? <p style={{ textAlign: 'center', color: C.faint, padding: '3rem 1rem', fontSize: 14 }}>لا توجد شحنات معلقة ✅</p>
               : transactions.map(t => (
-                <div key={t.id} style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+                <div key={t.id} style={{ padding: '1.25rem 1.5rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1.5rem', transition: 'all 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(37,99,235,0.02)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
                   <div>
-                    <p style={{ fontSize: 15, fontWeight: 900, margin: '0 0 2px', color: C.text }}>{t.profiles?.name}</p>
-                    <p style={{ fontSize: 12, color: C.muted, margin: '0 0 4px' }}>{t.profiles?.phone}</p>
-                    <p style={{ fontSize: 20, fontWeight: 900, color: C.green, margin: 0 }}>{t.amount} ج.م</p>
+                    <p style={{ fontSize: 15, fontWeight: 800, margin: '0 0 3px', color: C.text }}>{t.profiles?.name}</p>
+                    <p style={{ fontSize: 12, color: C.muted, margin: '0 0 6px' }}>📱 {t.profiles?.phone}</p>
+                    <p style={{ fontSize: 22, fontWeight: 900, color: C.green, margin: 0, letterSpacing: '-0.5px' }}>{t.amount} <span style={{ fontSize: 14 }}>ج.م</span></p>
                   </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <a href={t.screenshot_url} target="_blank" rel="noreferrer"
-                      style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
-                      عرض الإيصال
+                      style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 7, padding: '8px 14px', fontSize: 12, fontWeight: 600, textDecoration: 'none', transition: 'all 0.2s', cursor: 'pointer' }}>
+                      📷 عرض الإيصال
                     </a>
                     <button disabled={processingTransactionId === t.id} onClick={() => approveTransaction(t.id, t.broker_id, t.amount)}
-                      style={{ background: C.green, opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer' }}>
-                      {processingTransactionId === t.id ? 'جاري...' : 'تأكيد ✅'}
+                      style={{ background: C.green, opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 7, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
+                      {processingTransactionId === t.id ? '⏳ جاري...' : '✅ تأكيد'}
                     </button>
                     <button disabled={processingTransactionId === t.id} onClick={() => { setRejectId(t.id); setRejectType('transaction') }}
-                      style={{ background: C.red, opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer' }}>
-                      رفض ❌
+                      style={{ background: C.red, opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 7, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }}>
+                      ❌ رفض
                     </button>
                   </div>
                 </div>
@@ -852,8 +872,8 @@ const deleteProperty = async () => {
         {/* ══ LEADS — TABLE ══ */}
         {tab === 'leads' && (
           <div style={card}>
-            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: C.text }}>العملاء المهتمين ({leads.length})</h2>
+            <div style={{ padding: '1.5rem 1.5rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, rgba(37,99,235,0.02) 0%, transparent 100%)' }}>
+              <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0, color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>📋 العملاء المهتمين ({leads.length})</h2>
               <button
                 onClick={() => {
                   if (leads.length === 0) return
@@ -865,13 +885,13 @@ const deleteProperty = async () => {
                   a.href = url; a.download = 'العملاء.csv'; a.click()
                   URL.revokeObjectURL(url)
                 }}
-                style={{ background: C.accentLight, color: C.accent, border: `1px solid ${C.accentBorder}`, borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                style={{ background: C.accentLight, color: C.accent, border: `1px solid ${C.accentBorder}`, borderRadius: 7, padding: '9px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer', transition: 'all 0.2s' }}>
                 📥 تحميل CSV
               </button>
             </div>
 
             {leads.length === 0
-              ? <p style={{ textAlign: 'center', color: C.faint, padding: '2rem' }}>لا يوجد عملاء حتى الآن</p>
+              ? <p style={{ textAlign: 'center', color: C.faint, padding: '3rem 1rem', fontSize: 14 }}>لا يوجد عملاء حتى الآن</p>
               : (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -908,32 +928,32 @@ const deleteProperty = async () => {
 
         {/* ══ SETTINGS ══ */}
         {tab === 'settings' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <div style={{ ...card, padding: '1.5rem' }}>
-              <h2 style={{ fontSize: 15, fontWeight: 900, margin: '0 0 1rem', color: C.text }}>تكلفة الإعلان</h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: 600 }}>
+            <div style={{ ...card, padding: '1.75rem', borderTop: `4px solid ${C.accent}` }}>
+              <h2 style={{ fontSize: 16, fontWeight: 900, margin: '0 0 1rem', color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>💰 تكلفة الإعلان</h2>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                 <input type="number" value={listingCost} onChange={e => setListingCost(e.target.value)}
-                  style={{ flex: 1, border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 14, outline: 'none', background: C.bg }}
+                  style={{ flex: 1, border: `1px solid ${C.border}`, borderRadius: 8, padding: '11px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 14, outline: 'none', background: C.bg, color: C.text, fontWeight: 600, transition: 'all 0.2s' }}
                   onFocus={e => e.target.style.borderColor = C.accent}
                   onBlur={e => e.target.style.borderColor = C.border} />
-                <span style={{ fontSize: 13, color: C.muted, fontWeight: 700 }}>ج.م</span>
+                <span style={{ fontSize: 14, color: C.muted, fontWeight: 800, minWidth: 40 }}>ج.م</span>
               </div>
-              <p style={{ fontSize: 12, color: C.faint, marginTop: 8 }}>التكلفة بعد الإعلانين المجانيين</p>
+              <p style={{ fontSize: 12, color: C.faint, marginTop: 10, marginBottom: 0 }}>🎯 التكلفة بعد الإعلانين المجانيين الأولى</p>
             </div>
 
-            <div style={{ ...card, padding: '1.5rem' }}>
-              <h2 style={{ fontSize: 15, fontWeight: 900, margin: '0 0 1rem', color: C.text }}>نص البنر</h2>
+            <div style={{ ...card, padding: '1.75rem', borderTop: `4px solid ${C.amber}` }}>
+              <h2 style={{ fontSize: 16, fontWeight: 900, margin: '0 0 1rem', color: C.text, display: 'flex', alignItems: 'center', gap: 8 }}>📢 نص البنر الإعلاني</h2>
               <textarea rows={3} placeholder="مثال: 🎉 خصم 50% على الإعلان الثالث" value={bannerText}
                 onChange={e => setBannerText(e.target.value)}
-                style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '12px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 14, outline: 'none', resize: 'none', background: C.bg, boxSizing: 'border-box' }}
+                style={{ width: '100%', border: `1px solid ${C.border}`, borderRadius: 8, padding: '12px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 14, outline: 'none', resize: 'none', background: C.bg, color: C.text, boxSizing: 'border-box', fontWeight: 500, transition: 'all 0.2s' }}
                 onFocus={e => e.target.style.borderColor = C.accent}
                 onBlur={e => e.target.style.borderColor = C.border} />
-              <p style={{ fontSize: 12, color: C.faint, marginTop: 6 }}>اتركه فاضياً لإخفاء البنر</p>
+              <p style={{ fontSize: 12, color: C.faint, marginTop: 10, marginBottom: 0 }}>💡 اتركه فاضياً لإخفاء البنر من الصفحة الرئيسية</p>
             </div>
 
             <button onClick={saveSettings} disabled={savingSettings}
-              style={{ background: savingSettings ? C.accentBorder : C.accent, color: 'white', border: 'none', borderRadius: 12, padding: '14px', fontFamily: 'Cairo, sans-serif', fontSize: 15, fontWeight: 900, cursor: savingSettings ? 'not-allowed' : 'pointer', boxShadow: savingSettings ? 'none' : `0 4px 16px rgba(59,130,246,0.3)` }}>
-              {savingSettings ? 'جاري الحفظ...' : 'حفظ الإعدادات'}
+              style={{ background: savingSettings ? C.accentBorder : 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)', color: 'white', border: 'none', borderRadius: 10, padding: '14px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 16, fontWeight: 900, cursor: savingSettings ? 'not-allowed' : 'pointer', boxShadow: savingSettings ? 'none' : `0 4px 16px rgba(37,99,235,0.3)`, transition: 'all 0.2s' }}>
+              {savingSettings ? '⏳ جاري الحفظ...' : '💾 حفظ الإعدادات'}
             </button>
           </div>
         )}
