@@ -37,7 +37,7 @@ function propertyTitle(p: LeadRow["properties"]): string {
 
 const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> = {
   pending: { label: "قيد المراجعة", bg: "#fef3c7", color: "#92400e" },
-  active: { label: "نشط", bg: "#dcfce7", color: "#166534" },
+  active: { label: "نشط", bg: "#dcfce7", color: "#2D5A27" },
   rejected: { label: "مرفوض", bg: "#fee2e2", color: "#991b1b" },
   archived: { label: "مؤرشف", bg: "#f1f5f9", color: "#475569" },
 };
@@ -187,23 +187,23 @@ export default function BrokerDashboardHomePage() {
     return (
       <div style={{ maxWidth: 480, margin: "3rem auto", padding: "1.5rem", textAlign: "center" }}>
         <p style={{ color: "#b45309", fontSize: 15, fontWeight: 700, marginBottom: 12 }}>{loadError}</p>
-        <button
-          type="button"
-          onClick={() => load()}
-          style={{
-            background: "#166534",
-            color: "white",
-            border: "none",
-            borderRadius: 12,
-            padding: "10px 20px",
-            fontWeight: 800,
-            cursor: "pointer",
-            fontFamily: "inherit",
-            marginInlineEnd: 8,
-          }}
-        >
-          إعادة المحاولة
-        </button>
+            <button
+              type="button"
+              onClick={() => load()}
+              style={{
+                background: "#2D5A27",
+                color: "white",
+                border: "none",
+                borderRadius: 12,
+                padding: "10px 20px",
+                fontWeight: 800,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                marginInlineEnd: 8,
+              }}
+            >
+              إعادة المحاولة
+            </button>
         <button
           type="button"
           onClick={async () => {
@@ -269,14 +269,14 @@ export default function BrokerDashboardHomePage() {
               }}
             >
               <div
-                style={{
-                  background: "linear-gradient(135deg, #166534, #14532d)",
-                  padding: "1.25rem",
-                  borderRadius: "22px 22px 0 0",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "flex-start",
-                }}
+              style={{
+                background: "linear-gradient(135deg, #2D5A27, #1e3a1f)",
+                padding: "1.25rem",
+                borderRadius: "22px 22px 0 0",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "flex-start",
+              }}
               >
                 <div>
                   <h2 id="dash-modal-title" style={{ fontSize: 17, fontWeight: 900, color: "white", margin: "0 0 4px" }}>
@@ -317,7 +317,7 @@ export default function BrokerDashboardHomePage() {
                 <div style={{ display: "flex", gap: 10, marginBottom: "1rem" }}>
                   <div style={{ flex: 1, background: "#f0fdf4", borderRadius: 10, padding: "10px 14px" }}>
                     <div style={{ fontSize: 11, color: "#64748b", marginBottom: 2 }}>السعر الشهري</div>
-                    <div style={{ fontSize: 18, fontWeight: 900, color: "#166534" }}>{selectedProperty.price.toLocaleString()} ج.م</div>
+                    <div style={{ fontSize: 18, fontWeight: 900, color: "#2D5A27" }}>{selectedProperty.price.toLocaleString()} ج.م</div>
                   </div>
                   <div style={{ flex: 1, background: "#f8fafc", borderRadius: 10, padding: "10px 14px" }}>
                     <div style={{ fontSize: 11, color: "#64748b", marginBottom: 2 }}>الحالة</div>
@@ -383,10 +383,10 @@ export default function BrokerDashboardHomePage() {
                 justifyContent: "center",
                 fontSize: 16,
                 fontWeight: 900,
-                color: "#166534",
+                color: "#2D5A27",
                 overflow: "hidden",
                 flexShrink: 0,
-                border: avatarUrl ? "2px solid #bbf7d0" : "none",
+                border: avatarUrl ? "2px solid #2D5A27" : "none",
               }}
               aria-hidden
             >
@@ -419,7 +419,7 @@ export default function BrokerDashboardHomePage() {
 
         <div
           style={{
-            background: "linear-gradient(135deg, #166534, #14532d)",
+            background: "linear-gradient(135deg, #2D5A27, #1e3a1f)",
             borderRadius: 16,
             padding: "1.25rem 1.5rem",
             marginBottom: "1.75rem",
@@ -460,7 +460,7 @@ export default function BrokerDashboardHomePage() {
             <Link
               href="/broker/add-property"
               style={{
-                background: "#166534",
+                background: "#2D5A27",
                 color: "white",
                 borderRadius: 12,
                 padding: "8px 18px",
@@ -479,7 +479,7 @@ export default function BrokerDashboardHomePage() {
               <div style={{ padding: "2.5rem", textAlign: "center" }}>
                 <div style={{ fontSize: 40, marginBottom: 10 }}>🏠</div>
                 <p style={{ color: "#64748b", fontWeight: 700 }}>لا توجد عقارات بعد</p>
-                <Link href="/broker/add-property" style={{ display: "inline-block", marginTop: 14, color: "#166534", fontWeight: 800 }}>
+                <Link href="/broker/add-property" style={{ display: "inline-block", marginTop: 14, color: "#2D5A27", fontWeight: 800 }}>
                   أضف أول عقار
                 </Link>
               </div>
