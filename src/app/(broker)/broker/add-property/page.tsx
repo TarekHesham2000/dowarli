@@ -327,7 +327,7 @@ export default function AddPropertyPage() {
       }
 
       alert('تم استلام إعلانك بنجاح 🎉.. جاري مراجعة البيانات لضمان الجودة، وهيكون متاح للباحثين في اسرع وقت')
-      router.push('/broker')
+      router.push('/dashboard')
 
     } catch (err) {
       console.error('Unexpected error:', err)
@@ -366,7 +366,7 @@ export default function AddPropertyPage() {
             style={{ background: '#166534', color: 'white', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 900, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
             💳 شحن المحفظة الآن
           </button>
-          <button onClick={() => router.push('/broker')}
+          <button onClick={() => router.push('/dashboard')}
             style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 12, padding: '12px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
             ← العودة للوحة التحكم
           </button>
@@ -388,7 +388,7 @@ export default function AddPropertyPage() {
           <span style={{ fontSize: 18, fontWeight: 900, color: '#15803d' }}>دورلي</span>
           <span style={{ background: '#dcfce7', color: '#166534', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, border: '1px solid #bbf7d0' }}>إعلان جديد</span>
         </div>
-        <button onClick={() => router.push('/broker')} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif', padding: '7px 14px', borderRadius: 10 }}>
+        <button onClick={() => router.push('/dashboard')} style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', color: '#166534', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif', padding: '7px 14px', borderRadius: 10 }}>
           ← لوحة التحكم
         </button>
       </nav>

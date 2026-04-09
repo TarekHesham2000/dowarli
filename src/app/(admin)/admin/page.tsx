@@ -12,6 +12,7 @@ type Property = {
   images: string[]
   description: string
   address: string
+  video_url?: string; // 👈 لازم السطر ده يكون موجود هنا عشان الـ Error يروح
   profiles: { name: string; phone: string; id: string }
 }
 
@@ -33,6 +34,7 @@ type Broker = {
   role?: string | null
   created_at: string
   properties_count?: number
+  total_charged?: number
 }
 
 type Lead = {
@@ -53,6 +55,7 @@ type Stats = {
   totalLeads: number
   pendingProperties: number
   pendingTransactions: number
+  totalCharged: number
 }
 
 type Tab = 'home' | 'properties' | 'brokers' | 'transactions' | 'leads' | 'settings'
@@ -92,7 +95,7 @@ export default function AdminDashboard() {
   const [leads, setLeads] = useState<Lead[]>([])
   const [stats, setStats] = useState<Stats>({
     totalBrokers: 0, publishedProperties: 0, rejectedProperties: 0,
-    totalLeads: 0, pendingProperties: 0, pendingTransactions: 0,
+    totalLeads: 0, pendingProperties: 0, pendingTransactions: 0, totalCharged: 0,
   })
   const [properties, setProperties] = useState<Property[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
@@ -109,6 +112,7 @@ export default function AdminDashboard() {
   const [authReady, setAuthReady] = useState(false)
   const [processingTransactionId, setProcessingTransactionId] = useState<number | null>(null)
   const [profilesError, setProfilesError] = useState('')
+  const [verifiedTxError, setVerifiedTxError] = useState('')
   const [walletInputs, setWalletInputs] = useState<Record<string, string>>({})
 
   // ── Phase 2: New state ──────────────────────────────────────
@@ -119,16 +123,33 @@ export default function AdminDashboard() {
   // Delete confirmation modal
   const [deletePropertyId, setDeletePropertyId] = useState<number | null>(null)
   const [deletingProperty, setDeletingProperty] = useState(false)
+  // Add property for broker
+  const [addForBrokerId, setAddForBrokerId] = useState<string | null>(null)
+  const [addingProperty, setAddingProperty] = useState(false)
+  const [addPropertyForm, setAddPropertyForm] = useState({
+    title: '',
+    description: '',
+    price: '',
+    area: '',
+    unit_type: '',
+    address: '',
+    status: 'pending' as 'pending' | 'active',
+  })
 
   async function loadAll() {
     try {
-      const [propsRes, transRes, brokersRes, leadsRes, settingsRes] = await Promise.all([
+      const [propsRes, transRes, verifiedRes, brokersRes, leadsRes, settingsRes] = await Promise.all([
         supabase.from('properties')
-          .select('id, title, area, price, status, images, description, address, profiles(name, phone, id)')
+          .select('id, title, area, price, status, images, description, address, video_url, profiles(name, phone, id)')
           .order('created_at', { ascending: false }),
         supabase.from('transactions')
           .select('id, amount, screenshot_url, status, broker_id, profiles(name, phone)')
           .eq('status', 'pending').order('created_at', { ascending: false }),
+        supabase.from('transactions')
+          .select('amount, broker_id')
+          .eq('status', 'verified')
+          .order('created_at', { ascending: false })
+          .limit(10000),
         supabase.from('profiles')
           .select('id, name, phone, wallet_balance, is_active, role, created_at')
           .neq('id', '00000000-0000-0000-0000-000000000000'),
@@ -142,10 +163,31 @@ export default function AdminDashboard() {
         setProfilesError(`${brokersRes.error.code ?? 'ERR'}: ${brokersRes.error.message}`)
       } else { setProfilesError('') }
 
+      if (verifiedRes.error) {
+        const msg = `${verifiedRes.error.code ?? 'ERR'}: ${verifiedRes.error.message}`
+        setVerifiedTxError(msg)
+        console.error('loadAll verified transactions:', verifiedRes.error)
+      } else {
+        setVerifiedTxError('')
+      }
+
       const props = (propsRes.data as unknown as Property[]) ?? []
       const trans = (transRes.data as unknown as Transaction[]) ?? []
+      const verified = verifiedRes.error
+        ? []
+        : ((verifiedRes.data as { amount: number; broker_id: string }[]) ?? [])
+      const chargedByBroker = new Map<string, number>()
+      let totalCharged = 0
+      for (const row of verified) {
+        const amt = Number(row.amount ?? 0)
+        totalCharged += amt
+        chargedByBroker.set(row.broker_id, (chargedByBroker.get(row.broker_id) ?? 0) + amt)
+      }
+
       const allProfiles = (brokersRes.data as Broker[]) ?? []
-      const brok = allProfiles.filter(b => b.role !== 'admin')
+      const brok = allProfiles
+        .filter(b => b.role !== 'admin')
+        .map(b => ({ ...b, total_charged: chargedByBroker.get(b.id) ?? 0 }))
 
       const rawLeads = (leadsRes.data as Lead[]) ?? []
       const enrichedLeads = rawLeads.map(l => {
@@ -177,6 +219,7 @@ export default function AdminDashboard() {
         totalLeads: enrichedLeads.length,
         pendingProperties: props.filter(p => p.status === 'pending').length,
         pendingTransactions: trans.length,
+        totalCharged,
       })
     } catch (err) {
       console.error('loadAll fatal error:', err)
@@ -185,27 +228,94 @@ export default function AdminDashboard() {
     }
   }
 
+  const openAddForBroker = (brokerId: string) => {
+    setAddForBrokerId(brokerId)
+    setAddPropertyForm({
+      title: '',
+      description: '',
+      price: '',
+      area: '',
+      unit_type: '',
+      address: '',
+      status: 'pending',
+    })
+  }
+
+  const submitAddForBroker = async () => {
+    if (!addForBrokerId) return
+    if (!addPropertyForm.title.trim() || !addPropertyForm.area.trim() || !addPropertyForm.unit_type.trim() || !addPropertyForm.price) {
+      alert('من فضلك اكتب العنوان والمنطقة ونوع الوحدة والسعر')
+      return
+    }
+
+    setAddingProperty(true)
+    const { error } = await supabase
+      .from('properties')
+      .insert({
+        owner_id: addForBrokerId,
+        title: addPropertyForm.title.trim(),
+        description: addPropertyForm.description.trim(),
+        price: Number(addPropertyForm.price),
+        area: addPropertyForm.area.trim(),
+        unit_type: addPropertyForm.unit_type.trim(),
+        address: addPropertyForm.address.trim(),
+        status: addPropertyForm.status,
+        was_charged: false,
+        images: [],
+      })
+
+    setAddingProperty(false)
+
+    if (error) {
+      alert(`فشل إضافة الإعلان: ${error.message}`)
+      return
+    }
+
+    alert('تم إضافة الإعلان ✅')
+    setAddForBrokerId(null)
+    loadAll()
+  }
+
+  const formatEGP = (n: number) => `${(n ?? 0).toLocaleString('ar-EG')} ج.م`
+
+  function getEmbedUrl(url?: string): string | null {
+    if (!url?.trim()) return null
+    const u = url.trim()
+
+    const yt = u.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|shorts\/))([a-zA-Z0-9_-]{11})/)
+    if (yt) return `https://www.youtube.com/embed/${yt[1]}?rel=0&modestbranding=1`
+
+    const tt = u.match(/tiktok\.com\/(?:@[\w.]+\/video\/|vm\/|v\/|t\/)(\d+|[a-zA-Z0-9]+)/)
+    if (tt) return `https://www.tiktok.com/embed/v2/${tt[1]}`
+
+    const gd = u.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/)
+    if (gd) return `https://drive.google.com/file/d/${gd[1]}/preview`
+
+    if (u.includes('facebook.com') || u.includes('fb.watch'))
+      return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(u)}&show_text=0`
+
+    return null
+  }
+
 useEffect(() => {
   const checkAdmin = async () => {
-    // 1. التأكد من وجود جلسة دخول (Session)
-    const { data: { session } } = await supabase.auth.getSession();
-    
-    if (!session) {
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !user) {
       router.push('/login');
       return;
     }
 
-    // 2. التحقق من رتبة المستخدم في جدول الـ profiles
     const { data: profile, error } = await supabase
       .from('profiles')
       .select('role')
-      .eq('id', session.user.id)
+      .eq('id', user.id)
       .single();
 
     if (error || profile?.role !== 'admin') {
       console.error("Access denied or profile error:", error);
       alert('⚠️ غير مسموح لك بدخول لوحة التحكم، سيتم توجيهك لصفحة البروكر');
-      router.push('/broker');
+      router.push('/dashboard');
       return;
     }
 
@@ -299,8 +409,9 @@ useEffect(() => {
 
       alert(isFree ? 'تم التفعيل مجاناً ✅' : `تم التفعيل وخصم ${cost} ج.م ✅`)
       setSelectedProperty(null); loadAll()
-    } catch (err: any) {
-      alert('حدث خطأ: ' + err.message)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unknown error'
+      alert('حدث خطأ: ' + msg)
     } finally {
       setLoading(false)
     }
@@ -373,29 +484,28 @@ useEffect(() => {
   }
 
   // ── Phase 2: Delete property ──────────────────────────────────
-const deleteProperty = async () => {
+  const deleteProperty = async () => {
     if (deletePropertyId === null) return
     setDeletingProperty(true)
-
     const idToDelete = deletePropertyId
 
-    // امسح من الـ UI فوراً قبل ما نكلم الداتابيز
-    setProperties(prev => prev.filter(p => p.id !== idToDelete))
-    setDeletePropertyId(null)
-    setDeletingProperty(false)
-    setSelectedProperty(null)
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .delete()
+        .eq('id', idToDelete)
 
-    // احذف من الداتابيز في الخلفية
-    const { error } = await supabase
-      .from('properties')
-      .delete()
-      .eq('id', idToDelete)
+      if (error) {
+        alert(`فشل الحذف: ${error.message}`)
+        return
+      }
 
-    if (error) {
-      alert(`فشل الحذف: ${error.message}`)
-      loadAll() // لو فشل بس، رجّع الداتا
+      setProperties((prev) => prev.filter((p) => p.id !== idToDelete))
+      setDeletePropertyId(null)
+      setSelectedProperty((cur) => (cur?.id === idToDelete ? null : cur))
+    } finally {
+      setDeletingProperty(false)
     }
-    // ❌ مفيش loadAll() هنا
   }
 
   // ── Phase 2: Filter owner click ─────────────────────────────
@@ -501,6 +611,129 @@ const deleteProperty = async () => {
         </div>
       )}
 
+      {/* ── ADD PROPERTY FOR BROKER MODAL ── */}
+      {addForBrokerId && (
+        <div
+          onClick={() => !addingProperty && setAddForBrokerId(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 320, padding: '1rem' }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: C.white, borderRadius: 20, width: '100%', maxWidth: 520, boxShadow: '0 20px 60px rgba(0,0,0,0.25)', overflow: 'hidden' }}
+          >
+            <div style={{ background: 'linear-gradient(135deg, #0369a1, #0ea5e9)', padding: '1.25rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: 'white' }}>إضافة إعلان للمالك</h2>
+                <p style={{ fontSize: 12, margin: '6px 0 0', color: 'rgba(255,255,255,0.8)' }}>
+                  {brokers.find(b => b.id === addForBrokerId)?.name ?? '—'}
+                </p>
+              </div>
+              <button
+                onClick={() => !addingProperty && setAddForBrokerId(null)}
+                style={{ background: 'rgba(255,255,255,0.18)', border: 'none', color: 'white', width: 32, height: 32, borderRadius: '50%', cursor: 'pointer', fontSize: 14 }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>عنوان الإعلان</label>
+                  <input
+                    value={addPropertyForm.title}
+                    onChange={e => setAddPropertyForm(prev => ({ ...prev, title: e.target.value }))}
+                    placeholder="مثال: شقة قريبة من الجامعة"
+                    style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>المنطقة</label>
+                  <input
+                    value={addPropertyForm.area}
+                    onChange={e => setAddPropertyForm(prev => ({ ...prev, area: e.target.value }))}
+                    placeholder="مثال: المنصورة"
+                    style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>السعر</label>
+                  <input
+                    type="number"
+                    value={addPropertyForm.price}
+                    onChange={e => setAddPropertyForm(prev => ({ ...prev, price: e.target.value }))}
+                    placeholder="مثال: 3000"
+                    style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>نوع الوحدة</label>
+                  <input
+                    value={addPropertyForm.unit_type}
+                    onChange={e => setAddPropertyForm(prev => ({ ...prev, unit_type: e.target.value }))}
+                    placeholder="student / family / studio / shared"
+                    style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>الحالة</label>
+                  <select
+                    value={addPropertyForm.status}
+                    onChange={e => setAddPropertyForm(prev => ({ ...prev, status: e.target.value as 'pending' | 'active' }))}
+                    style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg }}
+                  >
+                    <option value="pending">معلق</option>
+                    <option value="active">نشط</option>
+                  </select>
+                </div>
+
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>العنوان التفصيلي</label>
+                  <input
+                    value={addPropertyForm.address}
+                    onChange={e => setAddPropertyForm(prev => ({ ...prev, address: e.target.value }))}
+                    placeholder="مثال: شارع كذا، بجوار كذا"
+                    style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg }}
+                  />
+                </div>
+
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>وصف</label>
+                  <textarea
+                    rows={3}
+                    value={addPropertyForm.description}
+                    onChange={e => setAddPropertyForm(prev => ({ ...prev, description: e.target.value }))}
+                    placeholder="وصف مختصر..."
+                    style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg, resize: 'none' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
+                <button
+                  onClick={submitAddForBroker}
+                  disabled={addingProperty}
+                  style={{ flex: 1, background: '#0ea5e9', color: 'white', border: 'none', borderRadius: 12, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 900, cursor: addingProperty ? 'not-allowed' : 'pointer', opacity: addingProperty ? 0.7 : 1 }}
+                >
+                  {addingProperty ? 'جاري الإضافة...' : 'إضافة الإعلان ✅'}
+                </button>
+                <button
+                  onClick={() => !addingProperty && setAddForBrokerId(null)}
+                  disabled={addingProperty}
+                  style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 900, cursor: addingProperty ? 'not-allowed' : 'pointer', opacity: addingProperty ? 0.7 : 1 }}
+                >
+                  إلغاء
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── PROPERTY MODAL ── */}
       {selectedProperty && (
         <div onClick={() => setSelectedProperty(null)}
@@ -533,6 +766,40 @@ const deleteProperty = async () => {
                 </div>
               </div>
               {selectedProperty.description && <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.8, marginBottom: '1rem' }}>{selectedProperty.description}</p>}
+
+              {/* Video preview (before approval) */}
+              {selectedProperty.video_url && (
+                <div style={{ marginBottom: '1rem', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 12, padding: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 900, color: C.text }}>🎬 فيديو العقار</p>
+                    <a
+                      href={selectedProperty.video_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ background: '#0ea5e9', color: 'white', borderRadius: 10, padding: '8px 12px', fontSize: 12, fontWeight: 800, textDecoration: 'none' }}
+                      title="فتح رابط الفيديو"
+                    >
+                      فتح الرابط ↗
+                    </a>
+                  </div>
+
+                  {getEmbedUrl(selectedProperty.video_url) ? (
+                    <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', borderRadius: 12, overflow: 'hidden', border: `1px solid ${C.border}` }}>
+                      <iframe
+                        src={getEmbedUrl(selectedProperty.video_url) as string}
+                        title="معاينة فيديو الإعلان"
+                        style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', border: 'none' }}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                        allowFullScreen
+                      />
+                    </div>
+                  ) : (
+                    <p style={{ margin: 0, fontSize: 12, color: C.muted, lineHeight: 1.7 }}>
+                      لا يمكن معاينة هذا النوع من الروابط داخل الصفحة — استخدم زر &quot;فتح الرابط&quot;.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -602,6 +869,11 @@ const deleteProperty = async () => {
       </div>
 
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem 1rem' }}>
+        {verifiedTxError && (
+          <div style={{ marginBottom: '1rem', background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', borderRadius: 10, padding: '10px 12px', fontSize: 13 }}>
+            ⚠️ تعذر تحميل الشحنات المؤكدة — إجمالي المحصّل وأرصدة الملاك قد تكون غير دقيقة: {verifiedTxError}
+          </div>
+        )}
 
         {/* ══ HOME ══ */}
         {tab === 'home' && (
@@ -611,6 +883,7 @@ const deleteProperty = async () => {
                 { n: stats.totalBrokers, l: 'ملاك مسجلين', icon: '👥', color: C.accent, bg: C.accentLight },
                 { n: stats.publishedProperties, l: 'إعلانات نشطة', icon: '✅', color: C.green, bg: C.greenLight },
                 { n: stats.rejectedProperties, l: 'مرفوضة', icon: '❌', color: C.red, bg: C.redLight },
+                { n: `${stats.totalCharged.toLocaleString('ar-EG')} ج.م`, l: 'إجمالي المحصّل', icon: '💰', color: '#0ea5e9', bg: '#e0f2fe' },
                 { n: stats.totalLeads, l: 'عملاء مهتمين', icon: '📋', color: '#7e22ce', bg: '#faf5ff' },
                 { n: stats.pendingProperties, l: 'إعلانات معلقة', icon: '⏳', color: C.amber, bg: C.amberLight },
                 { n: stats.pendingTransactions, l: 'شحنات معلقة', icon: '💳', color: C.red, bg: C.redLight },
@@ -706,6 +979,50 @@ const deleteProperty = async () => {
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                  {/* 👇 ضيف الزرار ده هنا قبل زرار الحذف */}
+                    <a 
+                      href={`/property/${p.id}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{
+                        background: C.bg, // بيستخدم نفس لون الخلفية البديل اللي في الثيم بتاعك
+                        color: C.accent,  // بيستخدم لون الأكسنت الأساسي للمنصة
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 8,
+                        padding: '5px 10px',
+                        fontSize: 12,
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        cursor: 'pointer'
+                      }}
+                      title="معاينة الإعلان"
+                    >
+                      👁️
+                    </a>
+                  {p.video_url && (
+                    <a 
+                      href={p.video_url} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      style={{
+                        background: '#ef4444',
+                        color: 'white',
+                        borderRadius: 8,
+                        padding: '5px 10px',
+                        fontSize: 12,
+                        textDecoration: 'none',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: '8px'
+                      }}
+                      title="مشاهدة الفيديو"
+                    >
+                      🎬
+                    </a>
+                  )}
                   <span style={{
                     background: p.status === 'active' ? C.greenLight : p.status === 'pending' ? C.amberLight : C.redLight,
                     color: p.status === 'active' ? C.green : p.status === 'pending' ? C.amber : C.red,
@@ -779,10 +1096,20 @@ const deleteProperty = async () => {
                   <p style={{ fontSize: 12, color: C.muted, margin: 0, marginRight: 48 }}>
                     الرصيد: <strong style={{ color: C.green }}>{b.wallet_balance} ج.م</strong>
                   </p>
+                  <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0', marginRight: 48 }}>
+                    إجمالي الشحنات المؤكدة: <strong style={{ color: '#0ea5e9' }}>{formatEGP(b.total_charged ?? 0)}</strong>
+                  </p>
                 </div>
 
                 {/* Manual wallet input — Phase 2: confirmed working */}
                 <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={() => openAddForBroker(b.id)}
+                    style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd', borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 800, cursor: 'pointer' }}
+                    title="إضافة إعلان لهذا المالك"
+                  >
+                    + إعلان
+                  </button>
                   <input
                     type="number"
                     placeholder="المبلغ"

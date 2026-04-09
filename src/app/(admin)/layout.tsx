@@ -1,6 +1,6 @@
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
-import { redirect } from 'next/navigation'
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -10,40 +10,51 @@ export const metadata: Metadata = {
 export default async function AdminGroupLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  
-  // التعديل هنا: أضفنا await لأن النسخ الحديثة بتطلب ده
-  const cookieStore = await cookies()
+  const cookieStore = await cookies();
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        get(name: string) {
-          // هنا cookieStore أصبح جاهزاً للاستخدام
-          return cookieStore.get(name)?.value
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options),
+            );
+          } catch {
+            /* set من Server Component قد يفشل — الـ middleware يحدّث الجلسة عادة */
+          }
         },
       },
-    }
-  )
+    },
+  );
 
-  // 1. التأكد من الـ Session
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
 
-  if (!session) {
+  if (userError || !user) {
     redirect("/login");
   }
 
-  // 2. التأكد من الـ Role
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from("profiles")
     .select("role")
-    .eq("id", session.user.id)
+    .eq("id", user.id)
     .single();
 
-  // 3. الحماية
+  if (profileError) {
+    console.error("[admin layout] profiles query:", profileError.message);
+    redirect("/login");
+  }
+
   if (profile?.role !== "admin") {
-    redirect("/dashboard"); 
+    redirect("/dashboard");
   }
 
   return <>{children}</>;

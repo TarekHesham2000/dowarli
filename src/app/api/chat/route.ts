@@ -1,275 +1,793 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
 
-// ──────────────────────────────────────────────────────────────
-// Types
-// ──────────────────────────────────────────────────────────────
-type Message = {
-  role: "user" | "assistant" | "system";
-  content: string;
+type Role = "user" | "assistant" | "system";
+type Message = { role: Role; content: string };
+
+type RequestBody = {
+  messages: Message[];
 };
 
-type Property = {
+type FilterAction = {
+  type: "FILTER";
+  unitType: string;
+  area: string;
+  maxPrice: number | null;
+  keywords: string;
+};
+
+type PropertyResult = {
   id: number;
   title: string;
   price: number;
   area: string;
-  address: string;
-  unit_type: "student" | "family" | "studio" | "shared" | "employee";
-  description?: string;
-  rental_unit?: "bed" | "room" | null;
-  beds_count?: number | null;
+  address: string | null;
+  unit_type: string;
+  images: string[];
 };
 
-type RequestBody = {
-  messages: Message[];
-  properties: Property[];
+type ChatResponse = {
+  message: string;
+  action: FilterAction | null;
+  results?: PropertyResult[];
+  /** عروض من خارج المنطقة المختارة (يُعرض في قسم منفصل في الشات) */
+  resultsOtherAreas?: PropertyResult[];
 };
 
-// ──────────────────────────────────────────────────────────────
-// Unit type labels (Arabic)
-// ──────────────────────────────────────────────────────────────
-const TYPE_LABELS: Record<string, string> = {
-  student: "سكن طلاب",
-  family: "سكن عائلي",
-  studio: "ستوديو",
-  shared: "مشترك",
-  employee: "سكن موظفين",
+const AREA_ALIASES: Record<string, string> = {
+  المنيا: "المنيا",
+  مينيا: "المنيا",
+  منيا: "المنيا",
+  المنصورة: "المنصورة",
+  القاهرة: "القاهرة",
+  قاهرة: "القاهرة",
+  اسكندرية: "الإسكندرية",
+  اسكندريه: "الإسكندرية",
+  الجيزة: "الجيزة",
+  جيزة: "الجيزة",
+  طنطا: "طنطا",
 };
 
-// ──────────────────────────────────────────────────────────────
-// Build system prompt with live property data
-// ──────────────────────────────────────────────────────────────
-function buildSystemPrompt(properties: Property[]): string {
-  // Group properties by type for better context
-  const grouped: Record<string, Property[]> = {};
-  properties.forEach((p) => {
-    if (!grouped[p.unit_type]) grouped[p.unit_type] = [];
-    grouped[p.unit_type].push(p);
-  });
+function normalizeArea(area: string): string {
+  if (!area) return "";
+  const clean = area.trim();
+  return AREA_ALIASES[clean] ?? clean;
+}
 
-  const propertySummary = Object.entries(grouped)
-    .map(([type, props]) => {
-      const label = TYPE_LABELS[type] ?? type;
-      const list = props
-        .slice(0, 4) // limit to 8 per type to avoid huge prompts
-        .map(
-          (p) =>
-            `  - "${p.title}" | ${p.area} | ${p.price.toLocaleString()} ج.م/شهر` +
-            (p.rental_unit === "bed" && p.beds_count
-              ? ` | ${p.beds_count} أسرّة`
-              : p.rental_unit === "room"
-              ? " | أوضة كاملة"
-              : "") +
-            (p.description ? ` | ${p.description.slice(0, 60)}...` : "")
-        )
-        .join("\n");
-      return `\n### ${label} (${props.length} إعلان متاح)\n${list}`;
-    })
-    .join("\n");
+/** أحياء/مناطق شائعة تُعد ضمن نطاق المحافظة عندما يكون الفلتر اسم المحافظة */
+const CAIRO_DISTRICT_RE =
+  /مدينة نصر|مصر الجديدة|التجمع|المعادي|زمالك|شبرا|عين شمس|طرة|دار السلام|حدائق القبة|السيدة|المطرية|الزيتون|المرج|الوايلي|المقطم|بولاق|قصر النيل|الدرب الأحمر|الموسكي|الخليفة|المعصرة|التبين|15 مايو|السلام|النزهة|المنيل|الزاوية|العباسية|الشرابية|روض الفرج|الجمالية|باب الشعرية|الأزبكية/i;
+const GIZA_DISTRICT_RE =
+  /الهرم|فيصل|الدقي|المهندسين|العجوزة|العمرانية|الجيزة|الوراق|بشتيل|كرداسة|أوسيم|أكتوبر|اكتوبر|٦\s*أكتوبر|الشيخ زايد|زايد|حدائق الأهرام|المنيب|الكيت كات|ترسا|بين السرايات|المنصورية|صفط اللبن/i;
+const ALEX_DISTRICT_RE =
+  /إسكندرية|اسكندرية|سموحة|سيدي بشر|جليم|رشدي|لوران|ميامي|العصافرة|ستانلي|سيدي جابر|العجمي|برج العرب|المنتزه|الأنفوشي|الجمرك|محرم بك|العطارين|كرموز/i;
 
-  const areas = [...new Set(properties.map((p) => p.area))].join("، ");
-  const minPrice = Math.min(...properties.map((p) => p.price));
-  const maxPrice = Math.max(...properties.map((p) => p.price));
-
-
-  return `أنت "دَورلي بوت" - مساعد ذكي لمنصة دَورلي للإيجار العقاري في مصر.
-
-## شخصيتك
-- بتتكلم بلهجة مصرية عامية شبابية ودودة
-- بتساعد الناس يلاقوا سكن مناسب بسرعة
-- بتستخدم إيموجي بس مش كتير
-- بتدي إجابات مختصرة ومفيدة، مش قصص طويلة
-- بتفهم أن كل واحد ليه ميزانية واحتياجات مختلفة، فبتسأل دايماً لتوضيح التفاصيل بدل ما تفترض
-- بتقدم بدائل لو ما لقيتش تطابق كامل لطلب المستخدم - مش بتقول "مفيش" بسهولة
-- مش بتتكلم عن أي حاجة غير السكن والإيجار 
-- بتكون دايماً جاهز تساعد، حتى لو الطلب مش واضح في الأول
-- بتستخدم بيانات الإعلانات المتاحة عندك عشان تجاوب، ومش بتخترع معلومات جديدة
-- بتتأكد دايماً من البيانات المتاحة قبل ما ترد على أي طلب
-- بتتبع قواعد صارمة في كيفية الرد والتعامل مع طلبات المستخدم، خصوصاً لما يتعلق الأمر بتغيير المدينة أو نوع السكن أو الميزانية.
-## البيانات المتاحة
-- المناطق: ${areas}
-- نطاق الأسعار: من ${minPrice.toLocaleString()} إلى ${maxPrice.toLocaleString()} ج.م/شهر
-- إجمالي الإعلانات: ${properties.length}
-
-## الإعلانات المتاحة${propertySummary}
-
-
-## مهمتك الأساسية (قواعد صارمة)
-أنت مساعد ذكي لمنصة "دَورلي". وظيفتك هي مساعدة المستخدم في العثور على سكن من البيانات المتاحة فقط.
-
-يجب أن يكون ردك دائماً بتنسيق JSON فقط كما يلي:
-
-1. في حالة البحث العام أو الفلترة:
-{
-  "message": "ردك بالعامية هنا",
-  "action": {
-    "type": "FILTER" أو "VIEW_PROPERTY",
-    "propertyId": number أو null,
-    "unitType": "student" | "family" | "studio" | "shared" | "employee" | "",
-    "area": "اسم المنطقة",
-    "maxPrice": number أو null,
-    "keywords": "كلمات بحث إضافية"
+/** هل سطر المنطقة في العقار يُعتبر ضمن المحافظة/النطاق الذي اختاره المستخدم؟ */
+function rowMatchesSelectedGovernorate(propArea: string, selectedRaw: string): boolean {
+  const s = normalizeArea(selectedRaw).trim();
+  if (!s) return true;
+  const p = propArea.trim();
+  if (!p) return false;
+  const sn = normalizeArea(s);
+  const pn = normalizeArea(p);
+  if (pn === sn) return true;
+  if (p.includes(s) || p.includes(sn)) return true;
+  if (s.includes(p) && p.length >= 4) return true;
+  if (sn === "القاهرة") {
+    if (p.includes("القاهرة") || pn.includes("القاهرة")) return true;
+    if (CAIRO_DISTRICT_RE.test(p) && !GIZA_DISTRICT_RE.test(p)) return true;
   }
-}
-
-2. في حالة طلب إعلان محدد أو "هات اللينك" أو "تفاصيل":
-{
-  "message": "تمام، هفتحلك تفاصيل الإعلان ده حالا..",
-  "action": {
-    "type": "VIEW_PROPERTY",
-    "propertyId": 123, 
-    "unitType": "",
-    "area": "",
-    "maxPrice": null,
-    "keywords": ""
+  if (sn === "الجيزة") {
+    if (p.includes("الجيزة") || GIZA_DISTRICT_RE.test(p)) return true;
   }
+  if (sn === "الإسكندرية") {
+    if (ALEX_DISTRICT_RE.test(p) || p.includes("الإسكندرية") || p.includes("اسكندرية")) return true;
+  }
+  return false;
 }
 
-## ثانياً: القواعد الصارمة (القاعدة الحديدية):
-
-1. **التعامل مع التخصص (Focus):**
-   - أنت خبير سكن فقط. لو سألك المستخدم عن أي شيء خارج العقارات (أكل، كورة، سياسة، سعر كيلو الرز)، رد بخفة دم مصرية: "يا بطل أنا آخري أجبلك سكن لقطة تطبخ فيه الرز ده، لكن سعره كام دي عند البقال! خلينا في المهم، بتدور على سكن فين؟".
-   - لو المستخدم طلب سكن في منطقة معينة، ركز على المنطقة دي جداً. لا تذكر مناطق تانية إلا لو المستخدم طلب بدائل.
-   - لو المستخدم طلب نوع سكن معين، ركز على النوع ده جداً. لا تذكر أنواع تانية إلا لو المستخدم طلب بدائل. 
-   - لا تفترض أبداً أن المستخدم عايز "أرخص حاجة" أو "أغلى حاجة" إلا لو قالها صراحة. دايماً اسأل لتوضيح الميزانية بدلاً من افتراضها.
-   - لا تضع قيوداً على السعر (maxPrice) من تلقاء نفسك إلا إذا قال المستخدم "ميزانيتي كذا" أو "أرخص من كذا". دايماً اسأل لتوضيح الميزانية بدلاً من افتراضها.
-   - لا تفترض أبداً أن المستخدم عايز "سكن طلاب" أو "سكن عائلي" إلا لو قالها صراحة. دايماً اسأل لتوضيح نوع السكن بدلاً من افتراضه.
-
-2. **بروتوكول تصفير الفلاتر (Reset Rule):**
-   - بمجرد تغيير المستخدم للمدينة (مثلاً من الإسكندرية للمنصورة) أو نوع السكن، يجب عليك فوراً مسح قيم (maxPrice, area, unitType) القديمة من الـ action. لا تفترض أبداً أن ميزانية المستخدم ثابتة بين مدينتين مختلفتين.
-   - إذا المستخدم قال "عايز سكن في المنصورة" وبعدها قال "بس يكون رخيص"، لا تفترض أن "رخيص" يعني نفس السعر في الإسكندرية. اسأل لتوضيح الميزانية الجديدة للمنصورة بدلاً من افتراضها.
-   - إذا المستخدم قال "عايز سكن عائلي في الإسكندرية" وبعدها قال "بس يكون أرخص من كذا"، لا تفترض أن الميزانية دي تنطبق على سكن الطلاب في المنصورة لو طلبها بعد كده. اسأل لتوضيح الميزانية الجديدة لكل نوع سكن أو مدينة بدلاً من افتراضها.
-   - إذا المستخدم قال "عايز سكن في المنصورة" وبعدها قال "بس يكون سكن طلاب"، لا تفترض أن نوع السكن ده ينطبق على الإسكندرية لو طلبها بعد كده. اسأل لتوضيح نوع السكن الجديد لكل مدينة بدلاً من افتراضه.
-   - إذا المستخدم قال "عايز سكن في المنصورة" وبعدها قال "بس يكون سكن عائلي"، لا تفترض أن نوع السكن ده ينطبق على الإسكندرية لو طلبها بعد كده. اسأل لتوضيح نوع السكن الجديد لكل مدينة بدلاً من افتراضه.
-
-3. **ذكاء البحث (Search Intelligence):**
-   - ابحث في البيانات المتاحة كأنك تبحث لأول مرة مع كل سؤال. 
-   - لا تضع قيوداً على السعر (maxPrice) من تلقاء نفسك إلا إذا قال المستخدم "ميزانيتي كذا" أو "أرخص من كذا".
-   - قبل أن تقول "مفيش"، راجع قائمة الـ properties يدوياً وتأكد من مطابقة المدينة والنوع.
-   - لو المستخدم طلب "سكن طلاب في المنصورة" وبعدها قال "بس يكون رخيص"، راجع قائمة الـ properties المتاحة في المنصورة وتأكد إذا كان في سكن طلاب ضمن الميزانية دي أو لا قبل الرد.
-   - لو المستخدم طلب "سكن عائلي في الإسكندرية" وبعدها قال "بس يكون أرخص من كذا"، راجع قائمة الـ properties المتاحة في الإسكندرية وتأكد إذا كان في سكن عائلي ضمن الميزانية دي أو لا قبل الرد.
-   - لو المستخدم طلب "سكن في المنصورة" وبعدها قال "بس يكون سكن طلاب"، راجع قائمة الـ properties المتاحة في المنصورة وتأكد إذا كان في سكن طلاب ضمن الخيارات المتاحة أو لا قبل الرد.
-   - لو المستخدم طلب "سكن في المنصورة" وبعدها قال "بس يكون سكن عائلي"، راجع قائمة الـ properties المتاحة في المنصورة وتأكد إذا كان في سكن عائلي ضمن الخيارات المتاحة أو لا قبل الرد.
-   - لو المستخدم طلب عقار محدد أو "هات اللينك" أو "تفاصيله"، راجع قائمة الـ properties المتاحة وتأكد إذا كان العقار ده موجود أو لا قبل الرد.
-   - لو المستخدم طلب "وريني ده" أو "هات تفاصيله" بعد ما شاف إعلان معين، تأكد أن العقار ده موجود في البيانات قبل الرد.
-   - لو المستخدم طلب "هات اللينك" أو "تفاصيله" لعقار معين، تأكد أن العقار ده موجود في البيانات قبل الرد.
-   - لو المستخدم طلب "وريني ده" أو "هات تفاصيله" لعقار معين، تأكد أن العقار ده موجود في البيانات قبل الرد.
-   - لو المستخدم طلب "هات اللينك" أو "تفاصيله" لعقار معين، تأكد أن العقار ده موجود في البيانات قبل الرد.
-   -
-
-
-
-
-4. **الأكشن المباشر (Action Protocol):**
-   - **VIEW_PROPERTY:** إذا اختار المستخدم عقاراً بعينه أو قال "وريني ده" أو "هات تفاصيله"، أرسل فوراً الأكشن بنوع "VIEW_PROPERTY" مع الـ id الصحيح للعقار.
-   - **FILTER:** في حالات البحث العام، استخدم نوع "FILTER".
-   - 
-
-5. **توقع النية (Intent Prediction):**
-   - كلمة "المنصورة" لوحدها تعني غالباً "سكن طلاب في المنصورة".
-    - كلمة "الإسكندرية" لوحدها تعني غالباً "سكن عائلي في الإسكندرية".
-    - كلمة "رخيص" لوحدها تعني غالباً "سكن طلاب بميزانية منخفضة".
-    - كلمة "أرخص" لوحدها تعني غالباً "سكن طلاب بميزانية منخفضة".
-    - كلمة "غالي" لوحدها تعني غالباً "سكن عائلي بميزانية عالية".
-    - كلمة "أغلى" لوحدها تعني غالباً "سكن عائلي بميزانية عالية".
-    - كلمة "ستوديو" لوحدها تعني غالباً "ستوديو في أي منطقة".
-    - كلمة "مشترك" لوحدها تعني غالباً "سكن مشترك في أي منطقة".
-    - كلمة "موظفين" لوحدها تعني غالباً "سكن موظفين في أي منطقة".
-   - استخدم توقع النية دا بحذر جداً ولا تفترض أبداً نية المستخدم بدون تأكيد صريح. دايماً اسأل لتوضيح النية بدلاً من افتراضها.
-   - لو المستخدم قال "عايز سكن في المنصورة" وبعدها قال "بس يكون رخيص"، لا تفترض أن "رخيص" يعني نفس السعر في الإسكندرية. اسأل لتوضيح الميزانية الجديدة للمنصورة بدلاً من افتراضها.
-   - لو المستخدم قال "عايز سكن عائلي في الإسكندرية" وبعدها قال "بس يكون أرخص من كذا"، لا تفترض أن الميزانية دي تنطبق على سكن الطلاب في المنصورة لو طلبها بعد كده. اسأل لتوضيح الميزانية الجديدة لكل نوع سكن أو مدينة بدلاً من افتراضها.
-   - لو المستخدم قال "عايز سكن في المنصورة" وبعدها قال "بس يكون سكن طلاب"، لا تفترض أن نوع السكن ده ينطبق على الإسكندرية لو طلبها بعد كده. اسأل لتوضيح نوع السكن الجديد لكل مدينة بدلاً من افتراضه.
-
-6. **قاعدة النفي الذكي:**
-   - لو المدينة المطلوبة غير موجودة في بياناتك، لا تقل "مفيش بيانات". قل: "حالياً مفيش في [المدينة]، بس عندي حاجات لقطة في [مدينة قريبة أو المنصورة]، تحب تشوفها؟".
-   - لو نوع السكن غير موجود، لا تقل "مفيش". قل: "نوع السكن ده مش متوفر دلوقتي، بس عندي [نوع آخر] في نفس المنطقة، تحب تشوفه؟".
-   - لو السعر المطلوب غير موجود، لا تقل "مفيش". قل: "الميزانية دي صعبة شوية، بس عندي حاجات كويسة في نفس المنطقة بس بسعر أعلى شوية، تحب تشوفها؟".
-   - لو المستخدم طلب عقار محدد غير موجود، لا تقل "مفيش". قل: "العقار ده مش موجود دلوقتي، بس عندي حاجات تانية في نفس المنطقة أو بنفس السعر، تحب تشوفها؟".
-
-7. **التنسيق واللغة:**
-   - الرد يجب أن يكون JSON صافي 100% بدون أي نصوص خارجية أو علامات Markdown.
-   - اللغة: عامية مصرية شبابية، ودودة، وجدعة (يا بطل، من عينيا، لقطة، متاح يا وحش).
-   - ممنوع كتابة "تم تطبيق الفلتر" داخل الرسالة النصية. 
-   - ممنوع استخدام إيموجي في الردود اللي فيها أكشن "VIEW_PROPERTY". في الردود العامة ممكن تستخدم إيموجي بس بشكل معتدل.
-   - ممنوع الردود اللي فيها "مفيش" بدون مراجعة يدوية للبيانات. حاول دايماً تقدم بدائل أو خيارات لو ما لقيتش تطابق كامل.
-   - ممنوع الردود اللي فيها "مش قادر أساعدك" أو "معنديش". حاول دايماً تقدم بدائل أو خيارات لو ما لقيتش تطابق كامل.
-  
-`;
+function filterRowsByGovernorate(rows: PropertyResult[], selectedArea: string): PropertyResult[] {
+  return rows.filter((r) => rowMatchesSelectedGovernorate(r.area ?? "", selectedArea));
 }
 
-// ──────────────────────────────────────────────────────────────
-// POST Handler
-// ──────────────────────────────────────────────────────────────
-export async function POST(req: NextRequest) {
-  try {
-    const body: RequestBody = await req.json();
-    const { messages, properties = [] } = body;
+/** استنتاج فلتر من آخر رسائل المستخدم عند تعطّل اتصال Groq (503) */
+function inferFilterFromMessages(messages: Message[]): FilterAction | null {
+  const blob = messages
+    .filter((m) => m.role === "user")
+    .slice(-4)
+    .map((m) => m.content)
+    .join(" ");
+  if (!blob.trim()) return null;
 
-    if (!messages || messages.length === 0) {
-      return NextResponse.json({ error: "No messages provided" }, { status: 400 });
+  const needleCanon: [string, string][] = [
+    ["الشيخ زايد", "الشيخ زايد"],
+    ["شبرا الخيمة", "شبرا الخيمة"],
+    ["٦ أكتوبر", "أكتوبر"],
+    ["6 أكتوبر", "أكتوبر"],
+    ["الإسكندرية", "الإسكندرية"],
+    ["إسكندرية", "الإسكندرية"],
+    ["اسكندرية", "الإسكندرية"],
+    ["القاهرة", "القاهرة"],
+    ["القاهره", "القاهرة"],
+    ["مصر الجديدة", "مصر الجديدة"],
+    ["مدينة نصر", "مدينة نصر"],
+    ["التجمع الخامس", "التجمع الخامس"],
+    ["التجمع", "التجمع"],
+    ["المعادي", "المعادي"],
+    ["الجيزة", "الجيزة"],
+    ["المنصورة", "المنصورة"],
+    ["منصورة", "المنصورة"],
+    ["المنيا", "المنيا"],
+    ["مينيا", "المنيا"],
+    ["منيا", "المنيا"],
+    ["طنطا", "طنطا"],
+    ["أسوان", "أسوان"],
+    ["اسوان", "أسوان"],
+    ["الأقصر", "الأقصر"],
+    ["الغردقة", "الغردقة"],
+    ["أكتوبر", "أكتوبر"],
+    ["اكتوبر", "أكتوبر"],
+    ["زايد", "الشيخ زايد"],
+    ["قاهرة", "القاهرة"],
+    ["جيزة", "الجيزة"],
+  ];
+
+  let area = "";
+  for (const [needle, canon] of needleCanon) {
+    if (blob.includes(needle)) {
+      area = normalizeArea(canon);
+      break;
     }
-
-    const groqApiKey = process.env.GROQ_API_KEY;
-    if (!groqApiKey) {
-      return NextResponse.json({ error: "GROQ_API_KEY not configured" }, { status: 500 });
-    }
-
-    const systemPrompt = buildSystemPrompt(properties);
-
-    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${groqApiKey}`,
-      },
-      body: JSON.stringify({
-        model: "llama-3.1-8b-instant",
-        max_tokens: 600,
-        temperature: 0.7,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages.slice(-8), // keep last 8 messages for context window
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("Groq API error:", errText);
-      return NextResponse.json({ error: "Groq API error", details: errText }, { status: 500 });
-    }
-
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content ?? "";
-
-    // ── Parse JSON response from model ──────────────────────
-    let parsed: { message: string; action: null | object } = {
-      message: "معلش، حصل خطأ بسيط. جرب تاني! 😅",
-      action: null,
-    };
-
-    try {
-      // Strip markdown fences if present
-      const clean = rawContent.replace(/```json|```/g, "").trim();
-      // Find JSON object
-      const jsonMatch = clean.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        parsed = JSON.parse(jsonMatch[0]);
-      } else {
-        // Model returned plain text — wrap it
-        parsed = { message: clean || parsed.message, action: null };
+  }
+  if (!area) {
+    for (const k of Object.keys(AREA_ALIASES)) {
+      if (blob.includes(k)) {
+        area = normalizeArea(AREA_ALIASES[k] ?? k);
+        break;
       }
-    } catch {
-      // If JSON parse fails, use raw text as message
-      parsed = { message: rawContent || parsed.message, action: null };
     }
+  }
 
-    return NextResponse.json(parsed);
-  } catch (err) {
-    console.error("Chat route error:", err);
-    return NextResponse.json(
-      { message: "معلش، في مشكلة من السيرفر. جرب بعد شوية 🙏", action: null },
-      { status: 500 }
+  const priceMatch = blob.match(/(\d[\d,\s]{2,10})\s*(?:ج\.?\s*م|جنيه|ج\.م|EGP|egp|\bج\b)?/);
+  let maxPrice: number | null = null;
+  if (priceMatch) {
+    const n = parseInt(priceMatch[1].replace(/[\s,]/g, ""), 10);
+    if (Number.isFinite(n) && n >= 500 && n < 200_000_000) maxPrice = n;
+  }
+
+  let unitType = "";
+  if (/سكن\s*طلاب|طلاب|طالبة/i.test(blob)) unitType = "student";
+  else if (/عائلي|أسرة|عيلة|عايلة/i.test(blob)) unitType = "family";
+  else if (/ستوديو/i.test(blob)) unitType = "studio";
+  else if (/مشترك|أوضة\s*مشتركة|غرفة\s*مشتركة/i.test(blob)) unitType = "shared";
+  else if (/موظف|موظفين/i.test(blob)) unitType = "employee";
+
+  if (!area.trim() && maxPrice === null && !unitType) return null;
+
+  const allowed = ["student", "family", "studio", "shared", "employee", ""];
+  return {
+    type: "FILTER",
+    unitType: allowed.includes(unitType) ? unitType : "",
+    area: area.trim(),
+    maxPrice,
+    keywords: "",
+  };
+}
+
+/** مناطق مجاورة لـ Smart pivot (Upselling) عند صفر نتائج */
+function neighborAreasFor(areaRaw: string): string[] {
+  const a = areaRaw.trim();
+  if (!a) return [];
+  const rules: { test: RegExp; neighbors: string[] }[] = [
+    { test: /تجمع|الرحاب|مدينتي/i, neighbors: ["مدينة نصر", "القاهرة", "مصر الجديدة"] },
+    { test: /زايد|الشيخ زايد/i, neighbors: ["أكتوبر", "الجيزة", "الهرم"] },
+    { test: /أكتوبر|اكتوبر|٦\s*أكتوبر/i, neighbors: ["الشيخ زايد", "الجيزة"] },
+    { test: /دقي|المهندسين|العجوزة/i, neighbors: ["الجيزة", "القاهرة", "الهرم"] },
+    { test: /منصورة|دقهلية/i, neighbors: ["طنطا", "الزقازيق", "المنيا"] },
+    { test: /نصر/i, neighbors: ["التجمع", "مصر الجديدة", "القاهرة"] },
+    { test: /معادي|زمالك/i, neighbors: ["القاهرة", "مدينة نصر"] },
+    { test: /إسكندرية|اسكندرية/i, neighbors: ["الساحل الشمالي", "برج العرب"] },
+  ];
+  for (const { test, neighbors } of rules) {
+    if (test.test(a)) return neighbors;
+  }
+  return [];
+}
+
+function lastUserUtterances(messages: Message[], n: number): string {
+  const users = messages.filter((m) => m.role === "user").slice(-n);
+  if (!users.length) return "(لا يوجد)";
+  return users.map((m, i) => `${i + 1}) ${m.content.replace(/\s+/g, " ").trim()}`).join("\n");
+}
+
+/** تعليمات Dowrly AI — استشاري عقاري (مصر) */
+function buildSystemPrompt(recentUserBlock: string): string {
+  return `أنت **Dowrly AI** — أقوى استراتيجي عقاري رقمي في مصر. أنت لا "تبحث" فقط؛ أنت **تستشير** وتقود المحادثة بحكمة.
+
+## عقلية المستشار
+- **ممنوع حلقات التأكيد المملة**: إذا عندك منطقة + ميزانية (أو نوع واضح) من السياق — **نفّذ فوراً** في action (FILTER) ولا تسأل "متأكد؟" مرة تانية.
+- إذا المستخدم **مبهم** (مثل "عايز شقة" بدون تفاصيل): **لا** تسأل "فين؟" فقط. قدّم **خيارات توجيهية** في message، مثل:
+  "تحب حاجة قريبة من المترو في الدقي، ولا هدوء التجمع؟" أو "نمشي على ميزانية محددة الأول ولا المنطقة؟"
+- **ذاكرة السياق**: آخر ما ذكره المستخدم (انظر الأسفل). إذا غيّر رأيه (مثلاً من زايد لأكتوبر)، **اعترف صراحة** في message: "تمام، نقلنا الدفّة لأكتوبر… خليني أشوفلك الأنسب هناك."
+
+## آخر ذكرات المستخدم (آخر 5 رسائل user — التزم بها)
+${recentUserBlock}
+
+## ذكاء مالي (سوق مصري)
+- لو الميزانية **غير واقعية** للمنطقة أو النوع (مثلاً شقة عائلي في التجمع بسعر يبدو "حلم"):
+  في message حذّر بلطف دون إهانة، مثل: "يا بطل السعر ده في المكان ده قليل جداً — خد بالك، غالباً يكون **مقدم** مش إيجار كامل، أو إعلان مش دقيق. نمشي على سقف أوضح عشان نلاقي لقطة حقيقية؟"
+- فسّر الفرق بين مقدم وشهري عند الحاجة بجملة واحدة.
+
+## صفر نتائج (Pivot / Smart Upselling)
+- **ممنوع** تقول "ملقتش حاجة" أو "مفيش نتائج" بشكل جاف.
+- عندما يكون للمستخدم **منطقة/محافظة محددة** في الفلتر: النظام يعرض **عروضاً من نفس المحافظة فقط** في الكروت الرئيسية؛ إن لم يوجد، يضع **بدائل من محافظات أخرى في قسم منفصل** ويُثبت نصاً جاهزاً من الخادم — لا تتعارض مع ذلك في message (يمكنك إضافة جملة قصيرة فقط عن الميزانية أو السوق).
+- بدون منطقة محددة: اعرض **بديل مجاور أو ميزانية مرنة** بأسلوب استشاري كالسابق.
+
+## تنفيذ متوازٍ (مفهومياً)
+- أنت تُخرج فلترة دقيقة؛ النظام يشغّل **بحث العقارات** و**لمحة سوقية** معاً. اكتب message كأنك اطلعت على السياقين (طلب المستخدم + واقع السوق).
+
+## النبرة
+- مشجّع واحترافي. مصرية معتدلة: **يا بطل، لقطة، على المفتاح، نظبط، دفّة** — بدون مبالغة أو لغة غير لائقة.
+- "يا فندم" للنبرة الرسمية عند طلب عائلي/استثمار واضح.
+
+## استخراج JSON (إلزامي)
+- أجب **JSON فقط** بدون Markdown أو code fences.
+- تحية/شكر/سؤال عام بدون بحث → action = null.
+- طلب بحث أو تعديل فلتر → action.type = "FILTER":
+  - unitType: student | family | studio | shared | employee | ""
+  - area: عربي أو "" (لا تخمّن منطقة لم تُذكر في السياق)
+  - maxPrice: رقم بالجنيه الشهري أو null
+  - keywords: إضافي
+
+صيغة JSON:
+{
+  "message": "نص للمستخدم",
+  "action": { "type": "FILTER", "unitType": "", "area": "", "maxPrice": null, "keywords": "" }
+}`;
+}
+
+const SELECT_ROW =
+  "id, title, price, area, address, unit_type, images";
+
+async function queryTopProperties(
+  filters: FilterAction,
+  limit = 3,
+): Promise<PropertyResult[]> {
+  const supabase = getSupabaseServerClient();
+
+  let q = supabase
+    .from("properties")
+    .select(SELECT_ROW)
+    .eq("status", "active")
+    .order("created_at", { ascending: false });
+
+  if (filters.area?.trim()) q = q.ilike("area", `%${filters.area.trim()}%`);
+  if (filters.unitType) q = q.eq("unit_type", filters.unitType);
+  if (typeof filters.maxPrice === "number") q = q.lte("price", filters.maxPrice);
+
+  const kw = filters.keywords?.trim();
+  if (kw && kw.length >= 2) {
+    q = q.or(`title.ilike.%${kw}%,address.ilike.%${kw}%`);
+  }
+
+  const { data, error } = await q.limit(limit);
+  if (error) throw error;
+  return (data as PropertyResult[]) ?? [];
+}
+
+async function queryFallback(filters: FilterAction): Promise<PropertyResult[]> {
+  const relaxed: FilterAction = {
+    ...filters,
+    keywords: "",
+    maxPrice:
+      typeof filters.maxPrice === "number"
+        ? Math.round(filters.maxPrice * 1.25)
+        : null,
+  };
+  return queryTopProperties(relaxed, 5);
+}
+
+/** تحليل سوقي خفيف يُشغَّل بالتوازي مع البحث (analyze_market_trends مبسّط على بيانات المنصة) */
+async function analyzeMarketTrends(filters: FilterAction): Promise<string | null> {
+  try {
+    const supabase = getSupabaseServerClient();
+    let q = supabase.from("properties").select("price").eq("status", "active");
+    if (filters.area?.trim()) {
+      q = q.ilike("area", `%${filters.area.trim()}%`);
+    }
+    const { data, error } = await q.limit(120);
+    if (error || !data?.length) return null;
+    const prices = data
+      .map((r) => Number((r as { price: number }).price))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    if (prices.length < 4) return null;
+    prices.sort((a, b) => a - b);
+    const low = prices[0];
+    const hi = prices[prices.length - 1];
+    const mid = prices[Math.floor(prices.length / 2)];
+    const where = filters.area?.trim()
+      ? `في نطاق ${filters.area.trim()}`
+      : "على المنصة";
+    return `📊 لمحة سوق ${where}: الإعلانات النشطة غالباً بين حوالي ${Math.round(low).toLocaleString("ar-EG")} و ${Math.round(hi).toLocaleString("ar-EG")} ج.م/شهر (وسطياً ~${Math.round(mid).toLocaleString("ar-EG")}). دي إشارة من إعلانات دَورلي مش تسعير رسمي.`;
+  } catch {
+    return null;
+  }
+}
+
+type PivotKind = "none" | "budget_plus_10" | "neighbor" | "budget_plus_25" | "explore";
+
+const SLIDER_LIMIT = 3;
+const takeSlider = (rows: PropertyResult[]) => rows.slice(0, SLIDER_LIMIT);
+
+/** بحث بدون التزام محافظة: السلوك السابق (جيران، سقف أوسع، استكشاف). */
+async function searchPropertiesWithFallbackLegacy(
+  filters: FilterAction,
+): Promise<{
+  results: PropertyResult[];
+  resultsOtherAreas: PropertyResult[];
+  pivot: PivotKind;
+  neighborUsed?: string;
+  marketNote: string | null;
+}> {
+  const [primary, marketNote] = await Promise.all([
+    queryTopProperties(filters, 6),
+    analyzeMarketTrends(filters),
+  ]);
+
+  if (primary.length > 0) {
+    return {
+      results: takeSlider(primary),
+      resultsOtherAreas: [],
+      pivot: "none",
+      marketNote,
+    };
+  }
+
+  if (typeof filters.maxPrice === "number" && filters.maxPrice > 0) {
+    const wider10 = await queryTopProperties(
+      {
+        ...filters,
+        maxPrice: Math.round(filters.maxPrice * 1.1),
+      },
+      6,
+    );
+    if (wider10.length > 0) {
+      return {
+        results: takeSlider(wider10),
+        resultsOtherAreas: [],
+        pivot: "budget_plus_10",
+        marketNote,
+      };
+    }
+  }
+
+  const nbs = neighborAreasFor(filters.area || "");
+  for (const nb of nbs) {
+    const alt = await queryTopProperties({ ...filters, area: nb }, 6);
+    if (alt.length > 0) {
+      return {
+        results: takeSlider(alt),
+        resultsOtherAreas: [],
+        pivot: "neighbor",
+        neighborUsed: nb,
+        marketNote,
+      };
+    }
+  }
+
+  const fallback25 = await queryFallback(filters);
+  if (fallback25.length > 0) {
+    return {
+      results: takeSlider(fallback25),
+      resultsOtherAreas: [],
+      pivot: "budget_plus_25",
+      marketNote,
+    };
+  }
+
+  const exploratory = await queryExploratorySuggestions(filters);
+  if (exploratory.length > 0) {
+    return {
+      results: takeSlider(exploratory),
+      resultsOtherAreas: [],
+      pivot: "explore",
+      marketNote,
+    };
+  }
+
+  return { results: [], resultsOtherAreas: [], pivot: "none", marketNote };
+}
+
+/** عروض من خارج المحافظة المختارة (نفس نوع/سقف تقريبي، بدون فرض area في الاستعلام ثم استبعاد ما يطابق المحافظة). */
+async function querySuggestionsOutsideGovernorate(
+  filters: FilterAction,
+  excludeGovernorate: string,
+): Promise<PropertyResult[]> {
+  const ex = normalizeArea(excludeGovernorate).trim();
+  const relaxed: FilterAction = {
+    ...filters,
+    area: "",
+    keywords: "",
+    maxPrice:
+      typeof filters.maxPrice === "number"
+        ? Math.round(filters.maxPrice * 1.25)
+        : null,
+  };
+  const raw = await queryTopProperties(relaxed, 36);
+  let outside = raw.filter((r) => !rowMatchesSelectedGovernorate(r.area ?? "", ex));
+  if (outside.length > 0) return outside;
+
+  const exploratory = await queryExploratorySuggestions({ ...filters, area: "", keywords: "" });
+  outside = exploratory.filter((r) => !rowMatchesSelectedGovernorate(r.area ?? "", ex));
+  return outside;
+}
+
+/**
+ * عند تحديد منطقة/محافظة: الكروت الرئيسية من نفس المحافظة فقط (بعد تصفية صارمة).
+ * لا تُعرض فيها نتائج من محافظة أخرى. إن لم يوجد شيء داخل المحافظة، تُملأ resultsOtherAreas.
+ */
+async function searchPropertiesWithStrictGovernorate(
+  filters: FilterAction,
+): Promise<{
+  results: PropertyResult[];
+  resultsOtherAreas: PropertyResult[];
+  pivot: PivotKind;
+  neighborUsed?: string;
+  marketNote: string | null;
+}> {
+  const area = filters.area!.trim();
+  const marketNote = await analyzeMarketTrends(filters);
+  let pivot: PivotKind = "none";
+
+  async function collectInGovernorate(f: FilterAction): Promise<PropertyResult[]> {
+    const raw = await queryTopProperties(f, 28);
+    return filterRowsByGovernorate(raw, area);
+  }
+
+  let inGov = await collectInGovernorate(filters);
+  if (inGov.length === 0 && typeof filters.maxPrice === "number" && filters.maxPrice > 0) {
+    inGov = await collectInGovernorate({
+      ...filters,
+      maxPrice: Math.round(filters.maxPrice * 1.1),
+    });
+    if (inGov.length) pivot = "budget_plus_10";
+  }
+  if (inGov.length === 0 && typeof filters.maxPrice === "number" && filters.maxPrice > 0) {
+    inGov = await collectInGovernorate({
+      ...filters,
+      maxPrice: Math.round(filters.maxPrice * 1.25),
+    });
+    if (inGov.length) pivot = "budget_plus_25";
+  }
+
+  if (inGov.length > 0) {
+    return {
+      results: takeSlider(inGov),
+      resultsOtherAreas: [],
+      pivot,
+      marketNote,
+    };
+  }
+
+  const other = await querySuggestionsOutsideGovernorate(filters, area);
+  return {
+    results: [],
+    resultsOtherAreas: takeSlider(other),
+    pivot: "none",
+    marketNote,
+  };
+}
+
+async function searchPropertiesWithFallback(
+  filters: FilterAction,
+): Promise<{
+  results: PropertyResult[];
+  resultsOtherAreas: PropertyResult[];
+  pivot: PivotKind;
+  neighborUsed?: string;
+  marketNote: string | null;
+}> {
+  if (filters.area?.trim()) {
+    return searchPropertiesWithStrictGovernorate(filters);
+  }
+  return searchPropertiesWithFallbackLegacy(filters);
+}
+
+function composeConsultantMessage(
+  aiMessage: string,
+  filters: FilterAction,
+  pivot: PivotKind,
+  neighborUsed: string | undefined,
+  marketNote: string | null,
+  hasStrictResults: boolean,
+  hasOtherAreaResults: boolean,
+): string {
+  const blocks: string[] = [];
+  const area = filters.area?.trim() || "المنطقة";
+  const trimmed = aiMessage?.trim();
+
+  if (filters.area?.trim() && hasOtherAreaResults && !hasStrictResults) {
+    blocks.push(
+      `ملقتش شقق بالسعر ده في ${area} حالياً، بس دي اختيارات في محافظات تانية ممكن تناسب ميزانيتك`,
+    );
+    if (marketNote) blocks.push(marketNote);
+    return blocks.join("\n\n").trim();
+  }
+
+  if (!hasStrictResults && !hasOtherAreaResults) {
+    blocks.push(trimmed || encouragingCopy(filters, false));
+    if (marketNote) blocks.push(marketNote);
+    return blocks.join("\n\n").trim();
+  }
+
+  if (pivot === "budget_plus_10") {
+    blocks.push(
+      `يا بطل، السقف في ${area} كان ضيّق شوية — وسّعتلك البحث تلقائياً بحوالي 10% ولقيت لقطات قريبة من طلبك. شوف الكروت تحت 👇`,
+    );
+  } else if (pivot === "neighbor" && neighborUsed) {
+    blocks.push(
+      `الميزانية دي في ${area} حالياً صعبة شوية — جبتلك لقطات في ${neighborUsed} قريبة من نفس روح طلبك. تحب تشوفها؟ 👇`,
+    );
+  } else if (pivot === "budget_plus_25") {
+    blocks.push(
+      `وسّعتلك نطاق السعر شوية عشان يبان خيارات أوضح — راجع الكروت ونظبط سوا على المفتاح.`,
+    );
+  } else if (pivot === "explore") {
+    blocks.push(
+      `جهزت لك بدائل بنفس النفسية (سكن طلاب/مشترك/سقف أوسع شوية) — اختار اللي يقرب ليك.`,
     );
   }
+
+  if (trimmed) blocks.push(trimmed);
+  if (marketNote) blocks.push(marketNote);
+
+  const joined = blocks.join("\n\n").trim();
+  if (joined) return joined;
+  return encouragingCopy(filters, true);
+}
+
+async function buildFilterResponse(
+  filters: FilterAction,
+  aiMessage: string,
+  degradedPrefix?: string,
+): Promise<NextResponse> {
+  try {
+    const { results, resultsOtherAreas, pivot, neighborUsed, marketNote } =
+      await searchPropertiesWithFallback(filters);
+
+    let message = composeConsultantMessage(
+      aiMessage,
+      filters,
+      pivot,
+      neighborUsed,
+      marketNote,
+      results.length > 0,
+      (resultsOtherAreas?.length ?? 0) > 0,
+    );
+    if (degradedPrefix) {
+      message = `${degradedPrefix}\n\n${message}`;
+    }
+
+    return NextResponse.json({
+      message,
+      action: filters,
+      ...(results.length ? { results } : {}),
+      ...(resultsOtherAreas?.length ? { resultsOtherAreas } : {}),
+    } satisfies ChatResponse);
+  } catch {
+    const fallbackMsg = degradedPrefix
+      ? `${degradedPrefix}\n\nمش قدرنا نكمّل البحث دلوقتي — جرّب تاني بعد لحظة.`
+      : "حصل تعارض مؤقت مع البحث. جرّب تاني بعد لحظة.";
+    return NextResponse.json({
+      message: fallbackMsg,
+      action: filters,
+    } satisfies ChatResponse);
+  }
+}
+
+/** عروض أرخص / أوسع عند ضيق النتائج */
+async function queryExploratorySuggestions(filters: FilterAction): Promise<PropertyResult[]> {
+  const supabase = getSupabaseServerClient();
+  let q = supabase
+    .from("properties")
+    .select(SELECT_ROW)
+    .eq("status", "active")
+    .order("price", { ascending: true });
+
+  if (filters.area?.trim()) q = q.ilike("area", `%${filters.area.trim()}%`);
+  const maxP = filters.maxPrice;
+  const explicitUnitType = filters.unitType?.trim() ?? "";
+  if (typeof maxP === "number" && maxP < 2200) {
+    q = q.lte("price", Math.max(maxP * 2, 2800));
+    // بدون نوع محدد: نوسّع نحو أنواع غالباً أرخص. مع نوع صريح (عائلي، ستوديو، …): نحترمه ولا نستبدله بصمت.
+    if (!explicitUnitType) {
+      q = q.in("unit_type", ["shared", "student"]);
+    } else {
+      q = q.eq("unit_type", explicitUnitType);
+    }
+  } else if (typeof maxP === "number") {
+    q = q.lte("price", Math.round(maxP * 1.6));
+  }
+
+  const { data, error } = await q.limit(5);
+  if (error) throw error;
+  return (data as PropertyResult[]) ?? [];
+}
+
+function encouragingCopy(filters: FilterAction, hasAlts: boolean): string {
+  const mp = filters.maxPrice;
+  if (typeof mp === "number" && mp < 2000) {
+    return hasAlts
+      ? "يا بطل، الميزانية دي تحت ضغط السوق شوية — تحت شوية خيارات قريبة من فكرتك (أوضة مشتركة / سكن طلاب). شوف الكروت ولو حابب نوسّع المنطقة أو الميزانية قولّي."
+      : "يا بطل، السوق النهاردة صعب يطلع حاجة مريحة تحت الميزانية دي بسهولة. جرّب نفكر في أوضة مشتركة، أو منطقة لُزمة للجامعة، أو نرفع الميزانية شوية — وأنا معاك خطوة بخطوة.";
+  }
+  return hasAlts
+    ? "يا فندم، للمواصفات الدقيقة اختيار محدود، لكن جهزت لحضرتك بدائل قريبة من نفس الاتجاه — راجع الكروت ونظبط الفلتر سوا."
+    : "يا فندم، السوق في النطاق ده بيتحرك بسرعة. لو تحب نوسّع المساحة الجغرافية أو نعدّل السقف المالي بلطف، هنلاقي خيارات أقوى.";
+}
+
+const DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant";
+const MAX_HISTORY_MESSAGES = 28;
+
+const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_FETCH_ATTEMPTS = 3;
+
+const DEGRADED_GROQ_PREFIX =
+  "مساعد الذكاء متاحش دلوقتي بسبب تعطّل في الشبكة — ده بحث أولي من كلامك. جرّب ترسل تاني بعد لحظة، وقولّي الميزانية بالأرقام عشان نضبطها.";
+
+async function fetchGroqChatCompletion(
+  apiKey: string,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < GROQ_FETCH_ATTEMPTS; attempt++) {
+    try {
+      return await fetch(GROQ_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+    } catch (e) {
+      lastErr = e;
+      if (process.env.NODE_ENV === "development") {
+        console.error(
+          `[api/chat] Groq fetch failed (attempt ${attempt + 1}/${GROQ_FETCH_ATTEMPTS}):`,
+          e,
+        );
+      }
+      if (attempt < GROQ_FETCH_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
+      }
+    }
+  }
+  throw lastErr;
+}
+
+export async function POST(req: NextRequest) {
+  const groqApiKey = process.env.GROQ_API_KEY?.trim();
+  const groqModel =
+    process.env.GROQ_MODEL?.trim() ||
+    process.env.GROQ_CHAT_MODEL?.trim() ||
+    DEFAULT_GROQ_MODEL;
+
+  if (!groqApiKey) {
+    return NextResponse.json(
+      { message: "خطأ في الإعدادات.", action: null } satisfies ChatResponse,
+      { status: 500 },
+    );
+  }
+
+  let body: RequestBody;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json(
+      { message: "طلب غير صحيح.", action: null } satisfies ChatResponse,
+      { status: 400 },
+    );
+  }
+
+  const { messages = [] } = body;
+  if (!messages.length) {
+    return NextResponse.json(
+      { message: "مفيش رسايل.", action: null } satisfies ChatResponse,
+      { status: 400 },
+    );
+  }
+
+  const history = messages.slice(-MAX_HISTORY_MESSAGES);
+  const systemPrompt = buildSystemPrompt(lastUserUtterances(history, 5));
+
+  let groqRes: Response;
+  try {
+    groqRes = await fetchGroqChatCompletion(groqApiKey, {
+      model: groqModel,
+      max_tokens: 640,
+      temperature: 0.32,
+      response_format: { type: "json_object" },
+      messages: [{ role: "system", content: systemPrompt }, ...history],
+    });
+  } catch {
+    const guessed = inferFilterFromMessages(history);
+    if (guessed) {
+      return buildFilterResponse(guessed, "", DEGRADED_GROQ_PREFIX);
+    }
+    return NextResponse.json(
+      { message: "مش قادر أوصل للسيرفر.", action: null } satisfies ChatResponse,
+      { status: 503 },
+    );
+  }
+
+  const groqBodyText = await groqRes.text();
+  type GroqOk = {
+    choices?: { message?: { content?: string } }[];
+    error?: { message?: string };
+  };
+  let groqPayload: GroqOk;
+  try {
+    groqPayload = JSON.parse(groqBodyText) as GroqOk;
+  } catch {
+    return NextResponse.json(
+      { message: "رد غير متوقع من مزود الذكاء.", action: null } satisfies ChatResponse,
+      { status: 502 },
+    );
+  }
+
+  if (!groqRes.ok) {
+    const detail = groqPayload.error?.message?.trim() ?? "";
+    return NextResponse.json(
+      {
+        message: detail
+          ? `خطأ من مزود الذكاء: ${detail}`
+          : "في مشكلة مؤقتة. جرب تاني.",
+        action: null,
+      } satisfies ChatResponse,
+      { status: 502 },
+    );
+  }
+
+  const rawContent = groqPayload.choices?.[0]?.message?.content ?? "";
+
+  let parsed: ChatResponse = {
+    message: "معلش، مش قادر أساعدك دلوقتي.",
+    action: null,
+  };
+
+  try {
+    const clean = rawContent
+      .replace(/```json\s*/gi, "")
+      .replace(/```\s*/g, "")
+      .trim();
+    const jsonMatch = clean.match(/\{[\s\S]*\}/);
+    if (jsonMatch) parsed = JSON.parse(jsonMatch[0]);
+  } catch {
+    /* keep default */
+  }
+
+  if (parsed.action && typeof parsed.action === "object") {
+    const a = parsed.action as Record<string, unknown>;
+    const unitType = typeof a.unitType === "string" ? a.unitType : "";
+    const area = typeof a.area === "string" ? normalizeArea(a.area) : "";
+    const maxPrice = typeof a.maxPrice === "number" ? a.maxPrice : null;
+    const keywords = typeof a.keywords === "string" ? a.keywords : "";
+
+    const filters: FilterAction = {
+      type: "FILTER",
+      unitType: ["student", "family", "studio", "shared", "employee", ""].includes(
+        unitType,
+      )
+        ? unitType
+        : "",
+      area,
+      maxPrice,
+      keywords,
+    };
+
+    return buildFilterResponse(filters, parsed.message);
+  }
+
+  return NextResponse.json(parsed satisfies ChatResponse);
 }

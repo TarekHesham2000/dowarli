@@ -56,7 +56,7 @@ const { data: profile } = await supabase
 // Then use profile.id for properties
 const { data: props } = await supabase
   .from('properties')
-  .select('*')
+  .select('*, profiles(name, phone, id)')
   .eq('owner_id', profile.id)
 ```
 

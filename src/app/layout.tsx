@@ -45,7 +45,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="دَورلي" />
       </head>
-      <body suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col`}>
+      <body suppressHydrationWarning={true} className={`${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col`}>
         {children}
       </body>
     </html>

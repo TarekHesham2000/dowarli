@@ -28,7 +28,7 @@ export default function WalletPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { router.push('/login'); return }
 
-    const { data: profile } = await supabase.from('profiles').select('wallet_balance').eq('id', user.id).single()
+    const { data: profile } = await supabase.from('profiles').select('wallet_balance').eq('id', user.id).maybeSingle()
     const { data: trans } = await supabase.from('transactions').select('id, amount, status, created_at, rejection_reason').eq('broker_id', user.id).order('created_at', { ascending: false })
 
     setBalance(profile?.wallet_balance ?? 0)
@@ -90,7 +90,7 @@ export default function WalletPage() {
           <a href="/" style={{ fontSize: 20, fontWeight: 900, color: '#166534', textDecoration: 'none' }}>دَورلي</a>
           <span style={{ background: '#f0fdf4', color: '#166534', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20, border: '1px solid #bbf7d0' }}>المحفظة</span>
         </div>
-        <button onClick={() => router.push('/broker')} style={{ background: 'none', border: 'none', color: '#166534', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
+        <button onClick={() => router.push('/dashboard')} style={{ background: 'none', border: 'none', color: '#166534', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
           ← لوحة التحكم
         </button>
       </nav>

@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Banner from "@/components/shared/Banner";
@@ -273,6 +273,7 @@ export default function PublicPageClient() {
   const [properties, setProperties]         = useState<Property[]>([]);
   const [loading, setLoading]               = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [chatBootstrap, setChatBootstrap] = useState<string | null>(null);
   const [parsedFilters, setParsedFilters] = useState<ParsedFilters>({
     area: "", maxPrice: null, unitType: "", keywords: ""
   });
@@ -281,53 +282,73 @@ export default function PublicPageClient() {
   const [leadSubmitted, setLeadSubmitted]   = useState(false);
   const [leadLoading, setLeadLoading]       = useState(false);
   const [activeFilter, setActiveFilter] = useState<UnitType | "all">("all");
-  useEffect(() => { loadProperties(); },[activeFilter]);
+  const [mobileChatFocus, setMobileChatFocus] = useState(false);
+  const [listLayoutMobile, setListLayoutMobile] = useState(false);
 
-const loadProperties = async () => {
+  useEffect(() => {
+    loadProperties();
+  }, [activeFilter]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setListLayoutMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
+  const submitHeroToAi = () => {
+    const q = searchQuery.trim();
+    if (q) setChatBootstrap(q);
+    else void loadProperties();
+  };
+
+  const handleChatBootstrapConsumed = useCallback(() => setChatBootstrap(null), []);
+
+// 1. تعديل الفانكشن لتقبل فلاتر اختيارية مباشرة
+// عدل السطر الأول في الفانكشن عشان يقبل فلاتر مباشرة
+const loadProperties = async (overrideFilters?: any) => {
   setLoading(true);
   try {
-    const parsed = parseSearchQuery(searchQuery);
-    
+    const parsed = overrideFilters || parseSearchQuery(searchQuery);
+
     let query = supabase
-      .from("properties")
-      .select("*, profiles(name, phone)");
+      .from('properties')
+      .select('*, profiles(name, phone)')
+      .eq('status', 'active');   // ← مهم: بس العقارات الـ active
 
-    // 1. فلترة المنطقة
     if (parsed.area) {
-      query = query.eq("area", parsed.area);
+      query = query.ilike('area', `%${parsed.area}%`);
     }
 
-    // 2. فلترة السعر
     if (parsed.maxPrice) {
-      query = query.lte("price", parsed.maxPrice);
+      query = query.lte('price', parsed.maxPrice);
     }
 
-    // 3. فلترة النوع
-    const selectedType = activeFilter !== "all" ? activeFilter : parsed.unitType;
-    if (selectedType && selectedType !== "all") {
-      query = query.eq("unit_type", selectedType);
+    // الأولوية: قيمة صريحة من الشات (حتى لو "") ثم activeFilter ثم parsed — لا تستخدم || لأن "" falsy
+    const selectedType =
+      overrideFilters?.unitType ??
+      (activeFilter !== 'all' ? activeFilter : parsed.unitType);
+
+    if (selectedType && selectedType !== 'all') {
+      query = query.eq('unit_type', selectedType);
     }
 
-    // 4. البحث النصي (السطر الحساس)
-    const cleanKeywords = parsed.keywords.trim();
+    const cleanKeywords = parsed.keywords?.trim() || '';
     if (cleanKeywords.length > 2) {
-      // تأكد إن مفيش مسافات بعد الفواصل جوه الـ string بتاع الـ or
-      query = query.or(`title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%`);
+      query = query.or(
+        `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%`
+      );
     }
 
-    const { data, error } = await query.order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Supabase Error:", error.message);
-      throw error;
-    }
-    
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
     setProperties(data || []);
 
-  }  catch (error: any) {
-  // ده هيطبع لك رسالة الخطأ واضحة بدل {}
-  console.error("Error details:", error.message || error);
-} finally {
+  } catch (error: any) {
+    console.error('Search Error:', error.message);
+  } finally {
     setLoading(false);
   }
 };
@@ -432,6 +453,15 @@ const loadProperties = async () => {
 
         /* Bottom nav – show only on mobile */
         @media (min-width: 768px) { .mobile-nav { display: none !important; } }
+
+        /* Horizontal property row — hide scrollbar, snap (mobile) */
+        .property-row-snap {
+          -webkit-overflow-scrolling: touch;
+          scroll-snap-type: x mandatory;
+          scrollbar-width: none;
+          -ms-overflow-style: none;
+        }
+        .property-row-snap::-webkit-scrollbar { display: none; }
       `}</style>
 
       <div
@@ -461,6 +491,13 @@ const loadProperties = async () => {
           }}
         />
 
+        <div
+          className={[
+            "transition-opacity duration-200 ease-out",
+            mobileChatFocus ? "max-md:pointer-events-none max-md:select-none max-md:opacity-0" : "",
+          ].join(" ")}
+          {...(mobileChatFocus ? { "aria-hidden": true as const } : {})}
+        >
         <Banner />
 
         {/* ══════════════════ NAVIGATION ══════════════════ */}
@@ -643,7 +680,7 @@ const loadProperties = async () => {
                 marginBottom: "0.9rem", lineHeight: 1.7,
               }}
             >
-              خلي الذكاء الاصطناعي يساعدك تلاقي سكن مناسب لميزانيتك 🤖✨
+              اكتب طلبك هنا — هنوجّه مباشرة لمساعد دَورلي الذكي 🤖✨
             </motion.p>
 
             {/* Input Row */}
@@ -670,8 +707,13 @@ const loadProperties = async () => {
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && loadProperties()}
-                placeholder="جرب تكتب: شقة بـ 5000 في المعادي 🏠"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    submitHeroToAi();
+                  }
+                }}
+                placeholder="مثال: سكن طلاب رخيص قريب من الجامعة — أو شقة عائلي في التجمع 🏠"
                 aria-label="بحث ذكي"
                 className="field"
                 style={{
@@ -708,26 +750,27 @@ const loadProperties = async () => {
 
               {/* Search Button */}
               <button
-                onClick={loadProperties}
+                type="button"
+                onClick={submitHeroToAi}
                 style={{
-                  background: "linear-gradient(135deg, #10b981, #059669)",
+                  background: "linear-gradient(135deg, #0ea5e9, #2563eb)",
                   color: "#fff", border: "none", borderRadius: 14,
-                  padding: "11px 28px", fontFamily: "'Cairo', sans-serif",
-                  fontSize: 14, fontWeight: 700, cursor: "pointer",
+                  padding: "11px 22px", fontFamily: "'Cairo', sans-serif",
+                  fontSize: 13, fontWeight: 800, cursor: "pointer",
                   whiteSpace: "nowrap", flexShrink: 0,
-                  boxShadow: "0 0 0 1px rgba(16,185,129,0.4), 0 8px 28px rgba(16,185,129,0.45)",
+                  boxShadow: "0 0 0 1px rgba(14,165,233,0.45), 0 8px 28px rgba(37,99,235,0.4)",
                   transition: "box-shadow 0.25s, transform 0.2s",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(16,185,129,0.6), 0 12px 36px rgba(16,185,129,0.6)";
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(14,165,233,0.65), 0 12px 36px rgba(37,99,235,0.55)";
                   e.currentTarget.style.transform = "translateY(-1px)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(16,185,129,0.4), 0 8px 28px rgba(16,185,129,0.45)";
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(14,165,233,0.45), 0 8px 28px rgba(37,99,235,0.4)";
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                بحث
+                اسأل دَورلي
               </button>
             </div>
 
@@ -869,11 +912,24 @@ const loadProperties = async () => {
               variants={containerVariants}
               initial="hidden"
               animate="visible"
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))",
-                gap: "1.75rem",
-              }}
+              className={listLayoutMobile ? "property-row-snap" : undefined}
+              style={
+                listLayoutMobile
+                  ? {
+                      display: "flex",
+                      flexDirection: "row",
+                      gap: "1rem",
+                      overflowX: "auto",
+                      paddingLeft: 4,
+                      paddingRight: 4,
+                      paddingBottom: 6,
+                    }
+                  : {
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(310px, 1fr))",
+                      gap: "1.75rem",
+                    }
+              }
             >
               {properties.map((p) => {
                 const colors = tc(p.unit_type);
@@ -881,7 +937,11 @@ const loadProperties = async () => {
                   <motion.article
                     key={p.id}
                     variants={cardVariants}
-                    whileHover={{ scale: 1.03, transition: { duration: 0.25, ease: [0.22,1,0.36,1] as any } }}
+                    whileHover={
+                      listLayoutMobile
+                        ? undefined
+                        : { scale: 1.03, transition: { duration: 0.25, ease: [0.22, 1, 0.36, 1] as any } }
+                    }
                     onClick={() => router.push(`/property/${p.id}`)}
                     aria-label={`عقار: ${p.title}`}
                     style={{
@@ -893,6 +953,15 @@ const loadProperties = async () => {
                       overflow: "hidden",
                       cursor: "pointer",
                       transition: "border-color 0.3s, box-shadow 0.3s",
+                      ...(listLayoutMobile
+                        ? {
+                            flex: "0 0 min(86vw, 320px)",
+                            width: "min(86vw, 320px)",
+                            maxWidth: "min(86vw, 320px)",
+                            scrollSnapAlign: "center",
+                            scrollSnapStop: "always",
+                          }
+                        : {}),
                     }}
                     onMouseEnter={(e) => {
                       (e.currentTarget as HTMLElement).style.borderColor = "rgba(16,185,129,0.45)";
@@ -904,14 +973,16 @@ const loadProperties = async () => {
                     }}
                   >
                     {/* Image */}
-                    <div style={{ position: "relative", height: 210, overflow: "hidden" }}>
+                    <div style={{ position: "relative", height: listLayoutMobile ? 200 : 210, overflow: "hidden" }}>
                       {p.images?.[0] ? (
                         <Image
                           src={p.images[0]}
                           alt={`صورة عقار: ${p.title} في ${p.area}`}
                           fill
-                          sizes="(max-width: 768px) 100vw, 33vw"
+                          sizes="(max-width: 768px) 86vw, 33vw"
                           style={{ objectFit: "cover" }}
+                          loading="lazy"
+                          quality={72}
                           priority={false}
                         />
                       ) : (
@@ -1463,20 +1534,31 @@ const loadProperties = async () => {
             </a>
           ))}
         </nav>
+        </div>
+
         <ChatBot
-            properties={properties}
-            onActiveFilterChange={(filter) => setActiveFilter(filter)}
-            onSearchQueryChange={(query) => setSearchQuery(query)}
-            onFilter={async ({ unitType, area, maxPrice, keywords }) => {
-              // يغير الفلاتر مباشرة ويعمل search
-              if (unitType) setActiveFilter(unitType)
-              
-              const parts = [area, keywords, maxPrice?.toString()].filter(Boolean)
-              setSearchQuery(parts.join(' '))
-              
-              // شغّل loadProperties بعد ما الـ state تتحدث
-              setTimeout(() => loadProperties(), 50)
-            }}
+          pendingPrompt={chatBootstrap}
+          onPendingPromptConsumed={handleChatBootstrapConsumed}
+          onMobileSheetOpenChange={setMobileChatFocus}
+          onFilter={(filters) => {
+            // حدّث كل الـ states أولاً
+            if (filters.unitType) {
+              setActiveFilter(filters.unitType);   // ← التابة اللي فوق
+            } else {
+              setActiveFilter('all');
+            }
+
+            // ابني الـ overrideFilters وابعته لـ loadProperties مباشرة
+            // (مش هتستنى الـ state يتحدث لأن ده async)
+            const overrideFilters = {
+              area:      filters.area     || '',
+              maxPrice:  filters.maxPrice ?? null,
+              unitType:  filters.unitType || '',
+              keywords:  filters.keywords || '',
+            };
+
+            loadProperties(overrideFilters);  // ← بنبعت الداتا مباشرة = مفيش stale closure
+          }}
         />
       </div>
     </>
