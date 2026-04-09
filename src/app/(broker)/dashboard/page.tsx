@@ -170,7 +170,7 @@ export default function BrokerDashboardHomePage() {
               width: 40,
               height: 40,
               border: "3px solid #dcfce7",
-              borderTop: "3px solid #166534",
+              borderTop: "3px solid #2D5A27",
               borderRadius: "50%",
               animation: "spin 1s linear infinite",
               margin: "0 auto 12px",
@@ -559,7 +559,7 @@ export default function BrokerDashboardHomePage() {
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap" }}>
                       <div>
                         <p style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", margin: 0 }}>{l.client_name}</p>
-                        <p style={{ fontSize: 14, color: "#166534", fontWeight: 700, margin: "4px 0 0", direction: "ltr", textAlign: "right" }}>
+                        <p style={{ fontSize: 14, color: "#2D5A27", fontWeight: 700, margin: "4px 0 0", direction: "ltr", textAlign: "right" }}>
                           <a href={`tel:${l.client_phone}`} style={{ color: "inherit", textDecoration: "none" }}>
                             {l.client_phone}
                           </a>

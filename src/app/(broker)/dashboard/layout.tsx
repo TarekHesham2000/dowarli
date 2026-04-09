@@ -33,16 +33,16 @@ export default function BrokerDashboardLayout({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <Link href="/" style={{ fontSize: 20, fontWeight: 900, color: "#166534", textDecoration: "none" }}>
+          <Link href="/" style={{ fontSize: 20, fontWeight: 900, color: "#2D5A27", textDecoration: "none" }}>
             دَورلي
           </Link>
           <span
             style={{
               fontSize: 11,
               fontWeight: 800,
-              color: "#166534",
+              color: "#2D5A27",
               background: "#f0fdf4",
-              border: "1px solid #bbf7d0",
+              border: "1px solid #2D5A27",
               padding: "4px 12px",
               borderRadius: 999,
             }}
@@ -52,7 +52,7 @@ export default function BrokerDashboardLayout({
         </div>
         <nav aria-label="لوحة الوسيط" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <Link
-            href="/dashboard"
+            href="/broker/dashboard"
             style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", textDecoration: "none", padding: "8px 12px", borderRadius: 10 }}
           >
             الرئيسية
