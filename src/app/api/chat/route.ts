@@ -266,8 +266,11 @@ async function queryTopProperties(
   if (typeof filters.maxPrice === "number") q = q.lte("price", filters.maxPrice);
 
   const kw = filters.keywords?.trim();
-  if (kw && kw.length >= 2) {
-    q = q.or(`title.ilike.%${kw}%,address.ilike.%${kw}%`);
+  const safeKw = kw
+    ? kw.replace(/[,،]/g, " ").replace(/\s+/g, " ").trim()
+    : "";
+  if (safeKw.length >= 2) {
+    q = q.or(`title.ilike.%${safeKw}%,address.ilike.%${safeKw}%`);
   }
 
   const { data, error } = await q.limit(limit);
@@ -674,8 +677,17 @@ export async function POST(req: NextRequest) {
     DEFAULT_GROQ_MODEL;
 
   if (!groqApiKey) {
+    if (process.env.NODE_ENV === "development") {
+      console.error(
+        "[api/chat] GROQ_API_KEY is missing or empty. Add GROQ_API_KEY to .env.local (local) or Vercel Project → Settings → Environment Variables (production), then restart / redeploy.",
+      );
+    }
     return NextResponse.json(
-      { message: "خطأ في الإعدادات.", action: null } satisfies ChatResponse,
+      {
+        message:
+          "إعدادات الخادم ناقصة: لم يُضبط مفتاح الذكاء الاصطناعي (GROQ_API_KEY). أضِف المتغير في بيئة التشغيل (مثلاً إعدادات Vercel) ثم أعد النشر.",
+        action: null,
+      } satisfies ChatResponse,
       { status: 500 },
     );
   }

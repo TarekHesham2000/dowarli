@@ -335,7 +335,10 @@ const loadProperties = async (overrideFilters?: any) => {
       query = query.eq('unit_type', selectedType);
     }
 
-    const cleanKeywords = parsed.keywords?.trim() || '';
+    const rawKw = parsed.keywords?.trim() || '';
+    const cleanKeywords = rawKw
+      ? rawKw.replace(/[,،]/g, ' ').replace(/\s+/g, ' ').trim()
+      : '';
     if (cleanKeywords.length > 2) {
       query = query.or(
         `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%`
