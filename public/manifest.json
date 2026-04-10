@@ -1,6 +1,6 @@
 {
-  "name": "دَورلي",
-  "short_name": "دَورلي",
+  "name": "Dowarli",
+  "short_name": "Dowarli",
   "description": "منصة إيجار عقارات لسكن الطلاب والمغتربين في مصر",
   "start_url": "/",
   "display": "standalone",
@@ -8,10 +8,22 @@
   "theme_color": "#1B783C",
   "icons": [
     {
-      "src": "/images/app-icon.png",
+      "src": "/branding/app-icon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/app-icon.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "/branding/app-icon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ],
   "lang": "ar",

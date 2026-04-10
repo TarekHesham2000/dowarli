@@ -6,6 +6,7 @@ import Banner from "@/components/shared/Banner";
 import Image from "next/image";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import ChatBot from '@/components/shared/ChatBot'
+import Footer from '@/components/shared/Footer'
 import Navbar from '@/components/Navbar'
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
@@ -1377,52 +1378,7 @@ const loadProperties = async (overrideFilters?: any) => {
         </section>
 
         {/* ══════════════════ FOOTER ══════════════════ */}
-        <footer
-          style={{
-            background: "rgba(2,6,23,0.98)",
-            borderTop: "1px solid rgba(255,255,255,0.05)",
-            padding: "3rem 1.5rem 2rem",
-            textAlign: "center",
-          }}
-        >
-          <div style={{ fontSize: 23, fontWeight: 900, color: "#ffffff", marginBottom: "0.3rem" }}>
-            دَورلي{" "}
-            <span style={{ color: "var(--brand-500)", fontSize: 16, fontWeight: 600 }}>Dowarly</span>
-          </div>
-          <p style={{ fontSize: 12, color: "#475569", marginBottom: "2rem" }}>
-            منصة الإيجار الأولى في مصر
-          </p>
-          <nav
-            aria-label="روابط التذييل"
-            style={{
-              display: "flex",
-              justifyContent: "center",
-              gap: "2.25rem",
-              fontSize: 13,
-              flexWrap: "wrap",
-              marginBottom: "2rem",
-            }}
-          >
-            {[
-              { href: "/about",   label: "من نحن"             },
-              { href: "/privacy", label: "سياسة الخصوصية"     },
-              { href: "/terms",   label: "الشروط والأحكام"    },
-              { href: "/contact", label: "تواصل معنا"         },
-            ].map((link) => (
-              <a
-                key={link.href}
-                href={link.href}
-                className="nav-link"
-                style={{ color: "#64748b", textDecoration: "none" }}
-              >
-                {link.label}
-              </a>
-            ))}
-          </nav>
-          <p style={{ fontSize: 12, color: "#334155" }}>
-            جميع الحقوق محفوظة © 2026 دَورلي - Dowarly
-          </p>
-        </footer>
+        <Footer />
 
         {/* ══════════════════ MOBILE BOTTOM NAV ══════════════════ */}
         <nav

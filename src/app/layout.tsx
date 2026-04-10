@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AppProviders } from "@/components/AppProviders";
 import { getSiteUrl } from "@/lib/site";
 import "./globals.css";
 
@@ -18,8 +19,8 @@ export const metadata: Metadata = {
   title: "دَورلي - منصة الإيجار الأولى في مصر",
   description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
   icons: {
-    icon: [{ url: "/images/app-icon.png", type: "image/png" }],
-    apple: "/images/app-icon.png",
+    icon: [{ url: "/branding/app-icon.png", type: "image/png" }],
+    apple: "/branding/app-icon.png",
   },
   openGraph: {
     type: "website",
@@ -43,8 +44,8 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <head>
-        <link rel="icon" href="/images/app-icon.png" type="image/png" sizes="any" />
-        <link rel="apple-touch-icon" href="/images/app-icon.png" />
+        <link rel="icon" href="/branding/app-icon.png" type="image/png" sizes="any" />
+        <link rel="apple-touch-icon" href="/branding/app-icon.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#1B783C" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -52,7 +53,7 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="دَورلي" />
       </head>
       <body suppressHydrationWarning={true} className={`${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col`}>
-        {children}
+        <AppProviders>{children}</AppProviders>
       </body>
     </html>
   );
