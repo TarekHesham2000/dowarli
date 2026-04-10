@@ -44,7 +44,7 @@ const TYPE_LABELS: Record<UnitType, string> = {
 }
 
 const TYPE_META: Record<UnitType, { icon: string; accent: string; glow: string }> = {
-  student:  { icon: '🎓', accent: '#10b981', glow: 'rgba(16,185,129,0.25)'  },
+  student:  { icon: '🎓', accent: '#2eb865', glow: 'rgba(27,120,60,0.25)'  },
   family:   { icon: '🏡', accent: '#60a5fa', glow: 'rgba(96,165,250,0.25)'  },
   studio:   { icon: '🛋️', accent: '#c084fc', glow: 'rgba(192,132,252,0.25)' },
   shared:   { icon: '🤝', accent: '#fb923c', glow: 'rgba(251,146,60,0.25)'  },
@@ -364,7 +364,7 @@ export default function PropertyPageClient() {
         <div style={{ fontSize: 72, marginBottom: 16 }}>🏚️</div>
         <p style={{ color: '#94a3b8', fontSize: 18, fontWeight: 700, marginBottom: 8 }}>الإعلان غير موجود</p>
         <p style={{ color: '#475569', fontSize: 13, marginBottom: 24 }}>ربما تم حذف الإعلان أو الرابط غير صحيح</p>
-        <button onClick={() => router.push('/')} style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 28px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: "'Cairo', sans-serif", boxShadow: '0 0 24px rgba(16,185,129,0.4)' }}>
+        <button onClick={() => router.push('/')} style={{ background: 'var(--brand-gradient-chat)', color: '#fff', border: 'none', borderRadius: 12, padding: '12px 28px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: "'Cairo', sans-serif", boxShadow: '0 0 24px rgba(27,120,60,0.4)' }}>
           العودة للرئيسية
         </button>
       </div>
@@ -421,7 +421,7 @@ export default function PropertyPageClient() {
         body { background: #020617; font-family: 'Cairo', sans-serif; }
         ::-webkit-scrollbar       { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #10b981; border-radius: 99px; }
+        ::-webkit-scrollbar-thumb { background: var(--brand-500); border-radius: 99px; }
         @keyframes spin    { to { transform: rotate(360deg) } }
         @keyframes fadeUp  { from { opacity:0; transform:translateY(20px) } to { opacity:1; transform:translateY(0) } }
         @keyframes wa-pulse { 0%,100%{box-shadow:0 0 0 0 rgba(37,211,102,.45)} 60%{box-shadow:0 0 0 12px rgba(37,211,102,0)} }
@@ -435,8 +435,8 @@ export default function PropertyPageClient() {
         .wa-btn { animation: wa-pulse 2.2s ease infinite; }
         .wa-btn:hover { filter: brightness(1.1); transform:translateY(-1px); }
         .back-btn:hover { background: rgba(255,255,255,0.08) !important; }
-        .detail-item:hover { background: rgba(16,185,129,0.06) !important; border-color: rgba(16,185,129,0.2) !important; }
-        input:focus { border-color: #10b981 !important; box-shadow: 0 0 0 3px rgba(16,185,129,0.12) !important; outline: none !important; }
+        .detail-item:hover { background: rgba(27,120,60,0.06) !important; border-color: rgba(27,120,60,0.2) !important; }
+        input:focus { border-color: var(--brand-500) !important; box-shadow: 0 0 0 3px rgba(27,120,60,0.12) !important; outline: none !important; }
         @media (max-width: 768px) {
           .grid-layout { grid-template-columns: 1fr !important; }
           .sticky-col  { position: static !important; }
@@ -467,13 +467,20 @@ export default function PropertyPageClient() {
         </AnimatePresence>
 
         {/* Ambient glow */}
-        <div aria-hidden style={{ position: 'fixed', bottom: 0, left: 0, width: 460, height: 460, background: 'radial-gradient(circle, rgba(16,185,129,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
+        <div aria-hidden style={{ position: 'fixed', bottom: 0, left: 0, width: 460, height: 460, background: 'radial-gradient(circle, rgba(27,120,60,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
 
         {/* ══ NAV ══ */}
         <nav style={{ position: 'sticky', top: 0, zIndex: 100, background: 'rgba(2,6,23,.8)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(255,255,255,.06)', padding: '0 2rem', height: 68, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <a href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-            <span style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(135deg,#10b981,#059669)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 17, fontWeight: 900, color: '#fff', boxShadow: '0 0 20px rgba(16,185,129,.5)', flexShrink: 0 }}>د</span>
-            <span style={{ fontSize: 20, fontWeight: 900, color: '#fff' }}>دَورلي<span style={{ color: '#10b981', fontSize: 12, fontWeight: 600, marginRight: 5 }}>Dowarly</span></span>
+          <a href="/" style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.55rem', padding: '6px 14px', borderRadius: 12 }}>
+            <Image
+              src="/images/full-logo.png"
+              alt="دَورلي — Dowarly"
+              width={200}
+              height={40}
+              className="h-9 w-auto max-h-9 object-contain"
+              priority
+              quality={75}
+            />
           </a>
           <button onClick={() => router.back()} className="back-btn" style={{ background: 'rgba(255,255,255,.05)', border: '1px solid rgba(255,255,255,.1)', borderRadius: 12, padding: '8px 20px', fontSize: 13, fontWeight: 700, color: '#94a3b8', cursor: 'pointer', fontFamily: "'Cairo', sans-serif", transition: 'background .2s' }}>
             ← رجوع
@@ -542,7 +549,7 @@ export default function PropertyPageClient() {
                     )}
                   </>
                 ) : (
-                  <div aria-hidden style={{ height: '100%', background: 'linear-gradient(135deg, rgba(16,185,129,.08), rgba(5,150,105,.18))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 90 }}>🏠</div>
+                  <div aria-hidden style={{ height: '100%', background: 'linear-gradient(135deg, rgba(27,120,60,.08), rgba(5,150,105,.18))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 90 }}>🏠</div>
                 )}
               </div>
 
@@ -736,9 +743,9 @@ export default function PropertyPageClient() {
                   </form>
 
                 ) : (
-                  <div style={{ background: 'rgba(16,185,129,.1)', border: '1px solid rgba(16,185,129,.3)', borderRadius: 16, padding: '1.5rem', textAlign: 'center' }}>
+                  <div style={{ background: 'rgba(27,120,60,.1)', border: '1px solid rgba(27,120,60,.3)', borderRadius: 16, padding: '1.5rem', textAlign: 'center' }}>
                     <div style={{ fontSize: 40, marginBottom: 10 }}>✅</div>
-                    <p style={{ fontSize: 15, fontWeight: 700, color: '#10b981', margin: '0 0 4px' }}>تم إرسال طلبك بنجاح!</p>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--brand-500)', margin: '0 0 4px' }}>تم إرسال طلبك بنجاح!</p>
                     <p style={{ fontSize: 12, color: '#475569', margin: 0 }}>جاري تحويلك لواتساب المالك...</p>
                   </div>
                 )}
@@ -851,7 +858,7 @@ export default function PropertyPageClient() {
 
         {/* FOOTER */}
         <footer style={{ background: 'rgba(2,6,23,.98)', borderTop: '1px solid rgba(255,255,255,.05)', padding: '2rem 1.5rem', textAlign: 'center' }}>
-          <p style={{ fontSize: 19, fontWeight: 900, color: '#fff', marginBottom: '0.2rem' }}>دَورلي <span style={{ color: '#10b981', fontSize: 13, fontWeight: 600 }}>Dowarly</span></p>
+          <p style={{ fontSize: 19, fontWeight: 900, color: '#fff', marginBottom: '0.2rem' }}>دَورلي <span style={{ color: 'var(--brand-500)', fontSize: 13, fontWeight: 600 }}>Dowarly</span></p>
           <p style={{ fontSize: 11, color: '#334155' }}>جميع الحقوق محفوظة © 2026 دَورلي</p>
         </footer>
       </div>

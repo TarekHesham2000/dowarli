@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Image from "next/image";
 import Link from "next/link";
 
 export const metadata: Metadata = {
@@ -33,8 +34,24 @@ export default function BrokerDashboardLayout({
         }}
       >
         <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <Link href="/" style={{ fontSize: 20, fontWeight: 900, color: "#166534", textDecoration: "none" }}>
-            دَورلي
+          <Link
+            href="/"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              textDecoration: "none",
+              padding: "6px 10px",
+              borderRadius: 10,
+            }}
+          >
+            <Image
+              src="/images/full-logo.png"
+              alt="دَورلي — Dowarly"
+              width={180}
+              height={36}
+              style={{ height: 34, width: "auto", objectFit: "contain" }}
+              quality={75}
+            />
           </Link>
           <span
             style={{

@@ -86,7 +86,7 @@ function AnimatedBackground() {
       <div
         className="absolute inset-0"
         style={{
-          backgroundImage: `linear-gradient(rgba(16,185,129,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(16,185,129,0.03) 1px, transparent 1px)`,
+          backgroundImage: `linear-gradient(var(--brand-a03) 1px, transparent 1px), linear-gradient(90deg, var(--brand-a03) 1px, transparent 1px)`,
           backgroundSize: '40px 40px',
           animation: 'grid-move 10s linear infinite',
         }}
@@ -94,7 +94,7 @@ function AnimatedBackground() {
       <div
         className="absolute top-0 left-1/2 -translate-x-1/2 w-80 h-64 rounded-full"
         style={{
-          background: 'radial-gradient(circle, rgba(16,185,129,0.06) 0%, transparent 65%)',
+          background: 'radial-gradient(circle, var(--brand-a06) 0%, transparent 65%)',
           filter: 'blur(40px)',
           animation: 'aura-pulse 7s ease-in-out infinite',
         }}
@@ -111,7 +111,7 @@ function TypingOrb() {
         <span
           key={i}
           className="h-2 w-2 rounded-full"
-          style={{ background: 'rgba(52,211,153,0.7)', animation: `chat-dot 1s ease-in-out ${i * 0.2}s infinite` }}
+          style={{ background: 'color-mix(in srgb, var(--brand-500) 72%, transparent)', animation: `chat-dot 1s ease-in-out ${i * 0.2}s infinite` }}
         />
       ))}
     </div>
@@ -123,17 +123,17 @@ function FilterBadge({ action }: { action: FilterAction }) {
   if (!action.unitType && !action.area && !action.maxPrice) return null
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
-      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'rgba(52,211,153,0.5)' }}>فلتر</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--brand-a50)' }}>فلتر</span>
       {action.area && (
         <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
-          style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', color: '#6ee7b7' }}>
+          style={{ background: 'var(--brand-a12)', border: '1px solid var(--brand-a25)', color: 'var(--brand-400)' }}>
           <MapPin size={9} />{action.area}
         </span>
       )}
       {action.maxPrice && (
         <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
-          <DollarSign size={9} style={{ color: '#6ee7b7' }} />
+          <DollarSign size={9} style={{ color: 'var(--brand-400)' }} />
           حتى {action.maxPrice.toLocaleString('ar-EG')} ج.م
         </span>
       )}
@@ -161,7 +161,7 @@ function PropertySlider({
   return (
     <div className="mt-4">
       <p className="mb-2.5 text-[10px] font-bold uppercase tracking-wider"
-        style={{ color: sectionTone === 'slate' ? 'rgba(148,163,184,0.6)' : 'rgba(52,211,153,0.6)' }}>
+        style={{ color: sectionTone === 'slate' ? 'rgba(148,163,184,0.6)' : 'var(--brand-a60)' }}>
         {sectionTitle}
       </p>
       <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide"
@@ -185,7 +185,7 @@ function PropertySlider({
                     : <div className="flex h-full items-center justify-center text-3xl opacity-40">🏠</div>
                   }
                   <span className="absolute top-2 start-2 rounded-lg px-2 py-0.5 text-[10px] font-black text-white"
-                    style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 2px 8px rgba(5,150,105,0.5)' }}>
+                    style={{ background: 'var(--brand-gradient-chat)', boxShadow: 'var(--brand-shadow-card)' }}>
                     {r.price.toLocaleString('ar-EG')} ج.م
                   </span>
                   <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent px-2.5 pb-2 pt-6">
@@ -195,9 +195,9 @@ function PropertySlider({
                 <div className="flex items-center justify-between px-2.5 py-2"
                   style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                   <p className="flex min-w-0 truncate items-center gap-1 text-[10px]" style={{ color: '#94a3b8' }}>
-                    <MapPin size={8} style={{ color: '#6ee7b7', flexShrink: 0 }} />{r.area}
+                    <MapPin size={8} style={{ color: 'var(--brand-400)', flexShrink: 0 }} />{r.area}
                   </p>
-                  <span className="shrink-0 text-[10px] font-bold" style={{ color: '#34d399' }}>عرض ↗</span>
+                  <span className="shrink-0 text-[10px] font-bold" style={{ color: 'var(--brand-500)' }}>عرض ↗</span>
                 </div>
               </motion.div>
             </a>
@@ -223,7 +223,7 @@ function ChatBubble({ msg }: { msg: Message }) {
       {!isUser && (
         <div
           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white mb-0.5"
-          style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 2px 12px rgba(5,150,105,0.35)', flexShrink: 0 }}
+          style={{ background: 'var(--brand-gradient-chat)', boxShadow: 'var(--brand-shadow-avatar)', flexShrink: 0 }}
           aria-hidden
         >✦</div>
       )}
@@ -233,9 +233,9 @@ function ChatBubble({ msg }: { msg: Message }) {
         className={`max-w-[90%] rounded-2xl px-4 py-3 text-[13.5px] leading-relaxed m ${isUser ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
         style={isUser ? {
           margin: '10px',
-          background: 'linear-gradient(135deg, #059669, #047857)',
+          background: 'var(--brand-gradient-chat)',
           color: '#fff',
-          boxShadow: '0 4px 18px rgba(5,150,105,0.28)',
+          boxShadow: 'var(--brand-shadow-soft)',
         } : {
           background: 'rgba(255,255,255,0.06)',
           border: '1px solid rgba(255,255,255,0.09)',
@@ -380,7 +380,7 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
         onClick={() => setIsOpen((v) => !v)}
         aria-label={isOpen ? 'إغلاق مساعد دَورلي' : 'فتح مساعد دَورلي'}
         className={['fixed z-[9999] flex h-14 w-14 items-center justify-center rounded-full overflow-hidden', isMobile && isOpen ? 'hidden' : ''].join(' ')}
-        style={{ bottom: CHAT_FAB_BOTTOM_PX, right: '20px', left: 'auto', background: 'linear-gradient(135deg, #059669 0%, #047857 60%, #065f46 100%)', boxShadow: '0 8px 28px rgba(5,150,105,0.45), 0 0 0 1px rgba(255,255,255,0.12)' }}
+        style={{ bottom: CHAT_FAB_BOTTOM_PX, right: '20px', left: 'auto', background: 'var(--brand-gradient-fab)', boxShadow: 'var(--brand-shadow-fab)' }}
       >
         <motion.div
           animate={isOpen ? { rotate: 90, scale: 0.88 } : { rotate: 0, scale: 1 }}
@@ -421,7 +421,7 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
                 ? 'inset-x-0 bottom-0 h-[90dvh] max-h-[90vh] w-full rounded-t-[1.75rem]'
                 : ['max-h-[min(88dvh,640px)] inset-x-0 bottom-0 rounded-t-sm sm:inset-x-auto sm:bottom-[168px] sm:right-5 sm:left-auto sm:w-[min(100vw-2rem,420px)] sm:rounded-3xl', expanded ? 'sm:max-h-[min(92dvh,720px)]' : ''].join(' '),
             ].join(' ')}
-            style={{ background: 'rgba(4,12,22,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', boxShadow: '0 40px 100px rgba(0,0,0,0.75), 0 0 0 1px rgba(16,185,129,0.06)' }}
+            style={{ background: 'rgba(4,12,22,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', boxShadow: '0 40px 100px rgba(0,0,0,0.75), 0 0 0 1px var(--brand-a06)' }}
           >
             <AnimatedBackground />
 
@@ -445,7 +445,7 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
             {/* Header */}
             <div
               className="flex items-center justify-between gap-3 px-5 py-3.5 shrink-0 relative z-10"
-              style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'rgba(16,185,129,0.04)' }}
+              style={{ borderBottom: '1px solid rgba(255,255,255,0.07)', background: 'var(--brand-a04)' }}
             >
               <div className="flex min-w-0 items-center gap-3">
                 {/* Logo — برتقالي/أصفر — لا تعدّل */}
@@ -465,10 +465,10 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
                 <div className="min-w-0">
                   <p className="truncate text-[14px] font-bold tracking-tight text-white">دليل دَورلي</p>
                   <p className="truncate text-[11px]" style={loading ? {
-                    background: 'linear-gradient(90deg, #059669, #34d399, #059669)',
+                    background: 'linear-gradient(90deg, var(--brand-600), var(--brand-400), var(--brand-600))',
                     backgroundSize: '200% auto', animation: 'shimmer 2s linear infinite',
                     WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-                  } : { color: 'rgba(52,211,153,0.8)' }}>
+                  } : { color: 'var(--brand-a80)' }}>
                     {loading ? 'جاري التحليل…' : 'مستشار عقاري · Dowrly Guide'}
                   </p>
                 </div>
@@ -510,7 +510,7 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
                   transition={{ type: 'spring', stiffness: 420, damping: 34 }}
                   className="mb-4 flex items-end gap-2.5">
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                    style={{ background: 'linear-gradient(135deg, #059669, #047857)', boxShadow: '0 2px 10px rgba(5,150,105,0.3)', flexShrink: 0 }}>✦</div>
+                    style={{ background: 'var(--brand-gradient-chat)', boxShadow: '0 2px 10px rgba(27, 120, 60, 0.3)', flexShrink: 0 }}>✦</div>
                   <div className="rounded-2xl rounded-bl-sm px-4 py-3"
                     style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.09)' }}>
                     <TypingOrb />
@@ -540,7 +540,7 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
                       style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}
                       onMouseEnter={(e) => {
                         const el = e.currentTarget as HTMLButtonElement
-                        el.style.background = 'rgba(16,185,129,0.15)'; el.style.borderColor = 'rgba(16,185,129,0.35)'; el.style.color = '#fff'
+                        el.style.background = 'var(--brand-a15)'; el.style.borderColor = 'var(--brand-a35)'; el.style.color = '#fff'
                       }}
                       onMouseLeave={(e) => {
                         const el = e.currentTarget as HTMLButtonElement
@@ -582,8 +582,8 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
                 whileHover={input.trim() && !loading ? { scale: 1.08 } : {}}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-25"
                 style={input.trim() && !loading ? {
-                  background: 'linear-gradient(135deg, #059669, #047857)',
-                  boxShadow: '0 4px 18px rgba(5,150,105,0.5)',
+                  background: 'var(--brand-gradient-chat)',
+                  boxShadow: '0 4px 18px rgba(27, 120, 60, 0.5)',
                 } : {
                   background: 'rgba(255,255,255,0.06)',
                   border: '1px solid rgba(255,255,255,0.1)',

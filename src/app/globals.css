@@ -3,6 +3,32 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Dowarly brand — anchored to logo / PWA theme (#1B783C), gradient toward #2EB865 → #145A2E */
+  --brand-400: #5ee4a3;
+  --brand-500: #2eb865;
+  --brand-600: #1b783c;
+  --brand-700: #145a2e;
+  --brand-800: #0f4824;
+  --brand-rgb: 27, 120, 60;
+  --brand-gradient: linear-gradient(135deg, #2eb865 0%, #1b783c 52%, #145a2e 100%);
+  --brand-gradient-chat: linear-gradient(135deg, #2eb865, #1b783c);
+  --brand-gradient-fab: linear-gradient(135deg, #2eb865 0%, #1b783c 58%, #145a2e 100%);
+  --brand-shadow-fab: 0 8px 28px rgba(27, 120, 60, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  --brand-shadow-soft: 0 4px 18px rgba(27, 120, 60, 0.28);
+  --brand-shadow-card: 0 2px 8px rgba(27, 120, 60, 0.5);
+  --brand-shadow-avatar: 0 2px 12px rgba(27, 120, 60, 0.35);
+  --brand-a03: rgba(27, 120, 60, 0.03);
+  --brand-a04: rgba(27, 120, 60, 0.04);
+  --brand-a06: rgba(27, 120, 60, 0.06);
+  --brand-a12: rgba(27, 120, 60, 0.12);
+  --brand-a15: rgba(27, 120, 60, 0.15);
+  --brand-a25: rgba(27, 120, 60, 0.25);
+  --brand-a35: rgba(27, 120, 60, 0.35);
+  --brand-a45: rgba(27, 120, 60, 0.45);
+  --brand-a50: rgba(46, 184, 101, 0.5);
+  --brand-a60: rgba(46, 184, 101, 0.6);
+  --brand-a80: rgba(46, 184, 101, 0.8);
 }
 
 @theme inline {
@@ -10,6 +36,16 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Subtle remap: keep emerald-* utilities but tint toward logo greens */
+  --color-emerald-300: #86efac;
+  --color-emerald-400: #4ade90;
+  --color-emerald-500: #2eb865;
+  --color-emerald-600: #1b783c;
+  --color-emerald-700: #145a2e;
+  --color-emerald-800: #124428;
+  --color-emerald-900: #052e16;
+  --color-emerald-950: #022c16;
 }
 
 /* ❌ حذفنا dark mode block — كان بيحول الخلفية لسوداء على أجهزة الـ Dark Mode */

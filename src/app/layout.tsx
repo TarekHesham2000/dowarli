@@ -17,6 +17,10 @@ export const metadata: Metadata = {
   metadataBase: new URL(getSiteUrl()),
   title: "دَورلي - منصة الإيجار الأولى في مصر",
   description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
+  icons: {
+    icon: [{ url: "/images/app-icon.png", type: "image/png" }],
+    apple: "/images/app-icon.png",
+  },
   openGraph: {
     type: "website",
     locale: "ar_EG",
@@ -39,6 +43,8 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <head>
+        <link rel="icon" href="/images/app-icon.png" type="image/png" sizes="any" />
+        <link rel="apple-touch-icon" href="/images/app-icon.png" />
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#1B783C" />
         <meta name="mobile-web-app-capable" content="yes" />

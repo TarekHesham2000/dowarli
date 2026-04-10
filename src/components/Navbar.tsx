@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -70,19 +71,18 @@ export default function Navbar() {
     >
       <Link
         href="/"
-        className="flex shrink-0 items-center gap-2.5 no-underline"
+        className="flex shrink-0 items-center rounded-xl px-3 py-2 no-underline transition-opacity duration-200 hover:opacity-[0.92]"
         aria-label="دَورلي – الصفحة الرئيسية"
       >
-        <span
-          className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500 to-emerald-700 text-lg font-black text-white shadow-[0_0_24px_rgba(16,185,129,0.45)]"
-          aria-hidden
-        >
-          د
-        </span>
-        <span className="text-[22px] font-black tracking-tight text-white">
-          دَورلي
-          <span className="mr-1.5 text-[13px] font-semibold text-emerald-400">Dowarly</span>
-        </span>
+        <Image
+          src="/images/full-logo.png"
+          alt="دَورلي — Dowarly"
+          width={220}
+          height={44}
+          className="h-9 w-auto max-h-10 object-contain object-center sm:h-10 sm:max-h-[2.5rem]"
+          priority
+          quality={75}
+        />
       </Link>
 
       {/* min-w يثبت العرض تقريباً بين حالتَي ضيف/مستخدم ويقلل تحرك التخطيط */}

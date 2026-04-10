@@ -74,7 +74,7 @@ const TYPE_LABELS: Record<UnitType, string> = {
 };
 
 const TYPE_COLORS: Record<UnitType, { bg: string; text: string; border: string }> = {
-  student: { bg: "rgba(16,185,129,0.18)",  text: "#10b981", border: "rgba(16,185,129,0.4)"  },
+  student: { bg: "rgba(27,120,60,0.18)",  text: "var(--brand-500)", border: "rgba(27,120,60,0.4)"  },
   family:  { bg: "rgba(59,130,246,0.18)",  text: "#60a5fa", border: "rgba(59,130,246,0.4)"  },
   studio:  { bg: "rgba(167,139,250,0.18)", text: "#c084fc", border: "rgba(167,139,250,0.4)" },
   shared:  { bg: "rgba(251,146,60,0.18)",  text: "#fb923c", border: "rgba(251,146,60,0.4)"  },
@@ -429,7 +429,7 @@ const loadProperties = async (overrideFilters?: any) => {
         /* Scrollbar */
         ::-webkit-scrollbar       { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #10b981; border-radius: 99px; }
+        ::-webkit-scrollbar-thumb { background: var(--brand-500); border-radius: 99px; }
 
         /* Select options dark theme */
         select option { background: #0f172a; color: #f8fafc; }
@@ -440,12 +440,12 @@ const loadProperties = async (overrideFilters?: any) => {
 
         /* Nav hover */
         .nav-link { transition: color 0.2s ease, border-color 0.2s ease; }
-        .nav-link:hover { color: #10b981 !important; border-color: #10b981 !important; }
+        .nav-link:hover { color: var(--brand-500) !important; border-color: var(--brand-500) !important; }
 
         /* Input focus glow */
         .field:focus {
-          border-color: rgba(16,185,129,0.6) !important;
-          box-shadow: 0 0 0 3px rgba(16,185,129,0.12);
+          border-color: rgba(27,120,60,0.6) !important;
+          box-shadow: 0 0 0 3px rgba(27,120,60,0.12);
         }
 
         /* WhatsApp pulse */
@@ -461,7 +461,7 @@ const loadProperties = async (overrideFilters?: any) => {
 
         /* Active chip glow */
         .chip-active {
-          box-shadow: 0 0 16px rgba(16,185,129,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+          box-shadow: 0 0 16px rgba(27,120,60,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
         }
 
         /* Bottom nav – show only on mobile */
@@ -498,7 +498,7 @@ const loadProperties = async (overrideFilters?: any) => {
             left: 0,
             width: 500,
             height: 500,
-            background: "radial-gradient(circle, rgba(16,185,129,0.07) 0%, transparent 70%)",
+            background: "radial-gradient(circle, rgba(27,120,60,0.07) 0%, transparent 70%)",
             pointerEvents: "none",
             zIndex: 0,
           }}
@@ -541,13 +541,13 @@ const loadProperties = async (overrideFilters?: any) => {
               display: "inline-flex",
               alignItems: "center",
               gap: "0.4rem",
-              background: "rgba(16,185,129,0.1)",
-              border: "1px solid rgba(16,185,129,0.3)",
+              background: "rgba(27,120,60,0.1)",
+              border: "1px solid rgba(27,120,60,0.3)",
               padding: "7px 22px",
               borderRadius: 99,
               fontSize: 13,
               fontWeight: 700,
-              color: "#10b981",
+              color: "var(--brand-500)",
               marginBottom: "1.75rem",
               backdropFilter: "blur(8px)",
             }}
@@ -570,7 +570,7 @@ const loadProperties = async (overrideFilters?: any) => {
             لاقي{" "}
             <span
               style={{
-                background: "linear-gradient(135deg, #10b981 0%, #34d399 100%)",
+                background: "linear-gradient(135deg, var(--brand-600) 0%, var(--brand-400) 100%)",
                 WebkitBackgroundClip: "text",
                 WebkitTextFillColor: "transparent",
                 backgroundClip: "text",
@@ -690,20 +690,20 @@ const loadProperties = async (overrideFilters?: any) => {
                 type="button"
                 onClick={submitHeroToAi}
                 style={{
-                  background: "linear-gradient(135deg, #059669, #047857)",
+                  background: "var(--brand-gradient-chat)",
                   color: "#fff", border: "none", borderRadius: 14,
                   padding: "11px 22px", fontFamily: "'Cairo', sans-serif",
                   fontSize: 13, fontWeight: 800, cursor: "pointer",
                   whiteSpace: "nowrap", flexShrink: 0,
-                  boxShadow: "0 0 0 1px rgba(5,150,105,0.4), 0 8px 28px rgba(5,150,105,0.35)",
+                  boxShadow: "0 0 0 1px rgba(27,120,60,0.4), 0 8px 28px rgba(27,120,60,0.35)",
                   transition: "box-shadow 0.25s, transform 0.2s",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(5,150,105,0.6), 0 12px 36px rgba(5,150,105,0.5)";
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(27,120,60,0.6), 0 12px 36px rgba(27,120,60,0.5)";
                   e.currentTarget.style.transform = "translateY(-1px)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(5,150,105,0.4), 0 8px 28px rgba(5,150,105,0.35)";
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(27,120,60,0.4), 0 8px 28px rgba(27,120,60,0.35)";
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
@@ -722,7 +722,7 @@ const loadProperties = async (overrideFilters?: any) => {
                 }}
               >
                 {parsedFilters.area && (
-                  <span style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 99, fontSize: 11, fontWeight: 700, color: "#10b981", padding: "4px 12px" }}>
+                  <span style={{ background: "rgba(27,120,60,0.12)", border: "1px solid rgba(27,120,60,0.3)", borderRadius: 99, fontSize: 11, fontWeight: 700, color: "var(--brand-500)", padding: "4px 12px" }}>
                     📍 {parsedFilters.area}
                   </span>
                 )}
@@ -783,11 +783,11 @@ const loadProperties = async (overrideFilters?: any) => {
                       gap: "0.6rem",
                       transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
                       // التعديل هنا: نربط الألوان بـ isActive الجديدة
-                      border: `1.5px solid ${isActive ? "rgba(16,185,129,0.7)" : "rgba(255,255,255,0.06)"}`,
-                      background: isActive ? "rgba(16,185,129,0.12)" : "rgba(255,255,255,0.03)",
-                      color: isActive ? "#10b981" : "#94a3b8",
+                      border: `1.5px solid ${isActive ? "rgba(27,120,60,0.7)" : "rgba(255,255,255,0.06)"}`,
+                      background: isActive ? "rgba(27,120,60,0.12)" : "rgba(255,255,255,0.03)",
+                      color: isActive ? "var(--brand-500)" : "#94a3b8",
                       whiteSpace: "nowrap",
-                      boxShadow: isActive ? "0 0 20px rgba(16,185,129,0.15)" : "none",
+                      boxShadow: isActive ? "0 0 20px rgba(27,120,60,0.15)" : "none",
                     }}
                   >
                     <span style={{ fontSize: "1.2rem" }}>{t.icon}</span>
@@ -801,7 +801,7 @@ const loadProperties = async (overrideFilters?: any) => {
           {!loading && properties.length > 0 && (
             <p style={{ fontSize: 13, color: "#64748b", marginBottom: "1.5rem" }}>
               تم العثور على{" "}
-              <strong style={{ color: "#10b981" }}>{properties.length}</strong> إعلان
+              <strong style={{ color: "var(--brand-500)" }}>{properties.length}</strong> إعلان
             </p>
           )}
 
@@ -814,8 +814,8 @@ const loadProperties = async (overrideFilters?: any) => {
                   width: 48,
                   height: 48,
                   borderRadius: "50%",
-                  border: "3px solid rgba(16,185,129,0.15)",
-                  borderTop: "3px solid #10b981",
+                  border: "3px solid rgba(27,120,60,0.15)",
+                  borderTop: "3px solid var(--brand-500)",
                   margin: "0 auto 1.25rem",
                 }}
               />
@@ -833,8 +833,8 @@ const loadProperties = async (overrideFilters?: any) => {
                 <button
                   onClick={() => setSearchQuery("")}
                   style={{
-                    background: "rgba(16,185,129,0.1)", color: "#10b981",
-                    border: "1px solid rgba(16,185,129,0.3)", borderRadius: 12,
+                    background: "rgba(27,120,60,0.1)", color: "var(--brand-500)",
+                    border: "1px solid rgba(27,120,60,0.3)", borderRadius: 12,
                     padding: "10px 24px", fontSize: 13, fontWeight: 700,
                     cursor: "pointer", fontFamily: "'Cairo', sans-serif",
                   }}
@@ -901,8 +901,8 @@ const loadProperties = async (overrideFilters?: any) => {
                         : {}),
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(16,185,129,0.45)";
-                      (e.currentTarget as HTMLElement).style.boxShadow = "0 24px 64px rgba(16,185,129,0.14)";
+                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(27,120,60,0.45)";
+                      (e.currentTarget as HTMLElement).style.boxShadow = "0 24px 64px rgba(27,120,60,0.14)";
                     }}
                     onMouseLeave={(e) => {
                       (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)";
@@ -927,7 +927,7 @@ const loadProperties = async (overrideFilters?: any) => {
                           aria-hidden="true"
                           style={{
                             height: "100%",
-                            background: "linear-gradient(135deg, rgba(16,185,129,0.08), rgba(5,150,105,0.18))",
+                            background: "linear-gradient(135deg, rgba(27,120,60,0.08), rgba(27,120,60,0.18))",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -991,7 +991,7 @@ const loadProperties = async (overrideFilters?: any) => {
                         }}
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#10b981"/>
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="var(--brand-500)"/>
                           <circle cx="12" cy="9" r="2.5" fill="#020617"/>
                         </svg>
                         {p.area} — {p.address}
@@ -1007,7 +1007,7 @@ const loadProperties = async (overrideFilters?: any) => {
                         }}
                       >
                         <div>
-                          <span style={{ fontSize: 22, fontWeight: 900, color: "#10b981" }}>
+                          <span style={{ fontSize: 22, fontWeight: 900, color: "var(--brand-500)" }}>
                             {p.price.toLocaleString()}
                           </span>
                           <span style={{ fontSize: 12, color: "#64748b", marginRight: 4 }}>ج.م/شهر</span>
@@ -1015,9 +1015,9 @@ const loadProperties = async (overrideFilters?: any) => {
                         <button
                           onClick={(e) => { e.stopPropagation(); router.push(`/property/${p.id}`); }}
                           style={{
-                            background: "rgba(16,185,129,0.1)",
-                            color: "#10b981",
-                            border: "1px solid rgba(16,185,129,0.3)",
+                            background: "rgba(27,120,60,0.1)",
+                            color: "var(--brand-500)",
+                            border: "1px solid rgba(27,120,60,0.3)",
                             borderRadius: 10,
                             fontSize: 12,
                             fontWeight: 700,
@@ -1027,11 +1027,11 @@ const loadProperties = async (overrideFilters?: any) => {
                             transition: "background 0.2s, box-shadow 0.2s",
                           }}
                           onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(16,185,129,0.2)";
-                            (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 12px rgba(16,185,129,0.3)";
+                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(27,120,60,0.2)";
+                            (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 12px rgba(27,120,60,0.3)";
                           }}
                           onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(16,185,129,0.1)";
+                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(27,120,60,0.1)";
                             (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
                           }}
                         >
@@ -1079,19 +1079,19 @@ const loadProperties = async (overrideFilters?: any) => {
                 
                 style={{
                   background: "rgba(10,20,38,0.97)",
-                  border: "1px solid rgba(16,185,129,0.2)",
+                  border: "1px solid rgba(27,120,60,0.2)",
                   borderRadius: 28,
                   width: "100%",
                   maxWidth: 500,
                   maxHeight: "90vh",
                   overflowY: "auto",
-                  boxShadow: "0 48px 120px rgba(0,0,0,0.7), 0 0 0 1px rgba(16,185,129,0.08) inset",
+                  boxShadow: "0 48px 120px rgba(0,0,0,0.7), 0 0 0 1px rgba(27,120,60,0.08) inset",
                 }}
               >
                 {/* Modal header */}
                 <div
                   style={{
-                    background: "linear-gradient(135deg, rgba(16,185,129,0.18), rgba(5,150,105,0.08))",
+                    background: "linear-gradient(135deg, rgba(27,120,60,0.18), rgba(27,120,60,0.08))",
                     borderBottom: "1px solid rgba(255,255,255,0.06)",
                     padding: "1.6rem",
                     borderRadius: "28px 28px 0 0",
@@ -1160,14 +1160,14 @@ const loadProperties = async (overrideFilters?: any) => {
                     <div
                       style={{
                         flex: 1,
-                        background: "rgba(16,185,129,0.08)",
-                        border: "1px solid rgba(16,185,129,0.22)",
+                        background: "rgba(27,120,60,0.08)",
+                        border: "1px solid rgba(27,120,60,0.22)",
                         borderRadius: 14,
                         padding: "13px 16px",
                       }}
                     >
                       <div style={{ fontSize: 11, color: "#64748b", marginBottom: 5 }}>السعر الشهري</div>
-                      <div style={{ fontSize: 21, fontWeight: 900, color: "#10b981" }}>
+                      <div style={{ fontSize: 21, fontWeight: 900, color: "var(--brand-500)" }}>
                         {selectedProperty.price.toLocaleString()} ج.م
                       </div>
                     </div>
@@ -1276,15 +1276,15 @@ const loadProperties = async (overrideFilters?: any) => {
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       style={{
-                        background: "rgba(16,185,129,0.1)",
-                        border: "1px solid rgba(16,185,129,0.3)",
+                        background: "rgba(27,120,60,0.1)",
+                        border: "1px solid rgba(27,120,60,0.3)",
                         borderRadius: 16,
                         padding: "1.75rem",
                         textAlign: "center",
                       }}
                     >
                       <div style={{ fontSize: 44, marginBottom: "0.75rem" }}>✅</div>
-                      <p style={{ fontSize: 15, fontWeight: 700, color: "#10b981", margin: 0 }}>
+                      <p style={{ fontSize: 15, fontWeight: 700, color: "var(--brand-500)", margin: 0 }}>
                         جاري تحويلك لواتساب المالك...
                       </p>
                     </motion.div>
@@ -1311,7 +1311,7 @@ const loadProperties = async (overrideFilters?: any) => {
               background: "rgba(255,255,255,0.04)",
               backdropFilter: "blur(20px)",
               WebkitBackdropFilter: "blur(20px)",
-              border: "1px solid rgba(16,185,129,0.18)",
+              border: "1px solid rgba(27,120,60,0.18)",
               borderRadius: 28,
               padding: "3rem 2.5rem",
               display: "flex",
@@ -1331,7 +1331,7 @@ const loadProperties = async (overrideFilters?: any) => {
                 top: -80,
                 width: 280,
                 height: 280,
-                background: "radial-gradient(circle, rgba(16,185,129,0.12) 0%, transparent 70%)",
+                background: "radial-gradient(circle, rgba(27,120,60,0.12) 0%, transparent 70%)",
                 pointerEvents: "none",
               }}
             />
@@ -1341,14 +1341,14 @@ const loadProperties = async (overrideFilters?: any) => {
               </h2>
               <p style={{ color: "#94a3b8", fontSize: 15, lineHeight: 1.75 }}>
                 ارفع أول إعلانين مجاناً مع{" "}
-                <strong style={{ color: "#10b981" }}>دَورلي</strong>{" "}
+                <strong style={{ color: "var(--brand-500)" }}>دَورلي</strong>{" "}
                 وابدأ تستقبل عملاء من أول يوم
               </p>
             </div>
             <a
               href="/register"
               style={{
-                background: "linear-gradient(135deg, #10b981, #059669)",
+                background: "var(--brand-gradient-chat)",
                 color: "#fff",
                 borderRadius: 16,
                 padding: "16px 40px",
@@ -1356,18 +1356,18 @@ const loadProperties = async (overrideFilters?: any) => {
                 fontWeight: 900,
                 textDecoration: "none",
                 whiteSpace: "nowrap",
-                boxShadow: "0 0 0 1px rgba(16,185,129,0.4), 0 10px 36px rgba(16,185,129,0.4)",
+                boxShadow: "0 0 0 1px rgba(27,120,60,0.4), 0 10px 36px rgba(27,120,60,0.4)",
                 position: "relative",
                 transition: "box-shadow 0.25s, transform 0.2s",
               }}
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLAnchorElement).style.boxShadow =
-                  "0 0 0 1px rgba(16,185,129,0.6), 0 14px 44px rgba(16,185,129,0.6)";
+                  "0 0 0 1px rgba(27,120,60,0.6), 0 14px 44px rgba(27,120,60,0.6)";
                 (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-2px)";
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLAnchorElement).style.boxShadow =
-                  "0 0 0 1px rgba(16,185,129,0.4), 0 10px 36px rgba(16,185,129,0.4)";
+                  "0 0 0 1px rgba(27,120,60,0.4), 0 10px 36px rgba(27,120,60,0.4)";
                 (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
               }}
             >
@@ -1387,7 +1387,7 @@ const loadProperties = async (overrideFilters?: any) => {
         >
           <div style={{ fontSize: 23, fontWeight: 900, color: "#ffffff", marginBottom: "0.3rem" }}>
             دَورلي{" "}
-            <span style={{ color: "#10b981", fontSize: 16, fontWeight: 600 }}>Dowarly</span>
+            <span style={{ color: "var(--brand-500)", fontSize: 16, fontWeight: 600 }}>Dowarly</span>
           </div>
           <p style={{ fontSize: 12, color: "#475569", marginBottom: "2rem" }}>
             منصة الإيجار الأولى في مصر
