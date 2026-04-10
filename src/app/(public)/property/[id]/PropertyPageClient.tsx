@@ -1,9 +1,10 @@
 'use client'
-import { useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { motion } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import OwnerBrokerAuth from '@/components/owner/OwnerBrokerAuth'
 
 // ──────────────────────────────────────────────────────────────
 // Types
@@ -25,6 +26,10 @@ type Property = {
   rental_unit:  RentalUnit      // ✨ جديد
   beds_count:   number | null   // ✨ جديد
   profiles:     { name: string; phone: string } | { name: string; phone: string }[]
+  availability_status?: string
+  report_count?: number
+  last_verified_at?: string
+  owner_id?: string
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -113,6 +118,24 @@ export default function PropertyPageClient() {
   const [imgLoaded, setImgLoaded]         = useState(false)
   const [phoneError, setPhoneError]       = useState('')
   const [spamBlocked, setSpamBlocked]     = useState(false)
+  const [reportBusy, setReportBusy]       = useState(false)
+  const [toast, setToast]                 = useState<{ message: string; tone: 'ok' | 'err' } | null>(null)
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null)
+  const [authModalOpen, setAuthModalOpen] = useState(false)
+  const [reasonModalOpen, setReasonModalOpen] = useState(false)
+  const [reportReason, setReportReason]   = useState('العقار غير متاح أو مؤجر')
+
+  const propertyPath = `/property/${typeof id === 'string' ? id : Array.isArray(id) ? id[0] ?? '' : ''}`
+
+  useEffect(() => {
+    void supabase.auth.getSession().then(({ data }) => {
+      setSessionUserId(data.session?.user?.id ?? null)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSessionUserId(session?.user?.id ?? null)
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
 
   // ── تحميل العقار ─────────────────────────────────────────
   useEffect(() => {
@@ -123,6 +146,7 @@ export default function PropertyPageClient() {
           id, title, description, price, area, address,
           unit_type, images, status,
           video_url, rental_unit, beds_count,
+          availability_status, report_count, last_verified_at, owner_id,
           profiles(name, phone)
         `)
         .eq('id', id)
@@ -184,13 +208,71 @@ export default function PropertyPageClient() {
     }, 500)
   }, [property, leadForm])
 
+  const showToast = useCallback((message: string, tone: 'ok' | 'err') => {
+    setToast({ message, tone })
+    window.setTimeout(() => setToast(null), 4800)
+  }, [])
+
+  const openReportFlow = useCallback(() => {
+    if (!property) return
+    if (!sessionUserId) {
+      setAuthModalOpen(true)
+      return
+    }
+    if (property.owner_id && sessionUserId === property.owner_id) {
+      showToast('لا يمكنك الإبلاغ عن إعلانك الخاص.', 'err')
+      return
+    }
+    setReasonModalOpen(true)
+  }, [property, sessionUserId, showToast])
+
+  const submitPropertyReport = useCallback(async () => {
+    if (!property?.id || reportBusy) return
+    setReportBusy(true)
+    try {
+      const { data, error } = await supabase.rpc('report_property_unavailable', {
+        p_property_id: property.id,
+        p_reason: reportReason.trim() || 'غير متاح',
+      })
+      if (error) {
+        showToast(error.message || 'تعذّر إرسال البلاغ.', 'err')
+        return
+      }
+      const res = data as { ok?: boolean; error?: string } | null
+      if (!res?.ok) {
+        if (res?.error === 'already_reported') {
+          showToast('سبق أن أرسلت بلاغاً عن هذا العقار.', 'err')
+        } else if (res?.error === 'own_listing') {
+          showToast('لا يمكنك الإبلاغ عن إعلانك الخاص.', 'err')
+        } else {
+          showToast('تعذّر إرسال البلاغ.', 'err')
+        }
+        return
+      }
+      setReasonModalOpen(false)
+      showToast('شكراً لك — سجّلنا بلاغك وسنراجع الإعلان.', 'ok')
+      const { data: fresh } = await supabase
+        .from('properties')
+        .select('availability_status, report_count')
+        .eq('id', property.id)
+        .single()
+      if (fresh) {
+        setProperty((prev) =>
+          prev ? { ...prev, ...(fresh as Pick<Property, 'availability_status' | 'report_count'>) } : prev,
+        )
+      }
+    } finally {
+      setReportBusy(false)
+    }
+  }, [property, reportBusy, reportReason, showToast])
+
   // ══════════════════════════════════════════════════════════
   //  SKELETON LOADER
   // ══════════════════════════════════════════════════════════
   if (loading) return (
     <>
       <style>{`
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        *, *::before, *::after { box-sizing: border-box;}
         body { background: #020617; font-family: 'Cairo', sans-serif; }
         @keyframes shimmer {
           0%   { background-position: -600px 0; }
@@ -298,6 +380,9 @@ export default function PropertyPageClient() {
 
   // هل نعرض تفاصيل الإيجار التفصيلية؟
   const showRentalDetails = SHARED_UNIT_TYPES.has(property.unit_type) && property.rental_unit
+  const availability = property.availability_status ?? "available"
+  const showAvailabilityBanner =
+    property.status === "active" && availability !== "available"
 
   // بناء قائمة Details ديناميكياً — لماذا؟
   // → بدل ما نكتب if/else في الـ JSX، نبني الـ array مرة وتتعمل map نظيف
@@ -331,7 +416,7 @@ export default function PropertyPageClient() {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        *, *::before, *::after { box-sizing: border-box }
         html { scroll-behavior: smooth; }
         body { background: #020617; font-family: 'Cairo', sans-serif; }
         ::-webkit-scrollbar       { width: 5px; }
@@ -360,6 +445,26 @@ export default function PropertyPageClient() {
       `}</style>
 
       <div dir="rtl" style={{ minHeight: '100vh', background: 'radial-gradient(ellipse 120% 80% at 100% 0%, rgba(6,78,59,.18) 0%, #020617 55%)', color: '#f8fafc' }}>
+
+        <AnimatePresence>
+          {toast ? (
+            <motion.div
+              key="prop-toast"
+              role="status"
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 12, scale: 0.98 }}
+              transition={{ type: 'spring', damping: 22, stiffness: 320 }}
+              className={`fixed bottom-4 left-1/2 z-[220] w-[calc(100%-2rem)] max-w-md -translate-x-1/2 rounded-2xl border px-4 py-3 text-center text-sm font-bold shadow-lg backdrop-blur-md ${
+                toast.tone === 'ok'
+                  ? 'border-emerald-500/40 bg-slate-950/95 text-emerald-100 shadow-emerald-900/30'
+                  : 'border-red-500/35 bg-slate-950/95 text-red-200 shadow-red-950/30'
+              }`}
+            >
+              {toast.message}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         {/* Ambient glow */}
         <div aria-hidden style={{ position: 'fixed', bottom: 0, left: 0, width: 460, height: 460, background: 'radial-gradient(circle, rgba(16,185,129,.06) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
@@ -392,6 +497,16 @@ export default function PropertyPageClient() {
             <span style={{ color: '#334155', fontSize: 13 }}>·</span>
             <span style={{ color: '#475569', fontSize: 13 }}>📍 {property.area}</span>
           </div>
+
+          {showAvailabilityBanner ? (
+            <div
+              className="fade-up mb-5 rounded-2xl border border-amber-500/40 bg-amber-950/35 px-4 py-3 text-sm leading-relaxed text-amber-100"
+            >
+              {availability === "rented"
+                ? "هذا الإعلان مُعلَن كغير متاح حالياً (مؤجر). يمكنك تصفّح إعلانات أخرى من الرئيسية."
+                : "هذا الإعلان قيد المراجعة بسبب بلاغات التوافر. قد يظهر حتى يتحقق فريقنا."}
+            </div>
+          ) : null}
 
           {/* ── Two-column grid ── */}
           <div className="grid-layout" style={{ display: 'grid', gridTemplateColumns: '1fr 360px', gap: '2rem', alignItems: 'start' }}>
@@ -649,10 +764,90 @@ export default function PropertyPageClient() {
                   🏠 إعلانات أخرى
                 </button>
               </div>
+
+              {property.status === "active" ? (
+                <button
+                  type="button"
+                  disabled={reportBusy}
+                  onClick={() => openReportFlow()}
+                  className="fade-up-4 mt-3 w-full rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-center text-xs font-bold text-slate-400 transition hover:border-amber-500/35 hover:bg-amber-950/25 hover:text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
+                  style={{ fontFamily: "'Cairo', sans-serif",
+                    padding: '10px 14px',
+                    marginTop: 12,
+                   }}
+                >
+                  {reportBusy ? "جاري الإرسال…" : "إبلاغ عن عقار غير متاح"}
+                </button>
+              ) : null}
             </div>
 
           </div>
         </div>
+
+        <Suspense fallback={null}>
+          <OwnerBrokerAuth
+            variant="modal"
+            open={authModalOpen}
+            onClose={() => setAuthModalOpen(false)}
+            mode="login"
+            bannerMessage="يجب تسجيل الدخول لضمان جدية الإبلاغ وحماية جودة البيانات"
+            oauthNextPath={propertyPath}
+            onAuthSuccess={() => {
+              setAuthModalOpen(false)
+              setReasonModalOpen(true)
+            }}
+          />
+        </Suspense>
+
+        <AnimatePresence>
+          {reasonModalOpen && property ? (
+            <motion.div
+              key="report-reason"
+              role="presentation"
+              className="fixed inset-0 z-[240] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => !reportBusy && setReasonModalOpen(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 12 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.96, opacity: 0, y: 8 }}
+                transition={{ type: 'spring', damping: 24, stiffness: 320 }}
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-slate-950 p-5 shadow-2xl shadow-amber-950/40"
+              >
+                <h3 className="mb-2 text-center text-base font-black text-amber-100">تفاصيل البلاغ</h3>
+                <p className="mb-3 text-center text-xs text-slate-400">وصف مختصر يساعد فريق المراجعة (اختياري)</p>
+                <textarea
+                  value={reportReason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                  rows={3}
+                  className="mb-4 w-full resize-none rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100 outline-none ring-amber-500/30 focus:ring-2"
+                />
+                <div className="flex flex-col gap-2 sm:flex-row-reverse">
+                  <button
+                    type="button"
+                    disabled={reportBusy}
+                    onClick={() => void submitPropertyReport()}
+                    className="flex-1 rounded-xl bg-gradient-to-l from-amber-600 to-emerald-700 py-2.5 text-sm font-bold text-white shadow-lg shadow-amber-900/30 disabled:opacity-50"
+                  >
+                    {reportBusy ? 'جاري الإرسال…' : 'إرسال البلاغ'}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={reportBusy}
+                    onClick={() => setReasonModalOpen(false)}
+                    className="flex-1 rounded-xl border border-white/10 py-2.5 text-sm font-bold text-slate-400 hover:bg-white/5"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         {/* FOOTER */}
         <footer style={{ background: 'rgba(2,6,23,.98)', borderTop: '1px solid rgba(255,255,255,.05)', padding: '2rem 1.5rem', textAlign: 'center' }}>

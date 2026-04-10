@@ -6,6 +6,7 @@ import Banner from "@/components/shared/Banner";
 import Image from "next/image";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import ChatBot from '@/components/shared/ChatBot'
+import Navbar from '@/components/Navbar'
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 type Property = {
@@ -315,8 +316,9 @@ const loadProperties = async (overrideFilters?: any) => {
 
     let query = supabase
       .from('properties')
-      .select('*, profiles(name, phone)')
-      .eq('status', 'active');   // ← مهم: بس العقارات الـ active
+      .select('*, profiles(name, phone, low_trust)')
+      .eq('status', 'active')
+      .eq('availability_status', 'available');
 
     if (parsed.area) {
       query = query.ilike('area', `%${parsed.area}%`);
@@ -347,7 +349,15 @@ const loadProperties = async (overrideFilters?: any) => {
 
     const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
-    setProperties(data || []);
+    const rows = data || [];
+    const filtered = rows.filter(
+      (row: { profiles?: { low_trust?: boolean } | { low_trust?: boolean }[] | null }) => {
+        const p = row.profiles;
+        const o = Array.isArray(p) ? p[0] : p;
+        return o?.low_trust !== true;
+      },
+    );
+    setProperties(filtered as unknown as Property[]);
 
   } catch (error: any) {
     console.error('Search Error:', error.message);
@@ -412,7 +422,7 @@ const loadProperties = async (overrideFilters?: any) => {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; }
+        *, *::before, *::after { box-sizing: border-box; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Cairo', sans-serif; background: #020617; }
 
@@ -504,90 +514,7 @@ const loadProperties = async (overrideFilters?: any) => {
         <Banner />
 
         {/* ══════════════════ NAVIGATION ══════════════════ */}
-        <nav
-          role="navigation"
-          aria-label="القائمة الرئيسية"
-          style={{
-            position: "sticky",
-            top: 0,
-            zIndex: 100,
-            background: "rgba(2,6,23,0.75)",
-            backdropFilter: "blur(20px)",
-            WebkitBackdropFilter: "blur(20px)",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
-            padding: "0 2rem",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            height: 70,
-          }}
-        >
-          {/* Brand */}
-          <a
-            href="/"
-            aria-label="دَورلي – الصفحة الرئيسية"
-            style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: "0.6rem" }}
-          >
-            <span
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: "50%",
-                background: "linear-gradient(135deg, #10b981, #059669)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 19,
-                fontWeight: 900,
-                color: "#fff",
-                boxShadow: "0 0 24px rgba(16,185,129,0.5)",
-                flexShrink: 0,
-              }}
-            >
-              د
-            </span>
-            <span style={{ fontSize: 22, fontWeight: 900, color: "#ffffff", letterSpacing: "-0.3px" }}>
-              دَورلي
-              <span style={{ color: "#10b981", fontSize: 13, fontWeight: 600, marginRight: 5 }}>
-                Dowarly
-              </span>
-            </span>
-          </a>
-
-          {/* Actions */}
-          <div style={{ display: "flex", gap: "0.65rem", alignItems: "center" }}>
-            <a
-              href="/register"
-              className="nav-link"
-              style={{
-                border: "1.5px solid rgba(16,185,129,0.45)",
-                color: "#10b981",
-                padding: "8px 22px",
-                borderRadius: 12,
-                fontSize: 13,
-                fontWeight: 700,
-                textDecoration: "none",
-              }}
-            >
-              انضم كمالك
-            </a>
-            <a
-              href="/login"
-              style={{
-                background: "linear-gradient(135deg, #10b981, #059669)",
-                color: "#fff",
-                padding: "8px 22px",
-                borderRadius: 12,
-                fontSize: 13,
-                fontWeight: 700,
-                textDecoration: "none",
-                boxShadow: "0 4px 20px rgba(16,185,129,0.35)",
-              }}
-            >
-              دخول
-            </a>
-          </div>
-        </nav>
+        <Navbar />
 
         {/* ══════════════════ HERO ══════════════════ */}
         <motion.header
@@ -742,10 +669,17 @@ const loadProperties = async (overrideFilters?: any) => {
                     setLoading(true);
                     const { data } = await supabase
                       .from("properties")
-                      .select("id, title, description, price, area, address, unit_type, images, profiles(name, phone)")
+                      .select("id, title, description, price, area, address, unit_type, images, profiles(name, phone, low_trust)")
                       .eq("status", "active")
+                      .eq("availability_status", "available")
                       .order("created_at", { ascending: false });
-                    setProperties((data as unknown as Property[]) ?? []);
+                    const raw = (data as unknown as Property[]) ?? [];
+                    setProperties(
+                      raw.filter((row) => {
+                        const p = row.profiles as { low_trust?: boolean } | undefined;
+                        return p?.low_trust !== true;
+                      }),
+                    );
                     setLoading(false);
                   }}
                 >✕</button>

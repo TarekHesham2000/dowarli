@@ -22,6 +22,8 @@ type PropertyResult = {
   address: string | null
   unit_type: string
   images: string[]
+  last_verified_at?: string
+  report_count?: number
 }
 
 type BotResponse = {

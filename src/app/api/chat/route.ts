@@ -24,6 +24,14 @@ type PropertyResult = {
   address: string | null;
   unit_type: string;
   images: string[];
+  /** ISO — تأكيد التوافر من الوسيط */
+  last_verified_at?: string;
+  report_count?: number;
+};
+
+type PropertyQueryRow = PropertyResult & {
+  profiles?: { low_trust?: boolean | null } | { low_trust?: boolean | null }[] | null;
+  owner_id?: string;
 };
 
 type ChatResponse = {
@@ -52,6 +60,12 @@ function normalizeArea(area: string): string {
   if (!area) return "";
   const clean = area.trim();
   return AREA_ALIASES[clean] ?? clean;
+}
+
+/** Commas break PostgREST `.or()` / logic tree — strip Arabic and English commas. */
+function sanitizeSearchKeywords(raw: string): string {
+  if (!raw) return "";
+  return raw.replace(/[,،]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /** أحياء/مناطق شائعة تُعد ضمن نطاق المحافظة عندما يكون الفلتر اسم المحافظة */
@@ -88,6 +102,63 @@ function rowMatchesSelectedGovernorate(propArea: string, selectedRaw: string): b
 
 function filterRowsByGovernorate(rows: PropertyResult[], selectedArea: string): PropertyResult[] {
   return rows.filter((r) => rowMatchesSelectedGovernorate(r.area ?? "", selectedArea));
+}
+
+const STALE_VERIFICATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function isVerificationStale(iso: string | undefined): boolean {
+  if (!iso) return true;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return true;
+  return Date.now() - t > STALE_VERIFICATION_MS;
+}
+
+function anyStaleVerification(rows: PropertyResult[]): boolean {
+  return rows.some((r) => isVerificationStale(r.last_verified_at));
+}
+
+/** تنبيه المستخدم عند عرض عقارات لم يُحدَّث تأكيد توافرها منذ أكثر من 7 أيام */
+function appendStaleVerificationNote(
+  message: string,
+  primary: PropertyResult[],
+  other: PropertyResult[] | undefined,
+): string {
+  const all = [...primary, ...(other ?? [])];
+  if (!all.length || !anyStaleVerification(all)) return message;
+  const note =
+    "هذا الإعلان قديم نسبياً، سأقوم بالتأكد من توافره فور تواصلك مع المعلن.";
+  return message.trim() ? `${message.trim()}\n\n${note}` : note;
+}
+
+function anyPriorUserReports(rows: PropertyResult[]): boolean {
+  return rows.some(
+    (r) =>
+      typeof r.report_count === "number" && r.report_count > 0 && r.report_count < 3,
+  );
+}
+
+function appendPriorReportsNote(
+  message: string,
+  primary: PropertyResult[],
+  other: PropertyResult[] | undefined,
+): string {
+  const all = [...primary, ...(other ?? [])];
+  if (!all.length || !anyPriorUserReports(all)) return message;
+  const note =
+    "ملاحظة: هناك إبلاغات سابقة عن عدم توافر هذا العقار، يرجى التأكد من المعلن";
+  return message.trim() ? `${message.trim()}\n\n${note}` : note;
+}
+
+function profileLowTrust(row: PropertyQueryRow): boolean {
+  const p = row.profiles;
+  if (!p) return false;
+  const o = Array.isArray(p) ? p[0] : p;
+  return o?.low_trust === true;
+}
+
+function mapRowsForChat(rows: PropertyQueryRow[], limit: number): PropertyResult[] {
+  const filtered = rows.filter((r) => !profileLowTrust(r)).slice(0, limit);
+  return filtered.map(({ profiles: _pr, owner_id: _o, ...rest }) => rest);
 }
 
 /** استنتاج فلتر من آخر رسائل المستخدم عند تعطّل اتصال Groq (503) */
@@ -200,54 +271,31 @@ function lastUserUtterances(messages: Message[], n: number): string {
   return users.map((m, i) => `${i + 1}) ${m.content.replace(/\s+/g, " ").trim()}`).join("\n");
 }
 
-/** تعليمات Dowrly AI — استشاري عقاري (مصر) */
+/** تعليمات المساعد — شخصية دَورلي + تنسيق JSON للفلترة وSupabase */
 function buildSystemPrompt(recentUserBlock: string): string {
-  return `أنت **Dowrly AI** — أقوى استراتيجي عقاري رقمي في مصر. أنت لا "تبحث" فقط؛ أنت **تستشير** وتقود المحادثة بحكمة.
+  return `أنت خبير عقاري في منصة دَورلي، تساعد المستخدمين في العثور على أفضل العقارات في مصر بناءً على البيانات المتوفرة في قاعدة بياناتنا فقط. ردك يجب أن يكون باللهجة المصرية المهذبة والمحترفة.
 
-## عقلية المستشار
-- **ممنوع حلقات التأكيد المملة**: إذا عندك منطقة + ميزانية (أو نوع واضح) من السياق — **نفّذ فوراً** في action (FILTER) ولا تسأل "متأكد؟" مرة تانية.
-- إذا المستخدم **مبهم** (مثل "عايز شقة" بدون تفاصيل): **لا** تسأل "فين؟" فقط. قدّم **خيارات توجيهية** في message، مثل:
-  "تحب حاجة قريبة من المترو في الدقي، ولا هدوء التجمع؟" أو "نمشي على ميزانية محددة الأول ولا المنطقة؟"
-- **ذاكرة السياق**: آخر ما ذكره المستخدم (انظر الأسفل). إذا غيّر رأيه (مثلاً من زايد لأكتوبر)، **اعترف صراحة** في message: "تمام، نقلنا الدفّة لأكتوبر… خليني أشوفلك الأنسب هناك."
-
-## آخر ذكرات المستخدم (آخر 5 رسائل user — التزم بها)
+## آخر ما ذكره المستخدم (آخر 5 رسائل user)
 ${recentUserBlock}
 
-## ذكاء مالي (سوق مصري)
-- لو الميزانية **غير واقعية** للمنطقة أو النوع (مثلاً شقة عائلي في التجمع بسعر يبدو "حلم"):
-  في message حذّر بلطف دون إهانة، مثل: "يا بطل السعر ده في المكان ده قليل جداً — خد بالك، غالباً يكون **مقدم** مش إيجار كامل، أو إعلان مش دقيق. نمشي على سقف أوضح عشان نلاقي لقطة حقيقية؟"
-- فسّر الفرق بين مقدم وشهري عند الحاجة بجملة واحدة.
+## قواعد البيانات والسلوك
+- لا تذكر عقارات أو أسعاراً من خارج منصة دَورلي؛ النظام يجلب النتائج من قاعدة البيانات حسب الفلتر الذي تُخرجه.
+- لأي استفسار عن عروض، بحث، منطقة، ميزانية، أو نوع وحدة: أرجع دائماً \`action\` من نوع \`FILTER\` (ما لم يكن آخر الرسائل تحية أو موضوعاً لا علاقة له بالعقار → \`action: null\`).
+- **keywords**: بدون فواصل \`,\` أو \`،\` (استبدلها بمسافات).
+- كن لطيفاً ومهنياً؛ اقترح منطقة أو ميزانية عند الغموض بدل الجفاف.
+- **بياع شاطر**: لو الميزانية محددة ومفيش عروض مناسبة في النتائج (أو المتوقع ضعيف)، ما تقولش جمل عامة زي «جاري البحث» أو «Searching…» — قدّم في **message** اقتراحات واضحة: زيادة الميزانية شوية بشكل معقول، أو التفكير في مناطق مجاورة بنفس السعر، بلهجة مصرية مهذبة ومقنعة.
 
-## صفر نتائج (Pivot / Smart Upselling)
-- **ممنوع** تقول "ملقتش حاجة" أو "مفيش نتائج" بشكل جاف.
-- عندما يكون للمستخدم **منطقة/محافظة محددة** في الفلتر: النظام يعرض **عروضاً من نفس المحافظة فقط** في الكروت الرئيسية؛ إن لم يوجد، يضع **بدائل من محافظات أخرى في قسم منفصل** ويُثبت نصاً جاهزاً من الخادم — لا تتعارض مع ذلك في message (يمكنك إضافة جملة قصيرة فقط عن الميزانية أو السوق).
-- بدون منطقة محددة: اعرض **بديل مجاور أو ميزانية مرنة** بأسلوب استشاري كالسابق.
-
-## تنفيذ متوازٍ (مفهومياً)
-- أنت تُخرج فلترة دقيقة؛ النظام يشغّل **بحث العقارات** و**لمحة سوقية** معاً. اكتب message كأنك اطلعت على السياقين (طلب المستخدم + واقع السوق).
-
-## النبرة
-- مشجّع واحترافي. مصرية معتدلة: **يا بطل، لقطة، على المفتاح، نظبط، دفّة** — بدون مبالغة أو لغة غير لائقة.
-- "يا فندم" للنبرة الرسمية عند طلب عائلي/استثمار واضح.
-
-## استخراج JSON (إلزامي)
-- أجب **JSON فقط** بدون Markdown أو code fences.
-- تحية/شكر/سؤال عام بدون بحث → action = null.
-- طلب بحث أو تعديل فلتر → action.type = "FILTER":
-  - unitType: student | family | studio | shared | employee | ""
-  - area: عربي أو "" (لا تخمّن منطقة لم تُذكر في السياق)
-  - maxPrice: رقم بالجنيه الشهري أو null
-  - keywords: إضافي
-
-صيغة JSON:
+## مخرجاتك (JSON فقط — بلا Markdown أو code fences)
 {
   "message": "نص للمستخدم",
-  "action": { "type": "FILTER", "unitType": "", "area": "", "maxPrice": null, "keywords": "" }
-}`;
+  "action": { "type": "FILTER", "unitType": "" | "student"|"family"|"studio"|"shared"|"employee", "area": "", "maxPrice": null أو رقم بالجنيه الشهري, "keywords": "" }
+}
+
+مثال: إذا سأل عن «إيه العقارات المتاحة» بدون تفاصيل، اجعل message ترحيباً مختصراً وaction FILTER بحقول فارغة أو null حيث يناسب ليعرض النظام عينة من العقارات المتاحة.`;
 }
 
 const SELECT_ROW =
-  "id, title, price, area, address, unit_type, images";
+  "id, title, price, area, address, unit_type, images, last_verified_at, report_count, owner_id, profiles(low_trust)";
 
 async function queryTopProperties(
   filters: FilterAction,
@@ -259,23 +307,23 @@ async function queryTopProperties(
     .from("properties")
     .select(SELECT_ROW)
     .eq("status", "active")
+    .eq("availability_status", "available")
+    .order("last_verified_at", { ascending: false })
     .order("created_at", { ascending: false });
 
   if (filters.area?.trim()) q = q.ilike("area", `%${filters.area.trim()}%`);
   if (filters.unitType) q = q.eq("unit_type", filters.unitType);
   if (typeof filters.maxPrice === "number") q = q.lte("price", filters.maxPrice);
 
-  const kw = filters.keywords?.trim();
-  const safeKw = kw
-    ? kw.replace(/[,،]/g, " ").replace(/\s+/g, " ").trim()
-    : "";
+  const safeKw = sanitizeSearchKeywords(filters.keywords?.trim() ?? "");
   if (safeKw.length >= 2) {
     q = q.or(`title.ilike.%${safeKw}%,address.ilike.%${safeKw}%`);
   }
 
-  const { data, error } = await q.limit(limit);
+  const fetchCap = Math.max(limit * 4, 16);
+  const { data, error } = await q.limit(fetchCap);
   if (error) throw error;
-  return (data as PropertyResult[]) ?? [];
+  return mapRowsForChat((data as PropertyQueryRow[]) ?? [], limit);
 }
 
 async function queryFallback(filters: FilterAction): Promise<PropertyResult[]> {
@@ -294,7 +342,11 @@ async function queryFallback(filters: FilterAction): Promise<PropertyResult[]> {
 async function analyzeMarketTrends(filters: FilterAction): Promise<string | null> {
   try {
     const supabase = getSupabaseServerClient();
-    let q = supabase.from("properties").select("price").eq("status", "active");
+    let q = supabase
+      .from("properties")
+      .select("price")
+      .eq("status", "active")
+      .eq("availability_status", "available");
     if (filters.area?.trim()) {
       q = q.ilike("area", `%${filters.area.trim()}%`);
     }
@@ -571,6 +623,9 @@ async function buildFilterResponse(
       message = `${degradedPrefix}\n\n${message}`;
     }
 
+    message = appendStaleVerificationNote(message, results, resultsOtherAreas);
+    message = appendPriorReportsNote(message, results, resultsOtherAreas);
+
     return NextResponse.json({
       message,
       action: filters,
@@ -595,6 +650,8 @@ async function queryExploratorySuggestions(filters: FilterAction): Promise<Prope
     .from("properties")
     .select(SELECT_ROW)
     .eq("status", "active")
+    .eq("availability_status", "available")
+    .order("last_verified_at", { ascending: false })
     .order("price", { ascending: true });
 
   if (filters.area?.trim()) q = q.ilike("area", `%${filters.area.trim()}%`);
@@ -612,9 +669,9 @@ async function queryExploratorySuggestions(filters: FilterAction): Promise<Prope
     q = q.lte("price", Math.round(maxP * 1.6));
   }
 
-  const { data, error } = await q.limit(5);
+  const { data, error } = await q.limit(24);
   if (error) throw error;
-  return (data as PropertyResult[]) ?? [];
+  return mapRowsForChat((data as PropertyQueryRow[]) ?? [], 5);
 }
 
 function encouragingCopy(filters: FilterAction, hasAlts: boolean): string {
@@ -629,23 +686,23 @@ function encouragingCopy(filters: FilterAction, hasAlts: boolean): string {
     : "يا فندم، السوق في النطاق ده بيتحرك بسرعة. لو تحب نوسّع المساحة الجغرافية أو نعدّل السقف المالي بلطف، هنلاقي خيارات أقوى.";
 }
 
-const DEFAULT_GROQ_MODEL = "llama-3.1-8b-instant";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 const MAX_HISTORY_MESSAGES = 28;
 
-const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_FETCH_ATTEMPTS = 3;
+const OPENAI_CHAT_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+const OPENAI_FETCH_ATTEMPTS = 3;
 
-const DEGRADED_GROQ_PREFIX =
+const DEGRADED_AI_PREFIX =
   "مساعد الذكاء متاحش دلوقتي بسبب تعطّل في الشبكة — ده بحث أولي من كلامك. جرّب ترسل تاني بعد لحظة، وقولّي الميزانية بالأرقام عشان نضبطها.";
 
-async function fetchGroqChatCompletion(
+async function fetchOpenAiChatCompletion(
   apiKey: string,
   body: Record<string, unknown>,
 ): Promise<Response> {
   let lastErr: unknown;
-  for (let attempt = 0; attempt < GROQ_FETCH_ATTEMPTS; attempt++) {
+  for (let attempt = 0; attempt < OPENAI_FETCH_ATTEMPTS; attempt++) {
     try {
-      return await fetch(GROQ_ENDPOINT, {
+      return await fetch(OPENAI_CHAT_ENDPOINT, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -657,11 +714,11 @@ async function fetchGroqChatCompletion(
       lastErr = e;
       if (process.env.NODE_ENV === "development") {
         console.error(
-          `[api/chat] Groq fetch failed (attempt ${attempt + 1}/${GROQ_FETCH_ATTEMPTS}):`,
+          `[api/chat] OpenAI fetch failed (attempt ${attempt + 1}/${OPENAI_FETCH_ATTEMPTS}):`,
           e,
         );
       }
-      if (attempt < GROQ_FETCH_ATTEMPTS - 1) {
+      if (attempt < OPENAI_FETCH_ATTEMPTS - 1) {
         await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
       }
     }
@@ -670,22 +727,22 @@ async function fetchGroqChatCompletion(
 }
 
 export async function POST(req: NextRequest) {
-  const groqApiKey = process.env.GROQ_API_KEY?.trim();
-  const groqModel =
-    process.env.GROQ_MODEL?.trim() ||
-    process.env.GROQ_CHAT_MODEL?.trim() ||
-    DEFAULT_GROQ_MODEL;
+  const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
+  const openaiModel =
+    process.env.OPENAI_CHAT_MODEL?.trim() ||
+    process.env.OPENAI_MODEL?.trim() ||
+    DEFAULT_OPENAI_MODEL;
 
-  if (!groqApiKey) {
+  if (!openaiApiKey) {
     if (process.env.NODE_ENV === "development") {
       console.error(
-        "[api/chat] GROQ_API_KEY is missing or empty. Add GROQ_API_KEY to .env.local (local) or Vercel Project → Settings → Environment Variables (production), then restart / redeploy.",
+        "[api/chat] OPENAI_API_KEY is missing or empty. Add OPENAI_API_KEY to .env.local (local) or Vercel → Environment Variables, then restart the dev server.",
       );
     }
     return NextResponse.json(
       {
         message:
-          "إعدادات الخادم ناقصة: لم يُضبط مفتاح الذكاء الاصطناعي (GROQ_API_KEY). أضِف المتغير في بيئة التشغيل (مثلاً إعدادات Vercel) ثم أعد النشر.",
+          "إعدادات الخادم ناقصة: لم يُضبط مفتاح OpenAI (OPENAI_API_KEY). أضِف المفتاح في .env.local ثم أعد تشغيل الخادم.",
         action: null,
       } satisfies ChatResponse,
       { status: 500 },
@@ -713,10 +770,10 @@ export async function POST(req: NextRequest) {
   const history = messages.slice(-MAX_HISTORY_MESSAGES);
   const systemPrompt = buildSystemPrompt(lastUserUtterances(history, 5));
 
-  let groqRes: Response;
+  let openaiRes: Response;
   try {
-    groqRes = await fetchGroqChatCompletion(groqApiKey, {
-      model: groqModel,
+    openaiRes = await fetchOpenAiChatCompletion(openaiApiKey, {
+      model: openaiModel,
       max_tokens: 640,
       temperature: 0.32,
       response_format: { type: "json_object" },
@@ -725,7 +782,7 @@ export async function POST(req: NextRequest) {
   } catch {
     const guessed = inferFilterFromMessages(history);
     if (guessed) {
-      return buildFilterResponse(guessed, "", DEGRADED_GROQ_PREFIX);
+      return buildFilterResponse(guessed, "", DEGRADED_AI_PREFIX);
     }
     return NextResponse.json(
       { message: "مش قادر أوصل للسيرفر.", action: null } satisfies ChatResponse,
@@ -733,14 +790,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const groqBodyText = await groqRes.text();
-  type GroqOk = {
+  const openaiBodyText = await openaiRes.text();
+  type OpenAiOk = {
     choices?: { message?: { content?: string } }[];
     error?: { message?: string };
   };
-  let groqPayload: GroqOk;
+  let openaiPayload: OpenAiOk;
   try {
-    groqPayload = JSON.parse(groqBodyText) as GroqOk;
+    openaiPayload = JSON.parse(openaiBodyText) as OpenAiOk;
   } catch {
     return NextResponse.json(
       { message: "رد غير متوقع من مزود الذكاء.", action: null } satisfies ChatResponse,
@@ -748,12 +805,12 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  if (!groqRes.ok) {
-    const detail = groqPayload.error?.message?.trim() ?? "";
+  if (!openaiRes.ok) {
+    const detail = openaiPayload.error?.message?.trim() ?? "";
     return NextResponse.json(
       {
         message: detail
-          ? `خطأ من مزود الذكاء: ${detail}`
+          ? `خطأ من OpenAI: ${detail}`
           : "في مشكلة مؤقتة. جرب تاني.",
         action: null,
       } satisfies ChatResponse,
@@ -761,7 +818,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const rawContent = groqPayload.choices?.[0]?.message?.content ?? "";
+  const rawContent = openaiPayload.choices?.[0]?.message?.content ?? "";
 
   let parsed: ChatResponse = {
     message: "معلش، مش قادر أساعدك دلوقتي.",
@@ -784,7 +841,9 @@ export async function POST(req: NextRequest) {
     const unitType = typeof a.unitType === "string" ? a.unitType : "";
     const area = typeof a.area === "string" ? normalizeArea(a.area) : "";
     const maxPrice = typeof a.maxPrice === "number" ? a.maxPrice : null;
-    const keywords = typeof a.keywords === "string" ? a.keywords : "";
+    const keywords = sanitizeSearchKeywords(
+      typeof a.keywords === "string" ? a.keywords : "",
+    );
 
     const filters: FilterAction = {
       type: "FILTER",

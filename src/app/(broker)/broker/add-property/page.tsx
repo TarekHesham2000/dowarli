@@ -519,7 +519,7 @@ export default function AddPropertyPage() {
               </div>
               {/* Hidden input للـ required validation */}
               <input type="text" required value={form.unit_type} onChange={() => {}}
-                style={{ opacity: 0, height: 0, padding: 0, border: 'none', position: 'absolute' }} tabIndex={-1} />
+                style={{ opacity: 0, border: 'none', position: 'absolute' }} tabIndex={-1} />
             </div>
 
             {/* ✨ SUB-FILTER: rental_unit + beds_count */}

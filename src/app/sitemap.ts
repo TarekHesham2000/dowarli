@@ -26,7 +26,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let propertyEntries: MetadataRoute.Sitemap = [];
   try {
     const supabase = createSupabaseAnonServer();
-    const { data } = await supabase.from("properties").select("id, created_at").eq("status", "active");
+    const { data } = await supabase
+      .from("properties")
+      .select("id, created_at")
+      .eq("status", "active")
+      .eq("availability_status", "available");
     propertyEntries =
       data?.map((p) => ({
         url: `${base}/property/${p.id}`,

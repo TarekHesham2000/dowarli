@@ -12,6 +12,7 @@ type PropertyMetaRow = {
   area: string;
   price: number;
   status: string;
+  availability_status: string | null;
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
@@ -32,7 +33,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const supabase = createSupabaseAnonServer();
     const { data } = await supabase
       .from("properties")
-      .select("title, description, images, area, price, status")
+      .select("title, description, images, area, price, status, availability_status")
       .eq("id", numericId)
       .maybeSingle();
     row = data as PropertyMetaRow | null;
@@ -53,12 +54,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     plainDesc.slice(0, 160) ||
     `إيجار في ${row.area} — ${row.price?.toLocaleString("ar-EG")} ج.م شهرياً على دَورلي`;
   const isActive = row.status === "active";
+  const isListedAsAvailable = (row.availability_status ?? "available") === "available";
+  const indexable = isActive && isListedAsAvailable;
   const ogImage = row.images?.[0];
 
   return {
     title,
     description,
-    robots: isActive
+    robots: indexable
       ? { index: true, follow: true, googleBot: { index: true, follow: true } }
       : { index: false, follow: true },
     openGraph: {

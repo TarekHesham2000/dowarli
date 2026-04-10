@@ -33,9 +33,25 @@ function parseLoginIdentifier(raw: string):
 
 export type OwnerAuthMode = "login" | "register";
 
-type Props = { mode: OwnerAuthMode };
+export type OwnerBrokerAuthProps = {
+  mode?: OwnerAuthMode;
+  variant?: "page" | "modal";
+  open?: boolean;
+  onClose?: () => void;
+  bannerMessage?: string;
+  onAuthSuccess?: () => void;
+  oauthNextPath?: string;
+};
 
-export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
+export default function OwnerBrokerAuth({
+  mode: initialMode = "login",
+  variant = "page",
+  open = true,
+  onClose,
+  bannerMessage,
+  onAuthSuccess,
+  oauthNextPath,
+}: OwnerBrokerAuthProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<OwnerAuthMode>(initialMode);
@@ -82,8 +98,12 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
   };
 
   const oauthRedirect = () => {
-    if (typeof window === "undefined") return "";
-    return `${window.location.origin}/auth/callback?next=${encodeURIComponent("/dashboard")}`;
+    if (typeof globalThis.window === "undefined") return "";
+    const w = globalThis.window;
+    const next =
+      oauthNextPath ??
+      (variant === "modal" ? `${w.location.pathname}${w.location.search}` : "/dashboard");
+    return `${w.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
   };
 
   const signInOAuth = async (provider: "google" | "facebook") => {
@@ -100,6 +120,16 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
   };
 
   const routeAfterSession = async (userId: string) => {
+    if (variant === "modal") {
+      try {
+        await fetch("/api/auth/ensure-profile", { method: "POST", credentials: "same-origin" });
+      } catch {
+        /* non-fatal */
+      }
+      onAuthSuccess?.();
+      onClose?.();
+      return;
+    }
     const { data: profile } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle();
     if (profile?.role === "admin") router.push("/admin");
     else router.push("/dashboard");
@@ -255,14 +285,22 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
       }
     }
 
+    if (variant === "modal") {
+      setLoginInfo("تم إنشاء الحساب — سجّل الدخول من تبويب «تسجيل الدخول» للمتابعة.");
+      setTab("login");
+      setLoading(false);
+      return;
+    }
     router.push("/login?registered=1");
   };
 
-  return (
+  if (variant === "modal" && !open) return null;
+
+  const pageBody = (
     <div
       className="owner-auth-root"
       style={{
-        minHeight: "100vh",
+        minHeight: variant === "modal" ? "auto" : "100vh",
         fontFamily: "var(--font-geist-sans), Cairo, system-ui, sans-serif",
         direction: "rtl",
         position: "relative",
@@ -271,6 +309,7 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
         color: "#e2e8f0",
       }}
     >
+      {variant === "page" ? (
       <div aria-hidden style={{ position: "fixed", inset: 0, pointerEvents: "none" }}>
         <motion.div
           animate={{ opacity: [0.35, 0.55, 0.35], scale: [1, 1.08, 1] }}
@@ -301,7 +340,9 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
           }}
         />
       </div>
+      ) : null}
 
+      {variant === "page" ? (
       <nav
         style={{
           position: "relative",
@@ -324,6 +365,7 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
           العودة للرئيسية
         </Link>
       </nav>
+      ) : null}
 
       <main
         style={{
@@ -332,7 +374,7 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "2rem 1rem 3rem",
+          padding: variant === "modal" ? 0 : "2rem 1rem 3rem",
         }}
       >
         <motion.div
@@ -754,6 +796,48 @@ export default function OwnerBrokerAuth({ mode: initialMode }: Props) {
       </main>
     </div>
   );
+
+  if (variant === "modal") {
+    return (
+      <AnimatePresence>
+        {open ? (
+          <motion.div
+            key="ob-auth-overlay"
+            role="presentation"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[300] flex items-end justify-center bg-black/80 backdrop-blur-md sm:items-center p-3 sm:p-6"
+            onClick={() => onClose?.()}
+          >
+            <motion.div
+              initial={{ y: 48, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              exit={{ y: 24, opacity: 0 }}
+              transition={{ type: "spring", damping: 26, stiffness: 300 }}
+              onClick={(e) => e.stopPropagation()}
+              className="relative max-h-[92vh] w-full max-w-md overflow-y-auto rounded-2xl border border-amber-500/30 bg-slate-950/98 p-4 shadow-2xl shadow-amber-950/30 sm:p-5"
+            >
+              <button
+                type="button"
+                aria-label="إغلاق"
+                onClick={() => onClose?.()}
+                className="absolute left-3 top-3 z-10 rounded-lg border border-white/10 bg-white/5 px-2.5 py-1 text-sm text-slate-400 transition hover:bg-amber-950/40 hover:text-amber-200"
+              >
+                ✕
+              </button>
+              {bannerMessage ? (
+                <p className="mb-4 mt-10 text-center text-sm leading-relaxed text-amber-100/95">{bannerMessage}</p>
+              ) : null}
+              {pageBody}
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    );
+  }
+
+  return pageBody;
 }
 
 const inputStyle: React.CSSProperties = {
