@@ -1550,12 +1550,16 @@ const loadProperties = async (overrideFilters?: any) => {
 
             // ابني الـ overrideFilters وابعته لـ loadProperties مباشرة
             // (مش هتستنى الـ state يتحدث لأن ده async)
-            const keywordsCleaned = filters.keywords
+            // ابني الـ overrideFilters ونظف الكلمات
+            const keywordsCleaned = filters.keywords 
+              ? filters.keywords.replace(/,/g, ' ').trim() // استبدل الفاصلة بمسافة
+              : '';
+
             const overrideFilters = {
               area:      filters.area     || '',
               maxPrice:  filters.maxPrice ?? null,
               unitType:  filters.unitType || '',
-              keywords:  keywordsCleaned,
+              keywords:  keywordsCleaned, // ابعت الكلمات نظيفة
             };
 
             loadProperties(overrideFilters);  // ← بنبعت الداتا مباشرة = مفيش stale closure
