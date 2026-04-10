@@ -409,7 +409,7 @@ const loadProperties = async (overrideFilters?: any) => {
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Cairo', sans-serif; background: #020617; }
 
@@ -753,24 +753,24 @@ const loadProperties = async (overrideFilters?: any) => {
                 type="button"
                 onClick={submitHeroToAi}
                 style={{
-                  background: "linear-gradient(135deg, #0ea5e9, #2563eb)",
+                  background: "linear-gradient(135deg, #059669, #047857)",
                   color: "#fff", border: "none", borderRadius: 14,
                   padding: "11px 22px", fontFamily: "'Cairo', sans-serif",
                   fontSize: 13, fontWeight: 800, cursor: "pointer",
                   whiteSpace: "nowrap", flexShrink: 0,
-                  boxShadow: "0 0 0 1px rgba(14,165,233,0.45), 0 8px 28px rgba(37,99,235,0.4)",
+                  boxShadow: "0 0 0 1px rgba(5,150,105,0.4), 0 8px 28px rgba(5,150,105,0.35)",
                   transition: "box-shadow 0.25s, transform 0.2s",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(14,165,233,0.65), 0 12px 36px rgba(37,99,235,0.55)";
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(5,150,105,0.6), 0 12px 36px rgba(5,150,105,0.5)";
                   e.currentTarget.style.transform = "translateY(-1px)";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(14,165,233,0.45), 0 8px 28px rgba(37,99,235,0.4)";
+                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(5,150,105,0.4), 0 8px 28px rgba(5,150,105,0.35)";
                   e.currentTarget.style.transform = "translateY(0)";
                 }}
               >
-                اسأل دَورلي
+                اسأل دَورلي ✦
               </button>
             </div>
 
