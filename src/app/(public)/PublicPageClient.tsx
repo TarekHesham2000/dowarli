@@ -1551,8 +1551,11 @@ const loadProperties = async (overrideFilters?: any) => {
             // ابني الـ overrideFilters وابعته لـ loadProperties مباشرة
             // (مش هتستنى الـ state يتحدث لأن ده async)
             // ابني الـ overrideFilters ونظف الكلمات
-            const keywordsCleaned = filters.keywords 
-              ? filters.keywords.replace(/,/g, ' ').trim() // استبدل الفاصلة بمسافة
+            const keywordsCleaned = filters.keywords
+              ? filters.keywords
+                  .replace(/[,،]/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim()
               : '';
 
             const overrideFilters = {
