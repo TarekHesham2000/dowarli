@@ -32,11 +32,7 @@ export function getMetadataSiteUrl(): string {
   return "https://dowarly.com";
 }
 
-/** Sitemap URL for robots.txt (production default dowarly.com when env unset). */
+/** Sitemap URL declared in robots.txt for Google Search Console (production domain). */
 export function getPublicSitemapUrl(): string {
-  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (fromEnv) {
-    return `${fromEnv.replace(/\/$/, "")}/sitemap.xml`;
-  }
   return "https://dowarly.com/sitemap.xml";
 }

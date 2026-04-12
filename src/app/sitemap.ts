@@ -5,11 +5,13 @@ import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
 /** Properties are loaded from Supabase on each request (not frozen at build time). */
 export const dynamic = "force-dynamic";
 
-const STATIC_ROUTES: {
+type StaticRoute = {
   path: string;
-  changeFrequency: MetadataRoute.Sitemap[0]["changeFrequency"];
+  changeFrequency: NonNullable<MetadataRoute.Sitemap[0]["changeFrequency"]>;
   priority: number;
-}[] = [
+};
+
+const STATIC_ROUTES: StaticRoute[] = [
   { path: "", changeFrequency: "weekly", priority: 1 },
   { path: "/search", changeFrequency: "weekly", priority: 0.9 },
   { path: "/about", changeFrequency: "monthly", priority: 0.85 },
@@ -41,27 +43,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .order("id", { ascending: true })
       .limit(20_000);
 
-    if (error) {
-      console.error("[sitemap] properties:", error.message);
-    } else {
-      propertyEntries =
-        data?.map((p) => {
-          const slug = typeof (p as { slug?: string | null }).slug === "string" && (p as { slug: string }).slug.trim()
-            ? (p as { slug: string }).slug.trim()
-            : null;
-          const pathSeg = slug ?? String((p as { id: number }).id);
-          return {
-            url: `${base}/property/${pathSeg}`,
-            lastModified: (p as { created_at?: string }).created_at
-              ? new Date((p as { created_at: string }).created_at)
-              : now,
-            changeFrequency: "daily" as const,
-            priority: 0.85,
-          };
-        }) ?? [];
+    if (!error && data?.length) {
+      propertyEntries = data.map((p) => {
+        const row = p as { id: number; slug?: string | null; created_at?: string | null };
+        const slug = typeof row.slug === "string" && row.slug.trim() ? row.slug.trim() : null;
+        const pathSeg = slug ?? String(row.id);
+        return {
+          url: `${base}/property/${pathSeg}`,
+          lastModified: row.created_at ? new Date(row.created_at) : now,
+          changeFrequency: "daily" as const,
+          priority: 0.85,
+        };
+      });
     }
-  } catch (e) {
-    console.error("[sitemap]", e);
+  } catch {
+    propertyEntries = [];
   }
 
   return [...staticEntries, ...propertyEntries];
