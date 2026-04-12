@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
 
 export function getSupabaseServerClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
@@ -9,6 +10,7 @@ export function getSupabaseServerClient() {
   }
 
   return createClient(url, serviceKey, {
+    ...getSupabaseGlobalClientOptions(),
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

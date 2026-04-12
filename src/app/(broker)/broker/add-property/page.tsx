@@ -1,8 +1,11 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getDeviceId } from '@/lib/fingerprint'
+import { AD_POST_COST_RENT, getAdPostPointsCost, type ListingPurpose } from '@/lib/pointsConfig'
+import { safeRouterRefresh } from '@/lib/safeRouterRefresh'
 
 // ──────────────────────────────────────────────────────────────
 // Constants
@@ -71,7 +74,6 @@ export default function AddPropertyPage() {
   const [videoPreview, setVideoPreview] = useState(false)
 
   // ── Settings من الداتابيز ──────────────────────────────────
-  const [listingCost, setListingCost]             = useState(50)
   const [bannerText, setBannerText]               = useState('أول إعلانين مجاناً بالكامل')
   const [freePropertyLimit, setFreePropertyLimit] = useState(2)
 
@@ -80,8 +82,12 @@ export default function AddPropertyPage() {
   const [devicePropertyCount, setDevicePropertyCount]   = useState(0)
   const [deviceLimitReached, setDeviceLimitReached]     = useState(false)
   const [checkingDevice, setCheckingDevice]             = useState(true)
+  const [userPoints, setUserPoints]                     = useState(0)
+  const [successMessage, setSuccessMessage]             = useState('')
 
   // ── Form State ─────────────────────────────────────────────
+  const [listingPurpose, setListingPurpose] = useState<ListingPurpose>('rent')
+
   const [form, setForm] = useState({
     title:       '',
     description: '',
@@ -93,68 +99,71 @@ export default function AddPropertyPage() {
     beds_count:  '' as string,                // ✨ جديد — string للـ input ثم نحوله number
   })
 
-  // ── هل نعرض الـ Sub-filter؟ ───────────────────────────────
+  // ── هل نعرض الـ Sub-filter؟ (إيجار فقط — بيع لا يستخدم rental_unit في الـ DB enum)
   // لماذا derived variable وليس state منفصل؟
   // → تجنب bugs الـ sync بين state متعددة — القيمة دايماً محسوبة من المصدر الوحيد
-  const showRentalSubFilter = SHARED_UNIT_TYPES.has(form.unit_type)
+  const showRentalSubFilter = SHARED_UNIT_TYPES.has(form.unit_type) && listingPurpose === 'rent'
 
-  // ── تحميل الإعدادات + فحص الـ Device ─────────────────────
+  useEffect(() => {
+    if (listingPurpose === 'sale') {
+      setForm((prev) => ({ ...prev, rental_unit: '', beds_count: '' }))
+    }
+  }, [listingPurpose])
+
+  const activationPointsCost = useMemo(() => getAdPostPointsCost(listingPurpose), [listingPurpose])
+  const requiresPaidActivation = devicePropertyCount >= freePropertyLimit
+  const insufficientPointsToPublish = requiresPaidActivation && userPoints < activationPointsCost
+
+  // ── تحميل الإعدادات + فحص الـ Device + رصيد النقاط ─────────
   useEffect(() => {
     const init = async () => {
       const did = getDeviceId()
       setDeviceId(did)
 
-      const { data: settingsData } = await supabase
-        .from('settings')
-        .select('key, value')
+      const { data: settingsData } = await supabase.from('settings').select('key, value')
 
-      if (settingsData) {
-        const get = (k: string) => settingsData.find(s => s.key === k)?.value
-        const cost  = Number(get('listing_cost')        ?? 50)
-        const limit = Number(get('free_property_limit') ?? 2)
+      const get = (k: string) => settingsData?.find((s) => s.key === k)?.value
+      const limit = Number(get('free_property_limit') ?? 2)
+      setFreePropertyLimit(limit)
+      setBannerText(get('banner_text') ?? `أول ${limit} إعلانات مجاناً بالكامل`)
 
-        setListingCost(cost)
-        setFreePropertyLimit(limit)
-        setBannerText(get('banner_text') ?? `أول ${limit} إعلانات مجاناً بالكامل`)
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
 
+      if (user) {
+        const { data: profile } = await supabase.from('profiles').select('points').eq('id', user.id).single()
+        const pts = profile?.points ?? 0
+        setUserPoints(pts)
+
+        let deviceCount = 0
         if (did) {
           const { count } = await supabase
             .from('properties')
             .select('id', { count: 'exact', head: true })
             .eq('device_id', did)
-            .in('status', ['active', 'pending'])
+            .in('status', ['active', 'pending', 'pending_approval'])
+          deviceCount = count ?? 0
+        }
 
-          const deviceCount = count ?? 0
+        const { count: userCount } = await supabase
+          .from('properties')
+          .select('id', { count: 'exact', head: true })
+          .eq('owner_id', user.id)
+          .in('status', ['active', 'pending', 'pending_approval'])
 
-          const { data: { user } } = await supabase.auth.getUser()
-          if (user) {
-            const { count: userCount } = await supabase
-              .from('properties')
-              .select('id', { count: 'exact', head: true })
-              .eq('owner_id', user.id)
-              .in('status', ['active', 'pending'])
+        const maxCount = Math.max(deviceCount, userCount ?? 0)
+        setDevicePropertyCount(maxCount)
 
-            const maxCount = Math.max(deviceCount, userCount ?? 0)
-            setDevicePropertyCount(maxCount)
-
-            if (maxCount >= limit) {
-              const { data: profile } = await supabase
-                .from('profiles')
-                .select('wallet_balance')
-                .eq('id', user.id)
-                .single()
-              if (!profile || profile.wallet_balance < cost) {
-                setDeviceLimitReached(true)
-              }
-            }
-          }
+        if (maxCount >= limit && (!profile || pts < AD_POST_COST_RENT)) {
+          setDeviceLimitReached(true)
         }
       }
 
       setCheckingDevice(false)
     }
 
-    init()
+    void init()
   }, [])
 
   // ── عند تغيير الـ unit_type، نعمل reset للـ sub-fields ────
@@ -191,6 +200,7 @@ export default function AddPropertyPage() {
     e.preventDefault()
     setLoading(true)
     setError('')
+    setSuccessMessage('')
 
     // Validation: الصور
     if (images.length < 3) {
@@ -211,15 +221,15 @@ export default function AddPropertyPage() {
       return
     }
 
-    // Validation: الـ Sub-filter لو الفئة تتطلبه
-    if (showRentalSubFilter && !form.rental_unit) {
+    // Validation: الـ Sub-filter لو الإعلان إيجار والفئة تتطلبه
+    if (listingPurpose === 'rent' && showRentalSubFilter && !form.rental_unit) {
       setError('يرجى تحديد نوع الإيجار: سرير أم أوضة كاملة')
       setLoading(false)
       return
     }
 
-    // Validation: beds_count لازم يكون رقم موجب لو rental_unit = bed
-    if (form.rental_unit === 'bed') {
+    // Validation: beds_count لازم يكون رقم موجب لو إيجار + rental_unit = bed
+    if (listingPurpose === 'rent' && form.rental_unit === 'bed') {
       const bedsNum = Number(form.beds_count)
       if (!form.beds_count || isNaN(bedsNum) || bedsNum < 1 || bedsNum > 20) {
         setError('يرجى إدخال عدد الأسرّة (من 1 إلى 20)')
@@ -236,13 +246,12 @@ export default function AddPropertyPage() {
         .from('settings')
         .select('key, value')
 
-      const get = (k: string) => settingsData?.find((s: any) => s.key === k)?.value
-      const cost  = Number(get('listing_cost')        ?? listingCost)
+      const get = (k: string) => settingsData?.find((s: { key: string; value: string }) => s.key === k)?.value
       const limit = Number(get('free_property_limit') ?? freePropertyLimit)
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('wallet_balance, is_active')
+        .select('is_active, points')
         .eq('id', user.id)
         .single()
 
@@ -258,75 +267,86 @@ export default function AddPropertyPage() {
         return
       }
 
+      const livePoints = profile.points ?? 0
+      setUserPoints(livePoints)
+
       // Anti-Fraud
       const { count: userCount } = await supabase
         .from('properties')
         .select('id', { count: 'exact', head: true })
         .eq('owner_id', user.id)
-        .in('status', ['active', 'pending'])
+        .in('status', ['active', 'pending', 'pending_approval'])
 
       const { count: devCount } = await supabase
         .from('properties')
         .select('id', { count: 'exact', head: true })
         .eq('device_id', deviceId)
-        .in('status', ['active', 'pending'])
+        .in('status', ['active', 'pending', 'pending_approval'])
 
       const publishedCount = Math.max(userCount ?? 0, devCount ?? 0)
       const isFree = publishedCount < limit
+      const pointsCost = getAdPostPointsCost(listingPurpose)
 
-      if (!isFree && profile.wallet_balance < cost) {
+      if (!isFree && livePoints < pointsCost) {
         setError(
-          `لقد استنفدت حد الإعلانات المجانية (${limit} إعلانات) ❌\n` +
-          `رصيدك الحالي: ${profile.wallet_balance} ج.م — تحتاج ${cost} ج.م\n` +
-          `يرجى شحن المحفظة للاستمرار`
+          `رصيد النقاط غير كافٍ. مطلوب ${pointsCost} نقطة عند موافقة الإدارة على إعلان ${listingPurpose === 'sale' ? 'بيع' : 'إيجار'}.`,
         )
         setLoading(false)
         return
       }
 
-      // ── بناء Object البيانات ───────────────────────────────
-      // لماذا نبنيه هكذا؟ → نتجنب إرسال null/undefined للحقول اللي مش مطلوبة
-      const propertyData: Record<string, any> = {
-        owner_id:    user.id,
-        title:       form.title,
-        description: form.description,
-        price:       Number(form.price),
-        area:        form.area,
-        unit_type:   form.unit_type,
-        address:     form.address,
-        status:      'pending',
-        was_charged: false,
-        images:      [],
-        device_id:   deviceId,
+      // بيع: لا نرسل rental_unit / beds إلى الـ RPC (عمود rental_unit enum في DB = NULL)
+      const rentalUnitForRpc =
+        listingPurpose === 'sale' ? null : form.rental_unit ? form.rental_unit : null
+      const bedsForRpc =
+        listingPurpose === 'sale'
+          ? null
+          : form.rental_unit === 'bed' && form.beds_count
+            ? Number(form.beds_count)
+            : null
+
+      const { data: newIdRaw, error: rpcError } = await supabase.rpc('handle_property_submission', {
+        p_title: form.title.trim(),
+        p_description: (form.description || '').trim(),
+        p_price: Number(form.price),
+        p_area: form.area.trim(),
+        p_unit_type: form.unit_type.trim(),
+        p_address: (form.address || '').trim(),
+        p_device_id: deviceId || null,
+        p_video_url: videoUrl.trim() || null,
+        p_rental_unit: rentalUnitForRpc,
+        p_beds_count: bedsForRpc,
+        p_listing_purpose: listingPurpose,
+      })
+
+      if (rpcError) {
+        const msg = rpcError.message ?? ''
+        if (msg.includes('not_authenticated')) {
+          setError('انتهت الجلسة — سجّل الدخول من جديد.')
+        } else {
+          setError(msg || 'تعذّر حفظ الإعلان. حاول مرة أخرى.')
+        }
+        setLoading(false)
+        return
       }
 
-      // الحقول الاختيارية — نضيفها فقط لو موجودة
-      if (videoUrl.trim())           propertyData.video_url   = videoUrl.trim()
-      if (form.rental_unit)          propertyData.rental_unit = form.rental_unit
-      if (form.rental_unit === 'bed' && form.beds_count)
-                                     propertyData.beds_count  = Number(form.beds_count)
-
-      const { data: insertData, error: insertError } = await supabase
-        .from('properties')
-        .insert(propertyData)
-        .select('id')
-        .single()
-
-      if (insertError) {
-        setError(insertError.message)
+      const insertData = { id: Number(newIdRaw) }
+      if (!Number.isFinite(insertData.id)) {
+        setError('تعذّر قراءة رقم الإعلان بعد الحفظ.')
         setLoading(false)
         return
       }
 
       if (images.length > 0) {
         const imageUrls = await uploadImages(insertData.id)
-        await supabase
-          .from('properties')
-          .update({ images: imageUrls })
-          .eq('id', insertData.id)
+        await supabase.from('properties').update({ images: imageUrls }).eq('id', insertData.id)
       }
 
-      alert('تم استلام إعلانك بنجاح 🎉.. جاري مراجعة البيانات لضمان الجودة، وهيكون متاح للباحثين في اسرع وقت')
+      setSuccessMessage(
+        'تم استلام إعلانك بنجاح. سيُراجع من الإدارة؛ تُخصم النقاط فقط عند الموافقة إن كان الإعلان خارج الحد المجاني.',
+      )
+      safeRouterRefresh(router)
+      await new Promise((r) => setTimeout(r, 700))
       router.push('/dashboard')
 
     } catch (err) {
@@ -359,12 +379,12 @@ export default function AddPropertyPage() {
         <h2 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>استنفدت الإعلانات المجانية</h2>
         <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.8, marginBottom: '1.5rem' }}>
           لقد وصلت للحد المجاني وهو <strong style={{ color: '#166534' }}>{freePropertyLimit} إعلانات</strong>.<br />
-          لمواصلة النشر، يرجى شحن المحفظة. كل إعلان إضافي بـ <strong style={{ color: '#166534' }}>{listingCost} ج.م</strong> فقط.
+          لمواصلة النشر تحتاج نقاطاً 💎 حسب نوع الإعلان (إيجار {AD_POST_COST_RENT} / بيع {getAdPostPointsCost('sale')}) — اشحن من المحفظة.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button onClick={() => router.push('/broker/wallet')}
+          <button onClick={() => router.push('/wallet')}
             style={{ background: '#166534', color: 'white', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 900, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
-            💳 شحن المحفظة الآن
+            💎 شحن النقاط من المحفظة
           </button>
           <button onClick={() => router.push('/dashboard')}
             style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 12, padding: '12px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
@@ -399,7 +419,7 @@ export default function AddPropertyPage() {
         <div style={{ marginBottom: '1.25rem' }}>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', margin: '0 0 4px' }}>رفع عقار جديد 🏠</h1>
           <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>
-            أول {freePropertyLimit} إعلانات مجاناً — الخصم يتم فقط عند موافقة الأدمن
+            أول {freePropertyLimit} إعلانات مجاناً — بعدها تُخصم النقاط عند موافقة الإدارة (إيجار {AD_POST_COST_RENT} / بيع {getAdPostPointsCost('sale')})
           </p>
         </div>
 
@@ -409,7 +429,7 @@ export default function AddPropertyPage() {
           <div>
             <p style={{ fontSize: 13, fontWeight: 800, color: '#14532d', margin: 0 }}>{bannerText}</p>
             <p style={{ fontSize: 12, color: '#166534', margin: '2px 0 0' }}>
-              سعر الإعلانات حالياً بـ {listingCost} ج.م — تُخصم فقط عند الموافقة
+              بعد الحد المجاني: إيجار {AD_POST_COST_RENT} نقطة 💎 — بيع {getAdPostPointsCost('sale')} نقطة (يُخصم عند الموافقة على النشر)
             </p>
           </div>
         </div>
@@ -420,7 +440,8 @@ export default function AddPropertyPage() {
             <span style={{ fontSize: 16 }}>{devicePropertyCount >= freePropertyLimit ? '⚠️' : 'ℹ️'}</span>
             <p style={{ fontSize: 13, fontWeight: 700, color: devicePropertyCount >= freePropertyLimit ? '#92400e' : '#1d4ed8', margin: 0 }}>
               لديك {devicePropertyCount} إعلان من أصل {freePropertyLimit} مجانية
-              {devicePropertyCount >= freePropertyLimit && ` — الإعلانات التالية بـ ${listingCost} ج.م`}
+              {devicePropertyCount >= freePropertyLimit &&
+                ` — الإعلانات التالية بالنقاط (إيجار ${AD_POST_COST_RENT} / بيع ${getAdPostPointsCost('sale')})`}
             </p>
           </div>
         )}
@@ -428,6 +449,19 @@ export default function AddPropertyPage() {
         {/* FORM CARD */}
         <div style={{ background: '#fff', borderRadius: 20, padding: '1.75rem', border: '1px solid #e2e8f0', boxShadow: '0 4px 24px rgba(0,0,0,0.04)' }}>
 
+          {successMessage ? (
+            <div style={{ background: '#ecfdf5', border: '1px solid #4ade80', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#14532d', marginBottom: '1.25rem', fontWeight: 700 }}>
+              ✓ {successMessage}
+            </div>
+          ) : null}
+          {insufficientPointsToPublish ? (
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#991b1b', marginBottom: '1.25rem', lineHeight: 1.7 }}>
+              <strong>رصيد منخفض:</strong> تحتاج {activationPointsCost} نقطة على الأقل لإعلان {listingPurpose === 'sale' ? 'بيع' : 'إيجار'} خارج الحد المجاني (تُخصم عند موافقة الإدارة).{' '}
+              <Link href="/wallet" style={{ color: '#166534', fontWeight: 900, textDecoration: 'underline' }}>
+                شحن النقاط — المحفظة
+              </Link>
+            </div>
+          ) : null}
           {error && (
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#dc2626', marginBottom: '1.25rem', display: 'flex', alignItems: 'flex-start', gap: 8, whiteSpace: 'pre-line' }}>
               <span style={{ flexShrink: 0 }}>⚠️</span> {error}
@@ -483,6 +517,53 @@ export default function AddPropertyPage() {
                   <option value="">اختار...</option>
                   {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
                 </select>
+              </div>
+            </div>
+
+            {/* إيجار vs بيع — يحدد تكلفة النقاط */}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 10 }}>
+                نوع الإعلان <span style={{ color: '#dc2626' }}>*</span>
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {(
+                  [
+                    { v: 'rent' as const, label: 'إيجار', sub: `${AD_POST_COST_RENT} نقطة`, icon: '🔑' },
+                    { v: 'sale' as const, label: 'بيع', sub: `${getAdPostPointsCost('sale')} نقطة`, icon: '🏷️' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => {
+                      setListingPurpose(opt.v)
+                      if (opt.v === 'sale') {
+                        setForm((prev) => ({ ...prev, rental_unit: '', beds_count: '' }))
+                      }
+                    }}
+                    style={{
+                      padding: '12px 14px',
+                      border: listingPurpose === opt.v ? '2px solid #16a34a' : '1.5px solid #e2e8f0',
+                      borderRadius: 12,
+                      background: listingPurpose === opt.v ? '#f0fdf4' : '#fafafa',
+                      color: listingPurpose === opt.v ? '#14532d' : '#64748b',
+                      fontFamily: 'Cairo, sans-serif',
+                      fontSize: 13,
+                      fontWeight: 800,
+                      cursor: 'pointer',
+                      textAlign: 'right',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'flex-end',
+                      gap: 4,
+                    }}
+                  >
+                    <span>
+                      {opt.icon} {opt.label}
+                    </span>
+                    <span style={{ fontSize: 11, fontWeight: 600, opacity: 0.85 }}>{opt.sub}</span>
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -706,9 +787,9 @@ export default function AddPropertyPage() {
             </div>
 
             {/* SUBMIT */}
-            <button type="submit" disabled={loading}
-              style={{ width: '100%', background: loading ? '#86efac' : 'linear-gradient(135deg, #16a34a, #15803d)', color: 'white', border: 'none', borderRadius: 14, padding: '15px', fontSize: 15, fontWeight: 900, cursor: loading ? 'not-allowed' : 'pointer', fontFamily: 'Cairo, sans-serif', marginTop: 4, boxShadow: loading ? 'none' : '0 4px 16px rgba(22,163,74,0.3)', transition: 'all 0.2s' }}>
-              {loading ? '⏳ جاري الرفع...' : '🚀 رفع الإعلان'}
+            <button type="submit" disabled={loading || insufficientPointsToPublish}
+              style={{ width: '100%', background: loading || insufficientPointsToPublish ? '#86efac' : 'linear-gradient(135deg, #16a34a, #15803d)', color: 'white', border: 'none', borderRadius: 14, padding: '15px', fontSize: 15, fontWeight: 900, cursor: loading || insufficientPointsToPublish ? 'not-allowed' : 'pointer', fontFamily: 'Cairo, sans-serif', marginTop: 4, boxShadow: loading || insufficientPointsToPublish ? 'none' : '0 4px 16px rgba(22,163,74,0.3)', transition: 'all 0.2s' }}>
+              {loading ? '⏳ جاري الرفع...' : '🚀 نشر الإعلان'}
             </button>
 
           </form>

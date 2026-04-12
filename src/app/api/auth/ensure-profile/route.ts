@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { ensureBrokerProfileForUser } from "@/lib/authProfile";
+import { syncAuthPhoneFromProfileForUserId } from "@/lib/syncAuthPhone";
+import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
 
 /**
  * Syncs auth.users session → public.profiles (create, patch, or link legacy row by email).
@@ -17,6 +19,7 @@ export async function POST(request: NextRequest) {
   let response = NextResponse.json({ ok: true });
 
   const supabase = createServerClient(url, anon, {
+    ...getSupabaseGlobalClientOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -40,6 +43,7 @@ export async function POST(request: NextRequest) {
 
   try {
     await ensureBrokerProfileForUser(user);
+    await syncAuthPhoneFromProfileForUserId(user.id);
   } catch (e) {
     console.error("[ensure-profile]", e);
     return NextResponse.json({ ok: false, error: "ensure_failed" }, { status: 500 });

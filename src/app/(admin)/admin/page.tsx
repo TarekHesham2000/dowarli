@@ -1,7 +1,11 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { Copy, Loader2 } from 'lucide-react'
+import { safeRouterRefresh } from '@/lib/safeRouterRefresh'
+import { getAdPostPointsCost, type ListingPurpose } from '@/lib/pointsConfig'
+import { notifyPointsChanged } from '@/lib/profilePointsSync'
 
 type Property = {
   id: number
@@ -13,7 +17,21 @@ type Property = {
   description: string
   address: string
   video_url?: string; // 👈 لازم السطر ده يكون موجود هنا عشان الـ Error يروح
-  profiles: { name: string; phone: string; id: string }
+  listing_type?: string | null
+  listing_purpose?: string | null
+  was_charged?: boolean | null
+  profiles: { name: string; phone: string; id: string; points?: number | null }
+}
+
+function listingPurposeFromProperty(p: Pick<Property, 'listing_type' | 'listing_purpose'>): ListingPurpose {
+  const raw = (p.listing_type ?? p.listing_purpose ?? 'rent').toString().trim().toLowerCase()
+  return raw === 'sale' ? 'sale' : 'rent'
+}
+
+function activationCostLabelAr(p: Property): string {
+  if (!p.was_charged) return 'تفعيل مجاني (ضمن الحد المسموح)'
+  const n = getAdPostPointsCost(listingPurposeFromProperty(p))
+  return `تكلفة التفعيل: ${n} نقطة`
 }
 
 type Transaction = {
@@ -22,6 +40,9 @@ type Transaction = {
   screenshot_url: string
   status: string
   broker_id: string
+  sender_phone?: string | null
+  points_requested?: number | null
+  package_name?: string | null
   profiles: { name: string; phone: string }
 }
 
@@ -29,7 +50,7 @@ type Broker = {
   id: string
   name: string
   phone: string
-  wallet_balance: number
+  points: number
   is_active: boolean
   role?: string | null
   created_at: string
@@ -49,6 +70,7 @@ type Lead = {
 }
 
 type Stats = {
+  totalUsers: number
   totalBrokers: number
   publishedProperties: number
   rejectedProperties: number
@@ -58,7 +80,13 @@ type Stats = {
   totalCharged: number
 }
 
-type Tab = 'home' | 'properties' | 'brokers' | 'transactions' | 'leads' | 'settings'
+type Tab = 'home' | 'properties' | 'brokers' | 'transactions' | 'vault' | 'leads' | 'settings'
+
+type VerifiedTxRow = { amount: number; created_at: string }
+
+function isAwaitingPropertyApproval(status: string) {
+  return status === 'pending' || status === 'pending_approval'
+}
 
 // ── Design tokens ──────────────────────────────────────────────
 const C = {
@@ -94,15 +122,23 @@ export default function AdminDashboard() {
   const [tab, setTab] = useState<Tab>('home')
   const [leads, setLeads] = useState<Lead[]>([])
   const [stats, setStats] = useState<Stats>({
+    totalUsers: 0,
     totalBrokers: 0, publishedProperties: 0, rejectedProperties: 0,
     totalLeads: 0, pendingProperties: 0, pendingTransactions: 0, totalCharged: 0,
   })
+  const [verifiedTxRows, setVerifiedTxRows] = useState<VerifiedTxRow[]>([])
+  const [mobileMainTab, setMobileMainTab] = useState<'stats' | 'transactions' | 'vault' | 'more'>('stats')
+  const [vaultPassword, setVaultPassword] = useState('')
+  /** Vault access — memory only; resets on full page refresh (no sessionStorage). */
+  const [vaultUnlocked, setVaultUnlocked] = useState(false)
+  const [txSearch, setTxSearch] = useState('')
   const [properties, setProperties] = useState<Property[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [brokers, setBrokers] = useState<Broker[]>([])
   const [loading, setLoading] = useState(true)
   const [rejectId, setRejectId] = useState<number | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [rejectAdminNotes, setRejectAdminNotes] = useState('')
   const [rejectType, setRejectType] = useState<'property' | 'transaction'>('property')
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [listingCost, setListingCost] = useState('50')
@@ -110,10 +146,23 @@ export default function AdminDashboard() {
   const [savingSettings, setSavingSettings] = useState(false)
   const [propertyStatusFilter, setPropertyStatusFilter] = useState<'all' | 'pending' | 'active' | 'rejected'>('all')
   const [authReady, setAuthReady] = useState(false)
-  const [processingTransactionId, setProcessingTransactionId] = useState<number | null>(null)
+  const [approvingTransactionId, setApprovingTransactionId] = useState<number | null>(null)
+  const [rejectSubmitting, setRejectSubmitting] = useState(false)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const showToast = useCallback((message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+  }, [])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 4500)
+    return () => clearTimeout(timer)
+  }, [toast])
+
   const [profilesError, setProfilesError] = useState('')
   const [verifiedTxError, setVerifiedTxError] = useState('')
-  const [walletInputs, setWalletInputs] = useState<Record<string, string>>({})
+  const [pointsAdjustInputs, setPointsAdjustInputs] = useState<Record<string, string>>({})
+  const [approvingPropertyId, setApprovingPropertyId] = useState<number | null>(null)
 
   // ── Phase 2: New state ──────────────────────────────────────
   // Search & filter
@@ -133,25 +182,25 @@ export default function AdminDashboard() {
     area: '',
     unit_type: '',
     address: '',
-    status: 'pending' as 'pending' | 'active',
+    status: 'pending_approval' as 'pending_approval' | 'pending' | 'active',
   })
 
   async function loadAll() {
     try {
       const [propsRes, transRes, verifiedRes, brokersRes, leadsRes, settingsRes] = await Promise.all([
         supabase.from('properties')
-          .select('id, title, area, price, status, images, description, address, video_url, profiles(name, phone, id)')
+          .select('id, title, area, price, status, images, description, address, video_url, listing_type, listing_purpose, was_charged, profiles(name, phone, id, points)')
           .order('created_at', { ascending: false }),
         supabase.from('transactions')
-          .select('id, amount, screenshot_url, status, broker_id, profiles(name, phone)')
+          .select('id, amount, screenshot_url, status, broker_id, sender_phone, points_requested, package_name, profiles(name, phone)')
           .eq('status', 'pending').order('created_at', { ascending: false }),
         supabase.from('transactions')
-          .select('amount, broker_id')
+          .select('amount, broker_id, created_at')
           .eq('status', 'verified')
           .order('created_at', { ascending: false })
           .limit(10000),
         supabase.from('profiles')
-          .select('id, name, phone, wallet_balance, is_active, role, created_at')
+          .select('id, name, phone, points, is_active, role, created_at')
           .neq('id', '00000000-0000-0000-0000-000000000000'),
         supabase.from('leads')
           .select('id, client_name, client_phone, created_at, property_id')
@@ -175,7 +224,15 @@ export default function AdminDashboard() {
       const trans = (transRes.data as unknown as Transaction[]) ?? []
       const verified = verifiedRes.error
         ? []
-        : ((verifiedRes.data as { amount: number; broker_id: string }[]) ?? [])
+        : ((verifiedRes.data as { amount: number; broker_id: string; created_at: string }[]) ?? [])
+      setVerifiedTxRows(
+        verifiedRes.error
+          ? []
+          : ((verifiedRes.data as VerifiedTxRow[]) ?? []).map((r) => ({
+              amount: Number(r.amount ?? 0),
+              created_at: r.created_at,
+            })),
+      )
       const chargedByBroker = new Map<string, number>()
       let totalCharged = 0
       for (const row of verified) {
@@ -213,11 +270,12 @@ export default function AdminDashboard() {
       }
 
       setStats({
+        totalUsers: allProfiles.length,
         totalBrokers: brok.length,
         publishedProperties: props.filter(p => p.status === 'active').length,
         rejectedProperties: props.filter(p => p.status === 'rejected').length,
         totalLeads: enrichedLeads.length,
-        pendingProperties: props.filter(p => p.status === 'pending').length,
+        pendingProperties: props.filter(p => p.status === 'pending' || p.status === 'pending_approval').length,
         pendingTransactions: trans.length,
         totalCharged,
       })
@@ -237,7 +295,7 @@ export default function AdminDashboard() {
       area: '',
       unit_type: '',
       address: '',
-      status: 'pending',
+      status: 'pending_approval',
     })
   }
 
@@ -262,6 +320,8 @@ export default function AdminDashboard() {
         status: addPropertyForm.status,
         was_charged: false,
         images: [],
+        listing_purpose: 'rent',
+        listing_type: 'rent',
       })
 
     setAddingProperty(false)
@@ -356,105 +416,194 @@ useEffect(() => {
     supabase.removeChannel(channel);
   };
 }, [router]);
-  // ── approveProperty ────────────────────────────────────────
+  // ── approveProperty — RPC deducts points when was_charged (same transaction as activate) ──
   const approveProperty = async (property: Property) => {
-    setLoading(true)
+    if (approvingPropertyId !== null) return
+    setApprovingPropertyId(property.id)
     try {
-      const cost = Number(listingCost)
-
       const { data: freshProperty, error: fetchError } = await supabase
-        .from('properties').select('id, status, was_charged, owner_id').eq('id', property.id).single()
+        .from('properties')
+        .select('id, status')
+        .eq('id', property.id)
+        .single()
 
       if (fetchError || !freshProperty) {
-        alert('تعذر جلب بيانات الإعلان، حاول مرة أخرى')
-        setLoading(false); return
+        showToast('تعذر جلب بيانات الإعلان، حاول مرة أخرى', 'error')
+        return
       }
 
       if (freshProperty.status === 'active') {
-        alert('هذا الإعلان مفعّل بالفعل ✅')
-        setSelectedProperty(null); setLoading(false); loadAll(); return
+        showToast('هذا الإعلان مفعّل بالفعل', 'success')
+        setSelectedProperty(null)
+        await loadAll()
+        safeRouterRefresh(router)
+        return
       }
 
-      if (freshProperty.was_charged) {
-        const { error } = await supabase.from('properties').update({ status: 'active' }).eq('id', property.id)
-        if (error) throw error
-        alert('تم التفعيل ✅ (كان مخصوماً مسبقاً)')
-        setSelectedProperty(null); loadAll(); return
+      if (!isAwaitingPropertyApproval(freshProperty.status)) {
+        showToast('هذا الإعلان ليس في انتظار الموافقة', 'error')
+        return
       }
 
-      const { count } = await supabase
-        .from('properties').select('*', { count: 'exact', head: true })
-        .eq('owner_id', property.profiles.id).eq('status', 'active')
+      const { error: rpcError } = await supabase.rpc('handle_admin_approval', {
+        p_property_id: property.id,
+      })
 
-      const isFree = (count ?? 0) < 2
-
-      if (!isFree) {
-        const { data: brokerProfile } = await supabase
-          .from('profiles').select('wallet_balance').eq('id', property.profiles.id).single()
-
-        if (!brokerProfile || brokerProfile.wallet_balance < cost) {
-          alert(`رصيد المالك غير كافٍ ❌\nالرصيد: ${brokerProfile?.wallet_balance ?? 0} ج.م\nالمطلوب: ${cost} ج.م`)
-          setLoading(false); return
+      if (rpcError) {
+        const m = rpcError.message ?? ''
+        if (m.includes('insufficient_points_for_activation') || m.includes('insufficient points')) {
+          showToast('رصيد المستخدم غير كافٍ لتفعيل هذا الإعلان', 'error')
+        } else if (m.includes('forbidden')) {
+          showToast('ليس لديك صلاحية تنفيذ هذه العملية', 'error')
+        } else if (m.includes('not_pending_approval')) {
+          showToast('هذا الإعلان ليس في انتظار الموافقة', 'error')
+        } else {
+          showToast(m || 'تعذّر تفعيل الإعلان', 'error')
         }
-
-        const { error: walletError } = await supabase.rpc('deduct_wallet', {
-          user_id: property.profiles.id, amount: cost,
-        })
-        if (walletError) { alert(`فشل الخصم: ${walletError.message}`); setLoading(false); return }
+        return
       }
 
-      const { error: updateError } = await supabase
-        .from('properties').update({ status: 'active', was_charged: !isFree }).eq('id', property.id)
-      if (updateError) throw updateError
-
-      alert(isFree ? 'تم التفعيل مجاناً ✅' : `تم التفعيل وخصم ${cost} ج.م ✅`)
-      setSelectedProperty(null); loadAll()
+      notifyPointsChanged()
+      showToast(
+        property.was_charged
+          ? 'تم تفعيل الإعلان وخصم النقاط من رصيد المالك'
+          : 'تم تفعيل الإعلان (بدون خصم — ضمن الحد المجاني)',
+        'success',
+      )
+      setSelectedProperty(null)
+      await loadAll()
+      safeRouterRefresh(router)
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unknown error'
-      alert('حدث خطأ: ' + msg)
+      showToast('حدث خطأ: ' + msg, 'error')
     } finally {
-      setLoading(false)
+      setApprovingPropertyId(null)
     }
   }
 
   const rejectProperty = async () => {
-    if (!rejectId || !rejectReason) return
-    await supabase.from('properties').update({ status: 'rejected', rejection_reason: rejectReason }).eq('id', rejectId)
-    setRejectId(null); setRejectReason(''); loadAll()
+    if (!rejectId || !rejectReason.trim() || rejectSubmitting) return
+    setRejectSubmitting(true)
+    try {
+      const { error } = await supabase
+        .from('properties')
+        .update({ status: 'rejected', rejection_reason: rejectReason.trim() })
+        .eq('id', rejectId)
+      if (error) {
+        showToast(`فشل رفض الإعلان: ${error.message}`, 'error')
+        return
+      }
+      showToast('تم رفض الإعلان بنجاح', 'success')
+      setRejectId(null)
+      setRejectReason('')
+      await loadAll()
+      safeRouterRefresh(router)
+    } finally {
+      setRejectSubmitting(false)
+    }
   }
 
-  const approveTransaction = async (id: number, brokerId: string, amount: number) => {
-    if (processingTransactionId) return
-    setProcessingTransactionId(id)
+  const approveTransaction = async (t: Transaction) => {
+    const id = t.id
+    const brokerId = t.broker_id
+    const pointsAdd = t.points_requested != null ? Number(t.points_requested) : 0
+    if (approvingTransactionId !== null || rejectSubmitting) return
+    setApprovingTransactionId(id)
+
+    if (pointsAdd > 0) {
+      const res = await fetch('/api/admin/add-points', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ p_user_id: brokerId, p_delta: pointsAdd }),
+      })
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string
+        message?: string
+      }
+      if (!res.ok) {
+        let hint = payload.message || payload.error || res.statusText
+        if (res.status === 401) {
+          hint = 'انتهت الجلسة — حدّث الصفحة أو سجّل الدخول من جديد'
+        } else if (payload.error === 'forbidden') {
+          hint = 'ليس لديك صلاحية أدمن'
+        } else if (payload.error === 'user_not_found') {
+          hint = 'المستخدم غير موجود'
+        }
+        showToast(`فشل إضافة النقاط: ${hint}`, 'error')
+        setApprovingTransactionId(null)
+        return
+      }
+    } else {
+      const { error: walletError } = await supabase.rpc('add_wallet', { user_id: brokerId, amount: t.amount })
+      if (walletError) {
+        showToast(`فشل إضافة الرصيد: ${walletError.message}`, 'error')
+        setApprovingTransactionId(null)
+        return
+      }
+    }
+
     const { data: updatedRows, error: txError } = await supabase
       .from('transactions').update({ status: 'verified' }).eq('id', id).eq('status', 'pending').select('id')
-    if (txError) { alert(`فشل: ${txError.message}`); setProcessingTransactionId(null); return }
-    if (!updatedRows || updatedRows.length === 0) {
-      alert('تم التعامل معها بالفعل')
-      setTransactions(prev => prev.filter(t => t.id !== id)); setProcessingTransactionId(null); return
+    if (txError) {
+      showToast(`تمت إضافة الرصيد/النقاط لكن فشل تحديث حالة الطلب: ${txError.message}`, 'error')
+      setApprovingTransactionId(null)
+      await loadAll()
+      return
     }
-    const { error: walletError } = await supabase.rpc('add_wallet', { user_id: brokerId, amount })
-    if (walletError) { alert(`فشل إضافة الرصيد: ${walletError.message}`); setProcessingTransactionId(null); loadAll(); return }
-    setTransactions(prev => prev.filter(t => t.id !== id))
-    setStats(prev => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
-    setProcessingTransactionId(null)
+    if (!updatedRows || updatedRows.length === 0) {
+      showToast('تم التعامل مع هذا الطلب مسبقاً', 'error')
+      setTransactions((prev) => prev.filter((x) => x.id !== id))
+      setApprovingTransactionId(null)
+      await loadAll()
+      return
+    }
+    setTransactions((prev) => prev.filter((x) => x.id !== id))
+    setStats((prev) => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
+    setApprovingTransactionId(null)
+    showToast(
+      pointsAdd > 0
+        ? `تم تأكيد الطلب وإضافة ${pointsAdd} نقطة للمستخدم`
+        : 'تم تأكيد الطلب وإضافة المبلغ للمحفظة',
+      'success',
+    )
+    await loadAll()
+    safeRouterRefresh(router)
   }
 
   const rejectTransaction = async () => {
-    if (!rejectId || !rejectReason || processingTransactionId) return
-    const txId = rejectId; const txReason = rejectReason
-    setProcessingTransactionId(txId)
-    setTransactions(prev => prev.filter(t => t.id !== txId))
-    setStats(prev => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
-    setRejectId(null); setRejectReason('')
-    const { data: updatedRows, error } = await supabase
-      .from('transactions').update({ status: 'rejected', rejection_reason: txReason })
-      .eq('id', txId).eq('status', 'pending').select()
-    if (error || !updatedRows || updatedRows.length === 0) {
+    if (!rejectId || !rejectReason.trim() || rejectSubmitting) return
+    const txId = rejectId
+    const txReason = rejectReason.trim()
+    const notes = rejectAdminNotes.trim() || null
+    setRejectSubmitting(true)
+    try {
+      const { data: updatedRows, error } = await supabase
+        .from('transactions')
+        .update({
+          status: 'rejected',
+          rejection_reason: txReason,
+          admin_notes: notes,
+        })
+        .eq('id', txId)
+        .eq('status', 'pending')
+        .select()
+      if (error || !updatedRows || updatedRows.length === 0) {
+        showToast(error ? `فشل الرفض: ${error.message}` : 'لم يتم رفض المعاملة', 'error')
+        await loadAll()
+        return
+      }
+      setTransactions((prev) => prev.filter((x) => x.id !== txId))
+      setStats((prev) => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
+      setRejectId(null)
+      setRejectReason('')
+      setRejectAdminNotes('')
+      showToast('تم رفض المعاملة وتسجيل السبب', 'success')
       await loadAll()
-      alert(error ? `فشل: ${error.message}` : 'لم يتم التعديل')
+      safeRouterRefresh(router)
+    } finally {
+      setRejectSubmitting(false)
     }
-    setProcessingTransactionId(null)
   }
 
   const toggleBroker = async (id: string, current: boolean) => {
@@ -462,15 +611,30 @@ useEffect(() => {
     setBrokers(prev => prev.map(b => b.id === id ? { ...b, is_active: !current } : b))
   }
 
-  const adjustWallet = async (id: string, direction: 1 | -1) => {
-    const raw = walletInputs[id]
+  const adjustBrokerPoints = async (id: string, direction: 1 | -1) => {
+    const raw = pointsAdjustInputs[id]
     const amount = Number(raw)
     if (!raw || isNaN(amount) || amount <= 0) {
-      alert('أدخل قيمة صحيحة أولاً'); return
+      showToast('أدخل عدد نقاط صحيحاً أولاً', 'error')
+      return
     }
-    await supabase.rpc('add_wallet', { user_id: id, amount: direction * amount })
-    setWalletInputs(prev => ({ ...prev, [id]: '' }))
-    loadAll()
+    const p_delta = direction * Math.floor(amount)
+    const res = await fetch('/api/admin/add-points', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ p_user_id: id, p_delta: p_delta }),
+    })
+    const payload = (await res.json().catch(() => ({}))) as { error?: string; message?: string }
+    if (!res.ok) {
+      showToast(payload.message || payload.error || 'تعذّر تعديل النقاط', 'error')
+      return
+    }
+    setPointsAdjustInputs((prev) => ({ ...prev, [id]: '' }))
+    notifyPointsChanged()
+    showToast(direction === 1 ? 'تمت إضافة النقاط' : 'تم خصم النقاط', 'success')
+    await loadAll()
+    safeRouterRefresh(router)
   }
 
   const saveSettings = async () => {
@@ -503,6 +667,7 @@ useEffect(() => {
       setProperties((prev) => prev.filter((p) => p.id !== idToDelete))
       setDeletePropertyId(null)
       setSelectedProperty((cur) => (cur?.id === idToDelete ? null : cur))
+      safeRouterRefresh(router)
     } finally {
       setDeletingProperty(false)
     }
@@ -523,13 +688,19 @@ useEffect(() => {
     { id: 'properties', label: 'الإعلانات', icon: '🏠', badge: stats.pendingProperties },
     { id: 'brokers', label: 'الملاك', icon: '👥' },
     { id: 'transactions', label: 'الشحنات', icon: '💳', badge: stats.pendingTransactions },
+    { id: 'vault', label: 'الخزنة', icon: '🔐' },
     { id: 'leads', label: 'العملاء', icon: '📋' },
     { id: 'settings', label: 'الإعدادات', icon: '⚙️' },
   ]
 
   // ── Phase 2: Smart filter logic ──────────────────────────────
   const filteredProperties = properties.filter(p => {
-    const matchStatus = propertyStatusFilter === 'all' || p.status === propertyStatusFilter
+    const matchStatus =
+      propertyStatusFilter === 'all'
+        ? true
+        : propertyStatusFilter === 'pending'
+          ? isAwaitingPropertyApproval(p.status)
+          : p.status === propertyStatusFilter
     const matchOwner = !ownerFilter || p.profiles?.id === ownerFilter
     const q = propertySearch.trim().toLowerCase()
     const matchSearch = !q
@@ -542,6 +713,319 @@ useEffect(() => {
     const q = brokerSearch.trim().toLowerCase()
     return !q || b.name?.toLowerCase().includes(q) || b.phone?.includes(q)
   })
+
+  const filteredPendingTransactions = transactions.filter((t) => {
+    const q = txSearch.trim().toLowerCase()
+    if (!q) return true
+    return (
+      (t.profiles?.name ?? '').toLowerCase().includes(q) ||
+      (t.profiles?.phone ?? '').includes(q) ||
+      (t.sender_phone ?? '').toLowerCase().includes(q) ||
+      String(t.id).includes(q)
+    )
+  })
+
+  const copyText = (value: string, successLabel = 'تم النسخ') => {
+    void navigator.clipboard.writeText(value.replace(/\s/g, ''))
+    showToast(successLabel, 'success')
+  }
+
+  const vaultTotalRevenue = verifiedTxRows.reduce((s, r) => s + Number(r.amount ?? 0), 0)
+
+  const vaultDailyBars = (() => {
+    const map = new Map<string, number>()
+    for (const r of verifiedTxRows) {
+      const d = new Date(r.created_at).toISOString().slice(0, 10)
+      map.set(d, (map.get(d) ?? 0) + Number(r.amount ?? 0))
+    }
+    const days: string[] = []
+    for (let i = 13; i >= 0; i--) {
+      const dt = new Date()
+      dt.setDate(dt.getDate() - i)
+      days.push(dt.toISOString().slice(0, 10))
+    }
+    const maxVal = Math.max(1, ...days.map((d) => map.get(d) ?? 0))
+    return days.map((d) => {
+      const amount = map.get(d) ?? 0
+      return { day: d, amount, barPx: Math.max(8, Math.round((amount / maxVal) * 110)) }
+    })
+  })()
+
+  const tryUnlockVault = () => {
+    if (vaultPassword === 'opensesame') {
+      setVaultUnlocked(true)
+      setVaultPassword('')
+      showToast('تم فتح الخزنة', 'success')
+    } else {
+      showToast('مش هتعرف تخش 😂', 'error')
+    }
+  }
+
+  const iconCopyBtn: React.CSSProperties = {
+    minWidth: 44,
+    minHeight: 44,
+    padding: 10,
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 10,
+    border: `1px solid ${C.border}`,
+    background: C.bg,
+    cursor: 'pointer',
+    color: C.text,
+  }
+
+  const renderTransactionRow = (t: Transaction, compactMobile?: boolean) => {
+    const rowLocked = approvingTransactionId !== null || rejectSubmitting || rejectId !== null
+    const approving = approvingTransactionId === t.id
+    return (
+      <div
+        key={t.id}
+        className="w-full max-w-full"
+        style={{
+          padding: compactMobile ? '1rem' : '1rem 1.25rem',
+          borderBottom: `1px solid ${C.border}`,
+          display: 'flex',
+          flexDirection: compactMobile ? 'column' : 'row',
+          justifyContent: 'space-between',
+          alignItems: compactMobile ? 'stretch' : 'center',
+          flexWrap: 'wrap',
+          gap: '1rem',
+        }}
+      >
+        <div style={{ minWidth: 0, width: compactMobile ? '100%' : 'auto' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 12, fontWeight: 800, color: C.muted }}>رقم الطلب:</span>
+            <span dir="ltr" style={{ fontSize: 14, fontWeight: 900, color: C.text, fontFamily: 'monospace' }}>
+              #{t.id}
+            </span>
+            <button
+              type="button"
+              title="نسخ رقم المعاملة"
+              aria-label="نسخ رقم المعاملة"
+              onClick={() => copyText(String(t.id), 'تم نسخ رقم المعاملة')}
+              style={iconCopyBtn}
+            >
+              <Copy size={18} strokeWidth={2.25} />
+            </button>
+          </div>
+          <p style={{ fontSize: 16, fontWeight: 900, margin: '0 0 6px', color: C.text }}>{t.profiles?.name}</p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+            <p style={{ fontSize: 14, color: C.muted, margin: 0 }}>{t.profiles?.phone}</p>
+            <button
+              type="button"
+              title="نسخ هاتف المالك"
+              aria-label="نسخ هاتف المالك"
+              onClick={() => copyText(t.profiles?.phone ?? '', 'تم نسخ رقم الهاتف')}
+              style={iconCopyBtn}
+            >
+              <Copy size={18} strokeWidth={2.25} />
+            </button>
+          </div>
+          {t.sender_phone ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>محوّل: {t.sender_phone}</p>
+              <button
+                type="button"
+                title="نسخ رقم المحوّل"
+                aria-label="نسخ رقم المحوّل"
+                onClick={() => copyText(t.sender_phone ?? '', 'تم نسخ رقم المحوّل')}
+                style={iconCopyBtn}
+              >
+                <Copy size={18} strokeWidth={2.25} />
+              </button>
+            </div>
+          ) : null}
+          <p style={{ fontSize: 12, color: C.faint, margin: '0 0 4px' }}>
+            {t.package_name ? `باقة: ${t.package_name} · ` : ''}
+            {t.points_requested != null ? `${t.points_requested} نقطة 💎 · ` : ''}
+          </p>
+          <p style={{ fontSize: 22, fontWeight: 900, color: C.green, margin: 0 }}>{t.amount} ج.م</p>
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            gap: 10,
+            flexWrap: 'wrap',
+            width: compactMobile ? '100%' : 'auto',
+          }}
+        >
+          <a
+            href={t.screenshot_url}
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              minHeight: 56,
+              flex: compactMobile ? '1 1 100%' : undefined,
+              background: C.bg,
+              color: C.text,
+              border: `1px solid ${C.border}`,
+              borderRadius: 12,
+              padding: '14px 18px',
+              fontSize: 15,
+              fontWeight: 800,
+              textDecoration: 'none',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'Cairo, sans-serif',
+            }}
+          >
+            عرض الإيصال
+          </a>
+          <button
+            type="button"
+            disabled={rowLocked}
+            onClick={() => void approveTransaction(t)}
+            style={{
+              minHeight: 56,
+              flex: compactMobile ? '1 1 calc(50% - 5px)' : undefined,
+              background: C.green,
+              opacity: rowLocked && !approving ? 0.55 : 1,
+              color: 'white',
+              border: 'none',
+              borderRadius: 12,
+              padding: '16px 22px',
+              fontFamily: 'Cairo, sans-serif',
+              fontSize: 16,
+              fontWeight: 900,
+              cursor: rowLocked ? 'not-allowed' : 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 10,
+            }}
+          >
+            {approving ? <Loader2 className="animate-spin" size={22} aria-hidden /> : null}
+            {approving ? 'جاري التأكيد...' : 'موافقة ✅'}
+          </button>
+          <button
+            type="button"
+            disabled={rowLocked}
+            onClick={() => {
+              setRejectId(t.id)
+              setRejectType('transaction')
+            }}
+            style={{
+              minHeight: 56,
+              flex: compactMobile ? '1 1 calc(50% - 5px)' : undefined,
+              background: C.red,
+              opacity: rowLocked ? 0.55 : 1,
+              color: 'white',
+              border: 'none',
+              borderRadius: 12,
+              padding: '16px 22px',
+              fontFamily: 'Cairo, sans-serif',
+              fontSize: 16,
+              fontWeight: 900,
+              cursor: rowLocked ? 'not-allowed' : 'pointer',
+            }}
+          >
+            رفض ❌
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  const renderVaultPanel = () => (
+    <div className="w-full max-w-full" style={{ ...card, padding: '1.25rem' }}>
+      <h2 style={{ fontSize: 17, fontWeight: 900, margin: '0 0 1rem', color: C.text }}>الخزنة 🔐</h2>
+      {!vaultUnlocked ? (
+        <div>
+          <p style={{ fontSize: 13, color: C.muted, marginBottom: 10 }}>أدخل كلمة المرور للمتابعة</p>
+          <input
+            type="password"
+            value={vaultPassword}
+            onChange={(e) => setVaultPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && tryUnlockVault()}
+            style={{
+              width: '100%',
+              maxWidth: 320,
+              border: `1.5px solid ${C.border}`,
+              borderRadius: 12,
+              padding: '12px 14px',
+              fontFamily: 'Cairo, sans-serif',
+              fontSize: 14,
+              marginBottom: 12,
+              boxSizing: 'border-box',
+            }}
+          />
+          <button
+            type="button"
+            onClick={tryUnlockVault}
+            style={{
+              minHeight: 48,
+              background: 'linear-gradient(135deg, #d97706, #ea580c)',
+              color: 'white',
+              border: 'none',
+              borderRadius: 12,
+              padding: '12px 24px',
+              fontFamily: 'Cairo, sans-serif',
+              fontSize: 15,
+              fontWeight: 900,
+              cursor: 'pointer',
+            }}
+          >
+            فتح الخزنة
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div
+            style={{
+              background: 'linear-gradient(135deg, #ecfdf5, #d1fae5)',
+              border: `1px solid ${C.greenBorder}`,
+              borderRadius: 16,
+              padding: '1.25rem',
+              marginBottom: '1.25rem',
+              textAlign: 'center',
+            }}
+          >
+            <p style={{ fontSize: 13, color: C.muted, margin: '0 0 6px' }}>إجمالي الإيرادات (معاملات مؤكدة)</p>
+            <p style={{ fontSize: 28, fontWeight: 900, color: C.green, margin: 0 }}>
+              {vaultTotalRevenue.toLocaleString('ar-EG')} ج.م
+            </p>
+          </div>
+          <h3 style={{ fontSize: 14, fontWeight: 900, color: C.text, marginBottom: 10 }}>إيراد يومي (آخر 14 يوماً)</h3>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 4, minHeight: 130, overflowX: 'auto', paddingBottom: 8 }}>
+            {vaultDailyBars.map((b) => (
+              <div key={b.day} style={{ flex: '1 0 18px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                <div
+                  title={`${b.day}: ${b.amount} ج.م`}
+                  style={{
+                    width: '100%',
+                    height: b.barPx,
+                    background: 'linear-gradient(180deg, #16a34a, #14532d)',
+                    borderRadius: 4,
+                  }}
+                />
+                <span style={{ fontSize: 8, color: C.faint, writingMode: 'horizontal-tb' }}>{b.day.slice(5)}</span>
+              </div>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => setVaultUnlocked(false)}
+            style={{
+              marginTop: 16,
+              minHeight: 44,
+              background: C.bg,
+              border: `1px solid ${C.border}`,
+              borderRadius: 10,
+              padding: '10px 16px',
+              fontFamily: 'Cairo, sans-serif',
+              fontSize: 13,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            قفل الخزنة
+          </button>
+        </div>
+      )}
+    </div>
+  )
 
   // Find owner name for filter label
   const ownerFilterName = ownerFilter
@@ -563,21 +1047,119 @@ useEffect(() => {
 
       {/* ── REJECT MODAL ── */}
       {rejectId && (
-        <div onClick={() => { setRejectId(null); setRejectReason('') }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' }}>
-          <div onClick={e => e.stopPropagation()}
-            style={{ background: C.white, borderRadius: 20, padding: '1.75rem', width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
-            <h2 style={{ fontSize: 17, fontWeight: 900, marginBottom: '1rem', color: C.text }}>سبب الرفض</h2>
-            <textarea rows={3} placeholder="اكتب سبب الرفض..." value={rejectReason}
-              onChange={e => setRejectReason(e.target.value)}
-              style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 12, padding: '12px 14px', fontFamily: 'Cairo, sans-serif', fontSize: 14, outline: 'none', resize: 'none', marginBottom: '1rem', boxSizing: 'border-box' }} />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={rejectType === 'property' ? rejectProperty : rejectTransaction}
-                style={{ flex: 1, background: C.red, color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                تأكيد الرفض
+        <div
+          onClick={() => {
+            if (rejectSubmitting) return
+            setRejectId(null)
+            setRejectReason('')
+            setRejectAdminNotes('')
+          }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 200, padding: '1rem' }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[min(100%,440px)]"
+            style={{ background: C.white, borderRadius: 20, padding: '1.5rem', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}
+          >
+            <h2 style={{ fontSize: 18, fontWeight: 900, marginBottom: 8, color: C.text }}>
+              {rejectType === 'transaction' ? 'تأكيد رفض المعاملة' : 'تأكيد رفض الإعلان'}
+            </h2>
+            <p style={{ fontSize: 13, color: C.muted, marginBottom: '1rem', lineHeight: 1.6 }}>
+              {rejectType === 'transaction'
+                ? 'اكتب سبب الرفض بوضوح (يُحفظ للمستخدم). مثال: الصورة غير واضحة أو المبلغ غير مطابق.'
+                : 'سيتم تسجيل السبب مع الإعلان المرفوض.'}
+            </p>
+            <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>سبب الرفض *</label>
+            <textarea
+              rows={4}
+              placeholder={rejectType === 'transaction' ? 'مثال: الصورة غير واضحة' : 'اكتب سبب الرفض...'}
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              style={{
+                width: '100%',
+                border: `1.5px solid ${C.border}`,
+                borderRadius: 12,
+                padding: '14px 16px',
+                fontFamily: 'Cairo, sans-serif',
+                fontSize: 16,
+                outline: 'none',
+                resize: 'none',
+                marginBottom: '1rem',
+                boxSizing: 'border-box',
+              }}
+            />
+            {rejectType === 'transaction' ? (
+              <>
+                <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>ملاحظات داخلية (اختياري)</label>
+                <textarea
+                  rows={2}
+                  placeholder="للفريق فقط..."
+                  value={rejectAdminNotes}
+                  onChange={(e) => setRejectAdminNotes(e.target.value)}
+                  style={{
+                    width: '100%',
+                    border: `1.5px solid ${C.border}`,
+                    borderRadius: 12,
+                    padding: '12px 14px',
+                    fontFamily: 'Cairo, sans-serif',
+                    fontSize: 14,
+                    outline: 'none',
+                    resize: 'none',
+                    marginBottom: '1rem',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </>
+            ) : null}
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                disabled={!rejectReason.trim() || rejectSubmitting}
+                onClick={() => void (rejectType === 'property' ? rejectProperty() : rejectTransaction())}
+                style={{
+                  flex: '1 1 140px',
+                  minHeight: 52,
+                  background: C.red,
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  fontFamily: 'Cairo, sans-serif',
+                  fontSize: 16,
+                  fontWeight: 800,
+                  cursor: !rejectReason.trim() || rejectSubmitting ? 'not-allowed' : 'pointer',
+                  opacity: !rejectReason.trim() || rejectSubmitting ? 0.65 : 1,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                }}
+              >
+                {rejectSubmitting ? <Loader2 className="animate-spin" size={20} aria-hidden /> : null}
+                {rejectSubmitting ? 'جاري الرفض...' : 'تأكيد الرفض'}
               </button>
-              <button onClick={() => { setRejectId(null); setRejectReason('') }}
-                style={{ flex: 1, background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              <button
+                type="button"
+                disabled={rejectSubmitting}
+                onClick={() => {
+                  setRejectId(null)
+                  setRejectReason('')
+                  setRejectAdminNotes('')
+                }}
+                style={{
+                  flex: '1 1 120px',
+                  minHeight: 52,
+                  background: C.bg,
+                  color: C.text,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  fontFamily: 'Cairo, sans-serif',
+                  fontSize: 15,
+                  fontWeight: 800,
+                  cursor: rejectSubmitting ? 'not-allowed' : 'pointer',
+                }}
+              >
                 إلغاء
               </button>
             </div>
@@ -683,10 +1265,16 @@ useEffect(() => {
                   <label style={{ fontSize: 12, fontWeight: 800, color: C.text, display: 'block', marginBottom: 6 }}>الحالة</label>
                   <select
                     value={addPropertyForm.status}
-                    onChange={e => setAddPropertyForm(prev => ({ ...prev, status: e.target.value as 'pending' | 'active' }))}
+                    onChange={e =>
+                      setAddPropertyForm((prev) => ({
+                        ...prev,
+                        status: e.target.value as 'pending_approval' | 'pending' | 'active',
+                      }))
+                    }
                     style={{ width: '100%', border: `1.5px solid ${C.border}`, borderRadius: 10, padding: '10px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 13, outline: 'none', background: C.bg }}
                   >
-                    <option value="pending">معلق</option>
+                    <option value="pending_approval">بانتظار الموافقة</option>
+                    <option value="pending">معلق (قديم)</option>
                     <option value="active">نشط</option>
                   </select>
                 </div>
@@ -763,9 +1351,23 @@ useEffect(() => {
                   <div style={{ fontSize: 11, color: C.muted }}>المالك</div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{selectedProperty.profiles?.name}</div>
                   <div style={{ fontSize: 12, color: C.muted }}>{selectedProperty.profiles?.phone}</div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>
+                    نقاط المالك (للاطلاع فقط):{' '}
+                    <strong style={{ color: C.text }}>
+                      {typeof selectedProperty.profiles?.points === 'number'
+                        ? `💎 ${selectedProperty.profiles.points}`
+                        : '—'}
+                    </strong>
+                  </div>
                 </div>
               </div>
               {selectedProperty.description && <p style={{ fontSize: 13, color: C.muted, lineHeight: 1.8, marginBottom: '1rem' }}>{selectedProperty.description}</p>}
+
+              <div style={{ background: C.amberLight, border: '1px solid #fde68a', borderRadius: 10, padding: '10px 12px', marginBottom: '1rem', fontSize: 13, fontWeight: 800, color: '#92400e' }}>
+                {activationCostLabelAr(selectedProperty)}
+                {' — '}
+                {listingPurposeFromProperty(selectedProperty) === 'sale' ? 'بيع' : 'إيجار'}
+              </div>
 
               {/* Video preview (before approval) */}
               {selectedProperty.video_url && (
@@ -803,11 +1405,26 @@ useEffect(() => {
 
               {/* Action buttons */}
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                {selectedProperty.status === 'pending' && (
+                {isAwaitingPropertyApproval(selectedProperty.status) && (
                   <>
-                    <button onClick={() => approveProperty(selectedProperty)}
-                      style={{ flex: 1, background: C.green, color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                      موافقة ✅
+                    <button
+                      type="button"
+                      disabled={approvingPropertyId !== null}
+                      onClick={() => void approveProperty(selectedProperty)}
+                      style={{
+                        flex: 1,
+                        background: approvingPropertyId !== null ? '#86efac' : C.green,
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 10,
+                        padding: '12px',
+                        fontFamily: 'Cairo, sans-serif',
+                        fontSize: 14,
+                        fontWeight: 700,
+                        cursor: approvingPropertyId !== null ? 'not-allowed' : 'pointer',
+                      }}
+                    >
+                      {approvingPropertyId === selectedProperty.id ? '⏳ جاري التفعيل...' : 'موافقة ✅'}
                     </button>
                     <button onClick={() => { setRejectId(selectedProperty.id); setRejectType('property'); setSelectedProperty(null) }}
                       style={{ flex: 1, background: C.red, color: 'white', border: 'none', borderRadius: 10, padding: '12px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
@@ -817,7 +1434,7 @@ useEffect(() => {
                 )}
                 {/* Phase 2: Delete button visible for ALL statuses */}
                 <button onClick={() => { setDeletePropertyId(selectedProperty.id); setSelectedProperty(null) }}
-                  style={{ flex: selectedProperty.status === 'pending' ? '0 0 auto' : 1, background: C.redLight, color: C.red, border: `1px solid #fecaca`, borderRadius: 10, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                  style={{ flex: isAwaitingPropertyApproval(selectedProperty.status) ? '0 0 auto' : 1, background: C.redLight, color: C.red, border: `1px solid #fecaca`, borderRadius: 10, padding: '12px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                   🗑️ حذف الإعلان
                 </button>
               </div>
@@ -845,8 +1462,11 @@ useEffect(() => {
         </div>
       </nav>
 
-      {/* ── TABS ── */}
-      <div style={{ background: C.white, borderBottom: `1px solid ${C.border}`, padding: '0 1.5rem', display: 'flex', gap: 2, overflowX: 'auto' }}>
+      {/* ── TABS (full bar on md+; on mobile only when "المزيد") ── */}
+      <div
+        className={(mobileMainTab === 'more' ? 'flex' : 'hidden') + ' md:flex'}
+        style={{ background: C.white, borderBottom: `1px solid ${C.border}`, padding: '0 1.5rem', gap: 2, overflowX: 'auto' }}
+      >
         {TABS.map(t => (
           <button key={t.id} onClick={() => setTab(t.id)}
             style={{
@@ -868,7 +1488,75 @@ useEffect(() => {
         ))}
       </div>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '1.5rem 1rem' }}>
+      {/* ── Mobile: تبويبات رئيسية (إحصائيات / معاملات / خزنة) ── */}
+      <div className="block w-full max-w-full pb-24 md:hidden" style={{ padding: '0.75rem 0.75rem 1rem' }}>
+        {mobileMainTab === 'stats' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {[
+              { n: stats.totalUsers, l: 'إجمالي المستخدمين', icon: '👥', color: C.accent, bg: C.accentLight },
+              { n: stats.pendingTransactions, l: 'شحنات معلقة', icon: '💳', color: C.red, bg: C.redLight },
+              { n: stats.publishedProperties, l: 'إعلانات نشطة', icon: '✅', color: C.green, bg: C.greenLight },
+            ].map((s, i) => (
+              <div key={i} className="w-full max-w-full" style={{ ...card, padding: '1.25rem', display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ width: 48, height: 48, background: s.bg, borderRadius: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>{s.icon}</div>
+                <div>
+                  <div style={{ fontSize: 24, fontWeight: 900, color: s.color }}>{s.n}</div>
+                  <div style={{ fontSize: 13, color: C.faint }}>{s.l}</div>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => { setMobileMainTab('more'); setTab('home') }}
+              style={{
+                minHeight: 52,
+                borderRadius: 14,
+                border: `1px solid ${C.border}`,
+                background: C.white,
+                fontFamily: 'Cairo, sans-serif',
+                fontSize: 15,
+                fontWeight: 900,
+                color: C.text,
+                cursor: 'pointer',
+              }}
+            >
+              المزيد — الإدارة الكاملة (إعلانات، ملاك، إعدادات)
+            </button>
+          </div>
+        )}
+        {mobileMainTab === 'transactions' && (
+          <div className="w-full max-w-full" style={card}>
+            <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}` }}>
+              <h2 style={{ fontSize: 16, fontWeight: 900, margin: '0 0 10px', color: C.text }}>المعاملات المعلقة</h2>
+              <input
+                type="search"
+                placeholder="بحث بالاسم، الهاتف، المحوّل، أو رقم المعاملة..."
+                value={txSearch}
+                onChange={(e) => setTxSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  minHeight: 52,
+                  border: `1.5px solid ${C.border}`,
+                  borderRadius: 12,
+                  padding: '14px 16px',
+                  fontFamily: 'Cairo, sans-serif',
+                  fontSize: 16,
+                  boxSizing: 'border-box',
+                }}
+              />
+            </div>
+            {filteredPendingTransactions.length === 0
+              ? <p style={{ textAlign: 'center', color: C.faint, padding: '2rem' }}>لا توجد معاملات مطابقة</p>
+              : filteredPendingTransactions.map((t) => renderTransactionRow(t, true))}
+          </div>
+        )}
+        {mobileMainTab === 'vault' && renderVaultPanel()}
+      </div>
+
+      <div
+        className={(mobileMainTab === 'more' ? 'block' : 'hidden') + ' md:block w-full max-w-full md:max-w-[1100px] md:mx-auto'}
+        style={{ padding: '1.5rem max(0.75rem, env(safe-area-inset-right)) 1.5rem max(0.75rem, env(safe-area-inset-left))' }}
+      >
         {verifiedTxError && (
           <div style={{ marginBottom: '1rem', background: '#fef3c7', border: '1px solid #fcd34d', color: '#92400e', borderRadius: 10, padding: '10px 12px', fontSize: 13 }}>
             ⚠️ تعذر تحميل الشحنات المؤكدة — إجمالي المحصّل وأرصدة الملاك قد تكون غير دقيقة: {verifiedTxError}
@@ -878,12 +1566,11 @@ useEffect(() => {
         {/* ══ HOME ══ */}
         {tab === 'home' && (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '1rem', marginBottom: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 168px), 1fr))', gap: '1rem', marginBottom: '1.5rem', width: '100%' }}>
               {[
                 { n: stats.totalBrokers, l: 'ملاك مسجلين', icon: '👥', color: C.accent, bg: C.accentLight },
                 { n: stats.publishedProperties, l: 'إعلانات نشطة', icon: '✅', color: C.green, bg: C.greenLight },
                 { n: stats.rejectedProperties, l: 'مرفوضة', icon: '❌', color: C.red, bg: C.redLight },
-                { n: `${stats.totalCharged.toLocaleString('ar-EG')} ج.م`, l: 'إجمالي المحصّل', icon: '💰', color: '#0ea5e9', bg: '#e0f2fe' },
                 { n: stats.totalLeads, l: 'عملاء مهتمين', icon: '📋', color: '#7e22ce', bg: '#faf5ff' },
                 { n: stats.pendingProperties, l: 'إعلانات معلقة', icon: '⏳', color: C.amber, bg: C.amberLight },
                 { n: stats.pendingTransactions, l: 'شحنات معلقة', icon: '💳', color: C.red, bg: C.redLight },
@@ -976,6 +1663,12 @@ useEffect(() => {
                       {p.profiles?.name}
                     </span>
                     {' · '}{p.area} · {p.price?.toLocaleString()} ج.م
+                    {' · '}
+                    <span title="رصيد النقاط — للمعلومة فقط">
+                      💎 {typeof p.profiles?.points === 'number' ? p.profiles.points : '—'}
+                    </span>
+                    {' · '}
+                    <span style={{ color: C.amber, fontWeight: 800 }}>{activationCostLabelAr(p)}</span>
                   </p>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -1024,11 +1717,11 @@ useEffect(() => {
                     </a>
                   )}
                   <span style={{
-                    background: p.status === 'active' ? C.greenLight : p.status === 'pending' ? C.amberLight : C.redLight,
-                    color: p.status === 'active' ? C.green : p.status === 'pending' ? C.amber : C.red,
+                    background: p.status === 'active' ? C.greenLight : isAwaitingPropertyApproval(p.status) ? C.amberLight : C.redLight,
+                    color: p.status === 'active' ? C.green : isAwaitingPropertyApproval(p.status) ? C.amber : C.red,
                     borderRadius: 20, fontSize: 11, fontWeight: 700, padding: '4px 12px', whiteSpace: 'nowrap',
                   }}>
-                    {p.status === 'active' ? 'نشط' : p.status === 'pending' ? 'معلق' : 'مرفوض'}
+                    {p.status === 'active' ? 'نشط' : isAwaitingPropertyApproval(p.status) ? 'بانتظار الموافقة' : 'مرفوض'}
                   </span>
                   {/* Phase 2: Inline delete button */}
                   <button
@@ -1094,7 +1787,7 @@ useEffect(() => {
                     </div>
                   </div>
                   <p style={{ fontSize: 12, color: C.muted, margin: 0, marginRight: 48 }}>
-                    الرصيد: <strong style={{ color: C.green }}>{b.wallet_balance} ج.م</strong>
+                    النقاط: <strong style={{ color: C.green }}>💎 {typeof b.points === 'number' ? b.points : 0}</strong>
                   </p>
                   <p style={{ fontSize: 12, color: C.muted, margin: '4px 0 0', marginRight: 48 }}>
                     إجمالي الشحنات المؤكدة: <strong style={{ color: '#0ea5e9' }}>{formatEGP(b.total_charged ?? 0)}</strong>
@@ -1112,9 +1805,9 @@ useEffect(() => {
                   </button>
                   <input
                     type="number"
-                    placeholder="المبلغ"
-                    value={walletInputs[b.id] ?? ''}
-                    onChange={e => setWalletInputs(prev => ({ ...prev, [b.id]: e.target.value }))}
+                    placeholder="نقاط"
+                    value={pointsAdjustInputs[b.id] ?? ''}
+                    onChange={e => setPointsAdjustInputs(prev => ({ ...prev, [b.id]: e.target.value }))}
                     style={{
                       width: 90, border: `1.5px solid ${C.border}`, borderRadius: 8,
                       padding: '6px 10px', fontFamily: 'Cairo, sans-serif', fontSize: 13,
@@ -1123,13 +1816,13 @@ useEffect(() => {
                     onFocus={e => e.target.style.borderColor = C.accent}
                     onBlur={e => e.target.style.borderColor = C.border}
                   />
-                  <button onClick={() => adjustWallet(b.id, 1)}
+                  <button onClick={() => void adjustBrokerPoints(b.id, 1)}
                     style={{ background: C.greenLight, color: C.green, border: `1px solid ${C.greenBorder}`, borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                    + إضافة
+                    + نقاط
                   </button>
-                  <button onClick={() => adjustWallet(b.id, -1)}
+                  <button onClick={() => void adjustBrokerPoints(b.id, -1)}
                     style={{ background: C.redLight, color: C.red, border: '1px solid #fecaca', borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                    − خصم
+                    − نقاط
                   </button>
                   <button onClick={() => toggleBroker(b.id, b.is_active)}
                     style={{ background: b.is_active ? C.redLight : C.greenLight, color: b.is_active ? C.red : C.green, border: 'none', borderRadius: 8, padding: '6px 12px', fontFamily: 'Cairo, sans-serif', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
@@ -1143,38 +1836,35 @@ useEffect(() => {
 
         {/* ══ TRANSACTIONS ══ */}
         {tab === 'transactions' && (
-          <div style={card}>
+          <div className="w-full max-w-full" style={card}>
             <div style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}` }}>
-              <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: C.text }}>الشحنات المعلقة ({transactions.length})</h2>
+              <h2 style={{ fontSize: 16, fontWeight: 900, margin: '0 0 10px', color: C.text }}>المعاملات المعلقة ({transactions.length})</h2>
+              <input
+                type="search"
+                placeholder="بحث بالاسم، الهاتف، رقم المحوّل، أو رقم المعاملة..."
+                value={txSearch}
+                onChange={(e) => setTxSearch(e.target.value)}
+                style={{
+                  width: '100%',
+                  maxWidth: 420,
+                  minHeight: 44,
+                  border: `1.5px solid ${C.border}`,
+                  borderRadius: 12,
+                  padding: '10px 14px',
+                  fontFamily: 'Cairo, sans-serif',
+                  fontSize: 14,
+                  boxSizing: 'border-box',
+                }}
+              />
             </div>
-            {transactions.length === 0
-              ? <p style={{ textAlign: 'center', color: C.faint, padding: '2rem' }}>لا توجد شحنات معلقة ✅</p>
-              : transactions.map(t => (
-                <div key={t.id} style={{ padding: '1rem 1.25rem', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
-                  <div>
-                    <p style={{ fontSize: 15, fontWeight: 900, margin: '0 0 2px', color: C.text }}>{t.profiles?.name}</p>
-                    <p style={{ fontSize: 12, color: C.muted, margin: '0 0 4px' }}>{t.profiles?.phone}</p>
-                    <p style={{ fontSize: 20, fontWeight: 900, color: C.green, margin: 0 }}>{t.amount} ج.م</p>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    <a href={t.screenshot_url} target="_blank" rel="noreferrer"
-                      style={{ background: C.bg, color: C.text, border: `1px solid ${C.border}`, borderRadius: 8, padding: '8px 14px', fontSize: 13, fontWeight: 700, textDecoration: 'none' }}>
-                      عرض الإيصال
-                    </a>
-                    <button disabled={processingTransactionId === t.id} onClick={() => approveTransaction(t.id, t.broker_id, t.amount)}
-                      style={{ background: C.green, opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer' }}>
-                      {processingTransactionId === t.id ? 'جاري...' : 'تأكيد ✅'}
-                    </button>
-                    <button disabled={processingTransactionId === t.id} onClick={() => { setRejectId(t.id); setRejectType('transaction') }}
-                      style={{ background: C.red, opacity: processingTransactionId === t.id ? 0.6 : 1, color: 'white', border: 'none', borderRadius: 8, padding: '8px 16px', fontFamily: 'Cairo, sans-serif', fontSize: 13, fontWeight: 700, cursor: processingTransactionId === t.id ? 'not-allowed' : 'pointer' }}>
-                      رفض ❌
-                    </button>
-                  </div>
-                </div>
-              ))
+            {filteredPendingTransactions.length === 0
+              ? <p style={{ textAlign: 'center', color: C.faint, padding: '2rem' }}>لا توجد معاملات مطابقة</p>
+              : filteredPendingTransactions.map((t) => renderTransactionRow(t, false))
             }
           </div>
         )}
+
+        {tab === 'vault' && renderVaultPanel()}
 
         {/* ══ LEADS — TABLE ══ */}
         {tab === 'leads' && (
@@ -1265,6 +1955,88 @@ useEffect(() => {
           </div>
         )}
 
+      </div>
+
+      {toast ? (
+        <div
+          role="alert"
+          className="fixed bottom-24 left-1/2 z-[250] w-[min(100vw-1.5rem,28rem)] -translate-x-1/2 rounded-2xl border-2 px-4 py-3.5 text-center text-[15px] font-extrabold shadow-xl md:bottom-8"
+          style={{
+            background: toast.type === 'success' ? '#ecfdf5' : '#fef2f2',
+            borderColor: toast.type === 'success' ? '#4ade80' : '#f87171',
+            color: toast.type === 'success' ? '#14532d' : '#991b1b',
+            fontFamily: 'Cairo, sans-serif',
+          }}
+        >
+          {toast.type === 'success' ? '✓ ' : '✕ '}
+          {toast.message}
+        </div>
+      ) : null}
+
+      {/* شريط تنقل سفلي — موبايل فقط */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-[90] flex border-t border-slate-200 bg-white shadow-[0_-6px_24px_rgba(0,0,0,0.08)] md:hidden"
+        style={{ paddingBottom: 'max(0.5rem, env(safe-area-inset-bottom))' }}
+      >
+        {([
+          { id: 'stats' as const, label: 'الإحصائيات', icon: '📊' },
+          { id: 'transactions' as const, label: 'المعاملات', icon: '💳', badge: stats.pendingTransactions },
+          { id: 'vault' as const, label: 'الخزنة', icon: '🔐' },
+          { id: 'more' as const, label: 'المزيد', icon: '☰' },
+        ]).map((b) => (
+          <button
+            key={b.id}
+            type="button"
+            onClick={() => {
+              if (b.id === 'more') {
+                setMobileMainTab('more')
+                setTab('home')
+              } else {
+                setMobileMainTab(b.id)
+              }
+            }}
+            style={{
+              flex: 1,
+              minHeight: 52,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 2,
+              border: 'none',
+              background: mobileMainTab === b.id || (b.id === 'more' && mobileMainTab === 'more') ? '#ecfdf5' : 'white',
+              fontFamily: 'Cairo, sans-serif',
+              fontSize: 10,
+              fontWeight: 800,
+              color: mobileMainTab === b.id || (b.id === 'more' && mobileMainTab === 'more') ? '#15803d' : '#64748b',
+              cursor: 'pointer',
+            }}
+          >
+            <span style={{ fontSize: 18, position: 'relative' }}>
+              {b.icon}
+              {b.badge && b.badge > 0 ? (
+                <span style={{
+                  position: 'absolute',
+                  top: -6,
+                  left: -8,
+                  minWidth: 16,
+                  height: 16,
+                  borderRadius: 8,
+                  background: '#dc2626',
+                  color: 'white',
+                  fontSize: 9,
+                  fontWeight: 900,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  {b.badge > 9 ? '9+' : b.badge}
+                </span>
+              ) : null}
+            </span>
+            {b.label}
+          </button>
+        ))}
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
 
 /** Server-side reads using the anon key (respects RLS). For public pages / metadata. */
 export function createSupabaseAnonServer() {
@@ -8,6 +9,7 @@ export function createSupabaseAnonServer() {
     throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY");
   }
   return createClient(url, key, {
+    ...getSupabaseGlobalClientOptions(),
     auth: { persistSession: false, autoRefreshToken: false },
   });
 }

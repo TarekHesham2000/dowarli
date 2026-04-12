@@ -5,9 +5,11 @@ import { supabase } from "@/lib/supabase";
 import Banner from "@/components/shared/Banner";
 import Image from "next/image";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
+import AdBanner from '@/components/ads/AdBanner'
 import ChatBot from '@/components/shared/ChatBot'
 import Footer from '@/components/shared/Footer'
 import Navbar from '@/components/Navbar'
+import PartnerMarquee from '@/components/partners/PartnerMarquee'
 // ─── Types ────────────────────────────────────────────────────────────────────
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 type Property = {
@@ -19,16 +21,87 @@ type Property = {
   address: string;
   unit_type: UnitType;
   images: string[];
+  /** إيجار / بيع — يُملأ من قاعدة البيانات عند توفر العمود */
+  listing_type?: string | null;
+  listing_purpose?: string | null;
   profiles: { name: string; phone: string };
 };
 
-// ─── Parsed Filters Type ─────────────────────────────────────────────────────
+function effectiveListingKind(p: Pick<Property, "listing_type" | "listing_purpose">): "rent" | "sale" {
+  const raw = (p.listing_type ?? p.listing_purpose ?? "rent").toString().trim().toLowerCase();
+  return raw === "sale" ? "sale" : "rent";
+}
+
 type ParsedFilters = {
   area: string;
   maxPrice: number | null;
   unitType: string;
   keywords: string;
 };
+
+/** أعمدة واضحة + active فقط في الاستعلام (لا نعتمد على select *) */
+const HOME_PROPERTY_SELECT =
+  "id, title, description, price, area, address, unit_type, images, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
+
+const HOME_PROPERTY_SELECT_FALLBACK =
+  "id, title, description, price, area, address, unit_type, images, availability_status, created_at, profiles(name, phone, low_trust)";
+
+function filterHomeLowTrustRows(rows: unknown[]): Property[] {
+  const filtered = rows.filter((row) => {
+    const r = row as {
+      profiles?: { low_trust?: boolean } | { low_trust?: boolean }[] | null;
+    };
+    const p = r.profiles;
+    const o = Array.isArray(p) ? p[0] : p;
+    return o?.low_trust !== true;
+  });
+  return filtered as Property[];
+}
+
+/** active فقط؛ يحاول مع/بدون availability ومع أعمدة listing_* إن وُجدت */
+async function fetchActiveHomeProperties(
+  client: typeof supabase,
+  parsed: ParsedFilters,
+  selectedType: string,
+): Promise<Property[]> {
+  const rawKw = parsed.keywords?.trim() || "";
+  const cleanKeywords = rawKw
+    ? rawKw.replace(/[,،]/g, " ").replace(/\s+/g, " ").trim()
+    : "";
+
+  const applyFilters = (selectList: string) => {
+    let q = client.from("properties").select(selectList).eq("status", "active");
+    if (parsed.area) q = q.ilike("area", `%${parsed.area}%`);
+    if (parsed.maxPrice) q = q.lte("price", parsed.maxPrice);
+    if (selectedType && selectedType !== "all") q = q.eq("unit_type", selectedType);
+    if (cleanKeywords.length > 2) {
+      q = q.or(
+        `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%`,
+      );
+    }
+    return q;
+  };
+
+  const attempts: { sel: string; avail: boolean }[] = [
+    { sel: HOME_PROPERTY_SELECT, avail: true },
+    { sel: HOME_PROPERTY_SELECT, avail: false },
+    { sel: HOME_PROPERTY_SELECT_FALLBACK, avail: true },
+    { sel: HOME_PROPERTY_SELECT_FALLBACK, avail: false },
+  ];
+
+  let lastMsg = "";
+  for (const a of attempts) {
+    let q = applyFilters(a.sel);
+    if (a.avail) q = q.eq("availability_status", "available");
+    const { data, error } = await q.order("created_at", { ascending: false });
+    if (!error) {
+      return filterHomeLowTrustRows(data || []);
+    }
+    lastMsg = error.message || String(error);
+  }
+  console.error("Home properties fetch failed:", lastMsg);
+  return [];
+}
 
 // مناطق موسّعة للـ Parsing — لماذا؟ → المستخدم يكتب طبيعي مش بالقائمة
 const EXTENDED_AREAS: Record<string, string> = {
@@ -288,7 +361,9 @@ export default function PublicPageClient() {
   const [listLayoutMobile, setListLayoutMobile] = useState(false);
 
   useEffect(() => {
-    loadProperties();
+    void loadProperties();
+    // Only refetch when unit-type chip changes; search uses submitHeroToAi / loadProperties() directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit loadProperties/searchQuery
   }, [activeFilter]);
 
   useEffect(() => {
@@ -308,64 +383,33 @@ export default function PublicPageClient() {
 
   const handleChatBootstrapConsumed = useCallback(() => setChatBootstrap(null), []);
 
-// 1. تعديل الفانكشن لتقبل فلاتر اختيارية مباشرة
-// عدل السطر الأول في الفانكشن عشان يقبل فلاتر مباشرة
-const loadProperties = async (overrideFilters?: any) => {
-  setLoading(true);
-  try {
-    const parsed = overrideFilters || parseSearchQuery(searchQuery);
+  const loadProperties = async (overrideFilters?: Partial<ParsedFilters> & { unitType?: string }) => {
+    setLoading(true);
+    try {
+      const parsed = overrideFilters
+        ? {
+            area: overrideFilters.area ?? "",
+            maxPrice: overrideFilters.maxPrice ?? null,
+            unitType: overrideFilters.unitType ?? "",
+            keywords: overrideFilters.keywords ?? "",
+          }
+        : parseSearchQuery(searchQuery);
 
-    let query = supabase
-      .from('properties')
-      .select('*, profiles(name, phone, low_trust)')
-      .eq('status', 'active')
-      .eq('availability_status', 'available');
+      const selectedType =
+        overrideFilters?.unitType !== undefined
+          ? overrideFilters.unitType
+          : activeFilter !== "all"
+            ? activeFilter
+            : parsed.unitType;
 
-    if (parsed.area) {
-      query = query.ilike('area', `%${parsed.area}%`);
+      const rows = await fetchActiveHomeProperties(supabase, parsed, selectedType);
+      setProperties(rows);
+    } catch (error: unknown) {
+      console.error("Search Error:", error instanceof Error ? error.message : error);
+    } finally {
+      setLoading(false);
     }
-
-    if (parsed.maxPrice) {
-      query = query.lte('price', parsed.maxPrice);
-    }
-
-    // الأولوية: قيمة صريحة من الشات (حتى لو "") ثم activeFilter ثم parsed — لا تستخدم || لأن "" falsy
-    const selectedType =
-      overrideFilters?.unitType ??
-      (activeFilter !== 'all' ? activeFilter : parsed.unitType);
-
-    if (selectedType && selectedType !== 'all') {
-      query = query.eq('unit_type', selectedType);
-    }
-
-    const rawKw = parsed.keywords?.trim() || '';
-    const cleanKeywords = rawKw
-      ? rawKw.replace(/[,،]/g, ' ').replace(/\s+/g, ' ').trim()
-      : '';
-    if (cleanKeywords.length > 2) {
-      query = query.or(
-        `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%`
-      );
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-    const rows = data || [];
-    const filtered = rows.filter(
-      (row: { profiles?: { low_trust?: boolean } | { low_trust?: boolean }[] | null }) => {
-        const p = row.profiles;
-        const o = Array.isArray(p) ? p[0] : p;
-        return o?.low_trust !== true;
-      },
-    );
-    setProperties(filtered as unknown as Property[]);
-
-  } catch (error: any) {
-    console.error('Search Error:', error.message);
-  } finally {
-    setLoading(false);
-  }
-};
+  };
  const handleLeadSubmit = async (e: React.FormEvent) => {
 
     e.preventDefault();
@@ -666,22 +710,18 @@ const loadProperties = async (overrideFilters?: any) => {
                     setSearchQuery("");
                     setParsedFilters({ area: "", maxPrice: null, unitType: "", keywords: "" });
                     setActiveFilter("all");
-                    // شغّل البحث بدون فلاتر مباشرة
                     setLoading(true);
-                    const { data } = await supabase
-                      .from("properties")
-                      .select("id, title, description, price, area, address, unit_type, images, profiles(name, phone, low_trust)")
-                      .eq("status", "active")
-                      .eq("availability_status", "available")
-                      .order("created_at", { ascending: false });
-                    const raw = (data as unknown as Property[]) ?? [];
-                    setProperties(
-                      raw.filter((row) => {
-                        const p = row.profiles as { low_trust?: boolean } | undefined;
-                        return p?.low_trust !== true;
-                      }),
-                    );
-                    setLoading(false);
+                    try {
+                      const rows = await fetchActiveHomeProperties(supabase, {
+                        area: "",
+                        maxPrice: null,
+                        unitType: "",
+                        keywords: "",
+                      }, "");
+                      setProperties(rows);
+                    } finally {
+                      setLoading(false);
+                    }
                   }}
                 >✕</button>
               )}
@@ -798,6 +838,8 @@ const loadProperties = async (overrideFilters?: any) => {
               })}
           </div>
 
+          <PartnerMarquee className="mt-8 rounded-2xl" />
+
           {/* Results count */}
           {!loading && properties.length > 0 && (
             <p style={{ fontSize: 13, color: "#64748b", marginBottom: "1.5rem" }}>
@@ -844,7 +886,9 @@ const loadProperties = async (overrideFilters?: any) => {
                 </button>
               </div>
           ) : (
-            /* Staggered grid */
+            <>
+            <AdBanner slotId="dowarli-home-leaderboard" layout="leaderboard" className="mb-6" />
+            {/* Staggered grid */}
             <motion.section
               aria-label="قائمة العقارات"
               variants={containerVariants}
@@ -869,9 +913,9 @@ const loadProperties = async (overrideFilters?: any) => {
                     }
               }
             >
-              {properties.map((p) => {
+              {properties.flatMap((p, i) => {
                 const colors = tc(p.unit_type);
-                return (
+                const card = (
                   <motion.article
                     key={p.id}
                     variants={cardVariants}
@@ -953,18 +997,43 @@ const loadProperties = async (overrideFilters?: any) => {
                           position: "absolute",
                           top: 14,
                           right: 14,
-                          background: colors.bg,
-                          color: colors.text,
-                          border: `1px solid ${colors.border}`,
-                          borderRadius: 99,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: "4px 13px",
-                          backdropFilter: "blur(12px)",
-                          WebkitBackdropFilter: "blur(12px)",
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: 6,
+                          justifyContent: "flex-end",
+                          maxWidth: "calc(100% - 28px)",
                         }}
                       >
-                        {TYPE_LABELS[p.unit_type]}
+                        <span
+                          style={{
+                            background: colors.bg,
+                            color: colors.text,
+                            border: `1px solid ${colors.border}`,
+                            borderRadius: 99,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "4px 13px",
+                            backdropFilter: "blur(12px)",
+                            WebkitBackdropFilter: "blur(12px)",
+                          }}
+                        >
+                          {TYPE_LABELS[p.unit_type]}
+                        </span>
+                        <span
+                          style={{
+                            background: "rgba(15,23,42,0.72)",
+                            color: effectiveListingKind(p) === "sale" ? "#fbbf24" : "#86efac",
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            borderRadius: 99,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: "4px 13px",
+                            backdropFilter: "blur(12px)",
+                            WebkitBackdropFilter: "blur(12px)",
+                          }}
+                        >
+                          {effectiveListingKind(p) === "sale" ? "🏷️ بيع" : "🔑 إيجار"}
+                        </span>
                       </span>
                     </div>
 
@@ -1011,7 +1080,9 @@ const loadProperties = async (overrideFilters?: any) => {
                           <span style={{ fontSize: 22, fontWeight: 900, color: "var(--brand-500)" }}>
                             {p.price.toLocaleString()}
                           </span>
-                          <span style={{ fontSize: 12, color: "#64748b", marginRight: 4 }}>ج.م/شهر</span>
+                          <span style={{ fontSize: 12, color: "#64748b", marginRight: 4 }}>
+                            {effectiveListingKind(p) === "sale" ? "ج.م" : "ج.م/شهر"}
+                          </span>
                         </div>
                         <button
                           onClick={(e) => { e.stopPropagation(); router.push(`/property/${p.id}`); }}
@@ -1042,8 +1113,20 @@ const loadProperties = async (overrideFilters?: any) => {
                     </div>
                   </motion.article>
                 );
+                if ((i + 1) % 5 !== 0) return [card];
+                const feedSlot = Math.ceil((i + 1) / 5);
+                return [
+                  card,
+                  <AdBanner
+                    key={`ad-infeed-${p.id}-${feedSlot}`}
+                    slotId={`dowarli-infeed-${feedSlot}`}
+                    layout="in-feed"
+                    scrollerItem={listLayoutMobile}
+                  />,
+                ];
               })}
             </motion.section>
+            </>
           )}
         </main>
 

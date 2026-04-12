@@ -81,7 +81,7 @@ export default function BrokerDashboardLayout({
             إضافة عقار
           </Link>
           <Link
-            href="/broker/wallet"
+            href="/wallet"
             style={{ fontSize: 13, fontWeight: 700, color: "#64748b", textDecoration: "none", padding: "8px 12px", borderRadius: 10 }}
           >
             المحفظة

@@ -97,3 +97,39 @@ body {
   0% { background-position: 200% center; }
   100% { background-position: -200% center; }
 }
+
+/* Partner marquee — infinite scroll, pauses on hover */
+@keyframes partner-marquee-x {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.partner-marquee-mask {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 8%,
+    black 92%,
+    transparent
+  );
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 8%,
+    black 92%,
+    transparent
+  );
+}
+
+.partner-marquee-track {
+  animation: partner-marquee-x 42s linear infinite;
+  will-change: transform;
+}
+
+.partner-marquee-track:hover {
+  animation-play-state: paused;
+}

@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { POINTS_CHANGED_EVENT } from "@/lib/profilePointsSync";
+import { AD_POST_COST_RENT, AD_POST_COST_SALE } from "@/lib/pointsConfig";
 
 type Property = {
   id: number;
@@ -42,6 +44,7 @@ function propertyTitle(p: LeadRow["properties"]): string {
 
 const STATUS_MAP: Record<string, { label: string; bg: string; color: string }> = {
   pending: { label: "قيد المراجعة", bg: "#fef3c7", color: "#92400e" },
+  pending_approval: { label: "بانتظار موافقة الإدارة", bg: "#fef3c7", color: "#92400e" },
   active: { label: "نشط", bg: "#dcfce7", color: "#166534" },
   rejected: { label: "مرفوض", bg: "#fee2e2", color: "#991b1b" },
   archived: { label: "مؤرشف", bg: "#f1f5f9", color: "#475569" },
@@ -56,8 +59,7 @@ const AVAILABILITY_STATUS_MAP: Record<string, { label: string; bg: string; color
 export default function BrokerDashboardHomePage() {
   const router = useRouter();
   const [name, setName] = useState("");
-  const [walletBalance, setWalletBalance] = useState(0);
-  const [listingCost, setListingCost] = useState(50);
+  const [pointsBalance, setPointsBalance] = useState(0);
   const [properties, setProperties] = useState<Property[]>([]);
   const [leads, setLeads] = useState<LeadRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,14 +86,11 @@ export default function BrokerDashboardHomePage() {
         return;
       }
 
-      const [profileRes, settingsRes] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, name, email, phone, role, wallet_balance, is_active, avatar_url, low_trust")
-          .eq("id", user.id)
-          .maybeSingle(),
-        supabase.from("settings").select("value").eq("key", "listing_cost").maybeSingle(),
-      ]);
+      const profileRes = await supabase
+        .from("profiles")
+        .select("id, name, email, phone, role, points, is_active, avatar_url, low_trust")
+        .eq("id", user.id)
+        .maybeSingle();
 
       const profile = profileRes.data;
       if (profileRes.error) {
@@ -106,10 +105,6 @@ export default function BrokerDashboardHomePage() {
         return;
       }
       setProfileMissing(false);
-      if (settingsRes.error) {
-        console.warn("Dashboard settings:", settingsRes.error);
-      }
-      setListingCost(Number(settingsRes.data?.value ?? 50));
 
       if (!profile.is_active) {
         alert("حسابك متوقف، يرجى التواصل مع الإدارة");
@@ -118,7 +113,7 @@ export default function BrokerDashboardHomePage() {
       }
 
       setName(profile.name ?? "");
-      setWalletBalance(profile.wallet_balance ?? 0);
+      setPointsBalance(typeof profile.points === "number" ? profile.points : 0);
       setLowTrustProfile(profile.low_trust === true);
       setAvatarUrl(typeof profile.avatar_url === "string" && profile.avatar_url.startsWith("http") ? profile.avatar_url : null);
 
@@ -153,6 +148,14 @@ export default function BrokerDashboardHomePage() {
 
   useEffect(() => {
     load();
+  }, [load]);
+
+  useEffect(() => {
+    const onPoints = () => {
+      void load();
+    };
+    window.addEventListener(POINTS_CHANGED_EVENT, onPoints);
+    return () => window.removeEventListener(POINTS_CHANGED_EVENT, onPoints);
   }, [load]);
 
   useEffect(() => {
@@ -767,13 +770,17 @@ export default function BrokerDashboardHomePage() {
             gap: "1rem",
           }}
         >
-          <div>
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", margin: "0 0 4px" }}>رصيد المحفظة</p>
-            <p style={{ fontSize: 28, fontWeight: 900, color: "white", margin: 0 }}>{walletBalance} ج.م</p>
-            <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "6px 0 0" }}>تكلفة الإعلان بعد المجاني: {listingCost} ج.م</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "1.25rem", alignItems: "flex-start" }}>
+            <div>
+              <p style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", margin: "0 0 4px" }}>💎 النقاط</p>
+              <p style={{ fontSize: 28, fontWeight: 900, color: "white", margin: 0 }}>{pointsBalance}</p>
+              <p style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", margin: "6px 0 0" }}>
+                بعد المجاني: تُخصم النقاط عند موافقة الإدارة — إيجار {AD_POST_COST_RENT} · بيع {AD_POST_COST_SALE}
+              </p>
+            </div>
           </div>
           <Link
-            href="/broker/wallet"
+            href="/wallet"
             style={{
               background: "rgba(255,255,255,0.15)",
               border: "1px solid rgba(255,255,255,0.3)",
@@ -785,7 +792,7 @@ export default function BrokerDashboardHomePage() {
               textDecoration: "none",
             }}
           >
-            شحن الرصيد
+            المحفظة والنقاط
           </Link>
         </div>
 

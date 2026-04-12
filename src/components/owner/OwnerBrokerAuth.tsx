@@ -5,18 +5,10 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
-
-const EGYPTIAN_PHONE_REGEX = /^(010|011|012|015)\d{8}$/;
+import { EGYPTIAN_PHONE_REGEX, toE164Egypt, validateEgyptianPhone } from "@/lib/egyptianPhone";
 
 function looksLikeEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
-}
-
-function toE164Egypt(local11: string): string {
-  const c = local11.replace(/\s|-/g, "");
-  if (c.startsWith("+20")) return c;
-  if (c.startsWith("0") && c.length === 11) return `+20${c.slice(1)}`;
-  return `+20${c}`;
 }
 
 function parseLoginIdentifier(raw: string):
@@ -60,6 +52,8 @@ export default function OwnerBrokerAuth({
   const [error, setError] = useState("");
 
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
+  /** If true, phone login uses SMS OTP instead of password (optional fallback). */
+  const [loginSmsMode, setLoginSmsMode] = useState(false);
   const [loginOtpPending, setLoginOtpPending] = useState(false);
   const [loginOtpE164, setLoginOtpE164] = useState("");
   const [loginOtpCode, setLoginOtpCode] = useState("");
@@ -86,16 +80,10 @@ export default function OwnerBrokerAuth({
     setLoginOtpE164("");
     setLoginOtpCode("");
     setLoginInfo("");
+    setLoginSmsMode(false);
   }, [tab]);
 
-  const validatePhone = (phone: string): string => {
-    const cleaned = phone.replace(/\s|-/g, "");
-    if (!cleaned) return "رقم الهاتف مطلوب";
-    if (!EGYPTIAN_PHONE_REGEX.test(cleaned)) {
-      return "رقم غير صحيح — يجب أن يبدأ بـ 010، 011، 012، أو 015 ويكون 11 رقم";
-    }
-    return "";
-  };
+  const validatePhone = (phone: string): string => validateEgyptianPhone(phone) ?? "";
 
   const oauthRedirect = () => {
     if (typeof globalThis.window === "undefined") return "";
@@ -119,6 +107,9 @@ export default function OwnerBrokerAuth({
     }
   };
 
+  const profilePhoneMissing = (phone: string | null | undefined) =>
+    !phone || !String(phone).replace(/\s|-/g, "").trim();
+
   const routeAfterSession = async (userId: string) => {
     if (variant === "modal") {
       try {
@@ -126,11 +117,34 @@ export default function OwnerBrokerAuth({
       } catch {
         /* non-fatal */
       }
+      const { data: prof } = await supabase.from("profiles").select("phone, role").eq("id", userId).maybeSingle();
+      if (prof?.role !== "admin" && profilePhoneMissing(prof?.phone)) {
+        const nextPath =
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search}`
+            : "/dashboard";
+        router.push(`/complete-profile?next=${encodeURIComponent(nextPath || "/dashboard")}`);
+        onClose?.();
+        return;
+      }
       onAuthSuccess?.();
       onClose?.();
       return;
     }
-    const { data: profile } = await supabase.from("profiles").select("role").eq("id", userId).maybeSingle();
+    try {
+      await fetch("/api/auth/ensure-profile", { method: "POST", credentials: "same-origin" });
+    } catch {
+      /* non-fatal */
+    }
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, phone")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profile?.role !== "admin" && profilePhoneMissing(profile?.phone)) {
+      router.push(`/complete-profile?next=${encodeURIComponent("/dashboard")}`);
+      return;
+    }
     if (profile?.role === "admin") router.push("/admin");
     else router.push("/dashboard");
   };
@@ -189,27 +203,49 @@ export default function OwnerBrokerAuth({
         return;
       }
 
-      if (loginForm.password.trim()) {
-        setError("تسجيل الدخول بالموبايل يتم برمز SMS — اترك كلمة المرور فارغة ثم اضغط إرسال الرمز.");
+      // Phone: password login (Supabase Auth must have this phone on the user — enable Phone provider + link phone)
+      if (loginSmsMode) {
+        const { error: otpErr } = await supabase.auth.signInWithOtp({
+          phone: parsed.e164,
+          options: { shouldCreateUser: false },
+        });
+        if (otpErr) {
+          if (otpErr.message.toLowerCase().includes("signups not allowed")) {
+            setError("لا يوجد حساب بهذا الرقم — أنشئ حسابًا من تبويب «حساب جديد»");
+          } else {
+            setError(otpErr.message);
+          }
+          return;
+        }
+        setLoginOtpPending(true);
+        setLoginOtpE164(parsed.e164);
+        setLoginOtpCode("");
+        setLoginInfo("تم إرسال رمز التحقق عبر SMS — أدخل الرمز أدناه.");
         return;
       }
 
-      const { error: otpErr } = await supabase.auth.signInWithOtp({
+      if (!loginForm.password) {
+        setError("أدخل كلمة المرور — أو فعّل «دخول برمز SMS» إن لم تضبط كلمة مرور للهاتف في Supabase.");
+        return;
+      }
+
+      const { data: phoneAuth, error: phoneSignErr } = await supabase.auth.signInWithPassword({
         phone: parsed.e164,
-        options: { shouldCreateUser: false },
+        password: loginForm.password,
       });
-      if (otpErr) {
-        if (otpErr.message.toLowerCase().includes("signups not allowed")) {
-          setError("لا يوجد حساب بهذا الرقم — أنشئ حسابًا من تبويب «حساب جديد»");
+      if (phoneSignErr) {
+        const m = phoneSignErr.message.toLowerCase();
+        if (m.includes("invalid") || m.includes("credentials")) {
+          setError(
+            "تسجيل الدخول بالهاتف يعتمد على رقم مسجّل في نظام المصادقة (ليس فقط في الملف الشخصي). إن سجّلت سابقًا بالبريد: سجّل الدخول مرة واحدة بالبريد وكلمة المرور (لنُحدّث الرقم تلقائيًا)، ثم جرّب الهاتف مرة أخرى؛ أو استخدم «دخول برمز SMS»، أو تحقق من كلمة المرور.",
+          );
         } else {
-          setError(otpErr.message);
+          setError(phoneSignErr.message);
         }
         return;
       }
-      setLoginOtpPending(true);
-      setLoginOtpE164(parsed.e164);
-      setLoginOtpCode("");
-      setLoginInfo("تم إرسال رمز التحقق عبر SMS — أدخل الرقم أدناه.");
+      if (!phoneAuth.user?.id) return;
+      await routeAfterSession(phoneAuth.user.id);
     } finally {
       setLoading(false);
     }
@@ -271,6 +307,7 @@ export default function OwnerBrokerAuth({
         email: emailNorm,
         role: "broker",
         wallet_balance: 0,
+        points: 0,
       },
       { onConflict: "id" },
     );
@@ -280,9 +317,15 @@ export default function OwnerBrokerAuth({
         setError("رقم الهاتف أو البريد مسجّل مسبقًا");
       } else {
         setError(profileError.message);
-        setLoading(false);
-        return;
       }
+      setLoading(false);
+      return;
+    }
+
+    try {
+      await fetch("/api/auth/ensure-profile", { method: "POST", credentials: "same-origin" });
+    } catch {
+      /* non-fatal */
     }
 
     if (variant === "modal") {
@@ -643,6 +686,7 @@ export default function OwnerBrokerAuth({
                           setLoginOtpCode("");
                           setLoginInfo("");
                           setError("");
+                          setLoginSmsMode(false);
                         }}
                         style={{
                           background: "none",
@@ -674,12 +718,12 @@ export default function OwnerBrokerAuth({
                           style={inputStyle}
                         />
                         <p style={{ fontSize: 11, color: "#64748b", margin: "6px 0 0", lineHeight: 1.5 }}>
-                          للموبايل: اترك كلمة المرور فارغة — سنرسل رمز تحقق عبر SMS (فعّل Phone في Supabase).
+                          الموبايل: أدخل كلمة المرور إذا كان الرقم مربوطًا بحسابك في Supabase، أو استخدم «دخول برمز SMS».
                         </p>
                       </div>
                       <div>
                         <label htmlFor="ob-pass" style={{ fontSize: 13, fontWeight: 700, color: "#cbd5e1", display: "block", marginBottom: 6 }}>
-                          كلمة المرور <span style={{ fontWeight: 500, color: "#64748b" }}>(للبريد فقط)</span>
+                          كلمة المرور {!loginSmsMode && <span style={{ fontWeight: 500, color: "#64748b" }}>(البريد أو الموبايل)</span>}
                         </label>
                         <input
                           id="ob-pass"
@@ -690,6 +734,31 @@ export default function OwnerBrokerAuth({
                           style={inputStyle}
                         />
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setLoginSmsMode((v) => {
+                            if (!v) setLoginForm((f) => ({ ...f, password: "" }));
+                            return !v;
+                          });
+                          setError("");
+                          setLoginInfo("");
+                        }}
+                        style={{
+                          alignSelf: "flex-start",
+                          background: "none",
+                          border: "none",
+                          color: "#38bdf8",
+                          fontSize: 13,
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          padding: 0,
+                          textDecoration: "underline",
+                          textUnderlineOffset: 3,
+                        }}
+                      >
+                        {loginSmsMode ? "العودة لتسجيل الدخول بكلمة المرور" : "دخول برمز SMS بدل كلمة المرور"}
+                      </button>
                       <motion.button
                         type="submit"
                         disabled={loading}
@@ -697,7 +766,11 @@ export default function OwnerBrokerAuth({
                         whileTap={{ scale: loading ? 1 : 0.98 }}
                         style={submitStyle(loading)}
                       >
-                        {loading ? "جاري المعالجة…" : "تسجيل الدخول / إرسال الرمز"}
+                        {loading
+                          ? "جاري المعالجة…"
+                          : loginSmsMode
+                            ? "إرسال رمز SMS"
+                            : "تسجيل الدخول"}
                       </motion.button>
                     </>
                   )}

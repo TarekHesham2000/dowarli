@@ -94,7 +94,7 @@ export async function checkDevicePropertyLimit(
       .from('properties')
       .select('id', { count: 'exact', head: true })
       .eq('device_id', deviceId)
-      .in('status', ['active', 'pending'])
+      .in('status', ['active', 'pending', 'pending_approval'])
 
     if (error) {
       console.error('Device property check error:', error)

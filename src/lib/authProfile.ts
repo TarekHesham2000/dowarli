@@ -147,6 +147,7 @@ export async function ensureBrokerProfileForUser(user: User): Promise<void> {
           avatar_url: mergedAvatar,
           wallet_balance: mergedWallet,
           role: mergedRole,
+          points: 0,
         });
         if (insErr) console.error("[ensureBrokerProfile] insert merged:", insErr.message);
         return;
@@ -160,6 +161,7 @@ export async function ensureBrokerProfileForUser(user: User): Promise<void> {
     phone: metaPhone || phoneDirect,
     role: "broker",
     wallet_balance: 0,
+    points: 0,
   };
   if (email) insertPayload.email = email;
   if (avatarUrl) insertPayload.avatar_url = avatarUrl;

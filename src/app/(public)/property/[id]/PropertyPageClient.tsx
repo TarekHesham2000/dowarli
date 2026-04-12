@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
+import AdBanner from '@/components/ads/AdBanner'
 import OwnerBrokerAuth from '@/components/owner/OwnerBrokerAuth'
 
 // ──────────────────────────────────────────────────────────────
@@ -30,6 +31,8 @@ type Property = {
   report_count?: number
   last_verified_at?: string
   owner_id?: string
+  listing_type?: string | null
+  listing_purpose?: string | null
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -63,6 +66,11 @@ function getProfile(profiles: Property['profiles']): { name: string; phone: stri
   if (!profiles) return { name: '', phone: '' }
   if (Array.isArray(profiles)) return profiles[0] ?? { name: '', phone: '' }
   return profiles
+}
+
+function effectiveListingKind(p: Pick<Property, 'listing_type' | 'listing_purpose'>): 'rent' | 'sale' {
+  const raw = (p.listing_type ?? p.listing_purpose ?? 'rent').toString().trim().toLowerCase()
+  return raw === 'sale' ? 'sale' : 'rent'
 }
 
 /** تحويل الرقم المصري لصيغة دولية */
@@ -146,6 +154,7 @@ export default function PropertyPageClient() {
           id, title, description, price, area, address,
           unit_type, images, status,
           video_url, rental_unit, beds_count,
+          listing_type, listing_purpose,
           availability_status, report_count, last_verified_at, owner_id,
           profiles(name, phone)
         `)
@@ -378,8 +387,10 @@ export default function PropertyPageClient() {
   const embedUrl  = getEmbedUrl(property.video_url)
   const isTikTok  = isTikTokUrl(property.video_url)
 
-  // هل نعرض تفاصيل الإيجار التفصيلية؟
-  const showRentalDetails = SHARED_UNIT_TYPES.has(property.unit_type) && property.rental_unit
+  const isSaleListing = effectiveListingKind(property) === 'sale'
+  // هل نعرض تفاصيل الإيجار التفصيلية؟ (إيجار فقط)
+  const showRentalDetails =
+    !isSaleListing && SHARED_UNIT_TYPES.has(property.unit_type) && property.rental_unit
   const availability = property.availability_status ?? "available"
   const showAvailabilityBanner =
     property.status === "active" && availability !== "available"
@@ -390,7 +401,11 @@ export default function PropertyPageClient() {
     { label: 'المنطقة',         value: property.area,                    icon: '📍' },
     { label: 'نوع الوحدة',      value: TYPE_LABELS[property.unit_type],  icon: meta.icon },
     { label: 'العنوان التفصيلي', value: property.address,                icon: '🗺️' },
-    { label: 'السعر الشهري',    value: `${property.price?.toLocaleString()} ج.م`, icon: '💰' },
+    {
+      label: isSaleListing ? 'سعر البيع' : 'السعر الشهري',
+      value: `${property.price?.toLocaleString()} ج.م`,
+      icon: '💰',
+    },
   ]
 
   // ✨ نضيف تفاصيل الإيجار لو موجودة
@@ -494,6 +509,9 @@ export default function PropertyPageClient() {
           <div className="fade-up" style={{ marginBottom: '1.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: `${meta.accent}18`, border: `1px solid ${meta.accent}40`, borderRadius: 99, fontSize: 12, fontWeight: 700, color: meta.accent, padding: '5px 14px' }}>
               {meta.icon} {TYPE_LABELS[property.unit_type]}
+            </span>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(234,179,8,.12)', border: '1px solid rgba(234,179,8,.35)', borderRadius: 99, fontSize: 12, fontWeight: 700, color: isSaleListing ? '#fbbf24' : '#86efac', padding: '5px 14px' }}>
+              {isSaleListing ? '🏷️ بيع' : '🔑 إيجار'}
             </span>
             {/* ✨ rental_unit badge في الـ breadcrumb */}
             {showRentalDetails && (
@@ -654,6 +672,9 @@ export default function PropertyPageClient() {
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: `${meta.accent}18`, border: `1px solid ${meta.accent}40`, borderRadius: 99, fontSize: 12, fontWeight: 700, color: meta.accent, padding: '5px 14px' }}>
                     {meta.icon} {TYPE_LABELS[property.unit_type]}
                   </div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', background: 'rgba(234,179,8,.12)', border: '1px solid rgba(234,179,8,.35)', borderRadius: 99, fontSize: 11, fontWeight: 700, color: isSaleListing ? '#fbbf24' : '#86efac', padding: '5px 12px' }}>
+                    {isSaleListing ? '🏷️ بيع' : '🔑 إيجار'}
+                  </div>
                   {/* ✨ rental badge في الـ price card */}
                   {showRentalDetails && (
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem', background: 'rgba(59,130,246,.1)', border: '1px solid rgba(59,130,246,.25)', borderRadius: 99, fontSize: 11, fontWeight: 700, color: '#60a5fa', padding: '5px 12px' }}>
@@ -669,10 +690,14 @@ export default function PropertyPageClient() {
                 <p style={{ fontSize: 12, color: '#475569', margin: '0 0 1.25rem', lineHeight: 1.6 }}>📍 {property.area} — {property.address}</p>
 
                 <div style={{ background: `linear-gradient(135deg, ${meta.accent}14, ${meta.accent}08)`, border: `1px solid ${meta.accent}25`, borderRadius: 16, padding: '1.1rem 1.25rem', marginBottom: '0.5rem' }}>
-                  <p style={{ fontSize: 11, color: '#475569', margin: '0 0 4px', fontWeight: 600 }}>السعر الشهري</p>
+                  <p style={{ fontSize: 11, color: '#475569', margin: '0 0 4px', fontWeight: 600 }}>
+                    {isSaleListing ? 'سعر البيع' : 'السعر الشهري'}
+                  </p>
                   <p style={{ fontSize: 36, fontWeight: 900, color: meta.accent, margin: 0, lineHeight: 1 }}>
                     {property.price?.toLocaleString()}
-                    <span style={{ fontSize: 14, fontWeight: 400, color: '#475569', marginRight: 6 }}>ج.م / شهر</span>
+                    <span style={{ fontSize: 14, fontWeight: 400, color: '#475569', marginRight: 6 }}>
+                      {isSaleListing ? 'ج.م' : 'ج.م / شهر'}
+                    </span>
                   </p>
                 </div>
               </div>
@@ -855,6 +880,10 @@ export default function PropertyPageClient() {
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        <div className="px-4 pb-4 sm:px-6" style={{ maxWidth: 1200, margin: '0 auto', width: '100%' }}>
+          <AdBanner slotId="dowarli-property-detail" layout="detail" />
+        </div>
 
         {/* FOOTER */}
         <footer style={{ background: 'rgba(2,6,23,.98)', borderTop: '1px solid rgba(255,255,255,.05)', padding: '2rem 1.5rem', textAlign: 'center' }}>

@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
 
 /**
  * Next.js 16+: حماية على حافة الطلب (`proxy` بدل `middleware`).
@@ -17,6 +18,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
+    ...getSupabaseGlobalClientOptions(),
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -60,6 +62,18 @@ export async function proxy(request: NextRequest) {
   if (pathname.startsWith("/broker") || pathname.startsWith("/dashboard")) {
     if (!authedUser) {
       return NextResponse.redirect(new URL("/login", request.url));
+    }
+    const { data: brokerProf } = await supabase
+      .from("profiles")
+      .select("phone, role")
+      .eq("id", authedUser.id)
+      .maybeSingle();
+    const phoneMissing =
+      !brokerProf?.phone || !String(brokerProf.phone).replace(/\s|-/g, "").trim();
+    if (brokerProf?.role !== "admin" && phoneMissing) {
+      const u = new URL("/complete-profile", request.url);
+      u.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
+      return NextResponse.redirect(u);
     }
   }
 
