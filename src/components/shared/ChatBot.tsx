@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Trash2, Minimize2, Maximize2, X, Sparkles, MapPin, DollarSign } from 'lucide-react'
+import { propertyPathFromRecord } from '@/lib/propertySlug'
 
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 
@@ -22,6 +23,7 @@ type PropertyResult = {
   address: string | null
   unit_type: string
   images: string[]
+  slug?: string | null
   last_verified_at?: string
   report_count?: number
 }
@@ -53,6 +55,8 @@ type ChatBotProps = {
   pendingPrompt?: string | null
   onPendingPromptConsumed?: () => void
   onMobileSheetOpenChange?: (open: boolean) => void
+  /** Increment (e.g. from mobile bottom nav) to open the panel programmatically. */
+  openSignal?: number
 }
 
 const TYPE_LABELS: Record<UnitType, string> = {
@@ -169,7 +173,7 @@ function PropertySlider({
         {results.map((r) => {
           const img = r.images?.[0]
           return (
-            <a key={r.id} href={`/property/${r.id}`} target="_blank" rel="noopener noreferrer"
+            <a key={r.id} href={propertyPathFromRecord(r)} target="_blank" rel="noopener noreferrer"
               style={{ scrollSnapStop: 'always', scrollSnapAlign: 'start' }}
               className="block w-40 shrink-0 no-underline outline-none">
               <motion.div
@@ -258,7 +262,13 @@ function ChatBubble({ msg }: { msg: Message }) {
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────
-export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsumed, onMobileSheetOpenChange }: ChatBotProps) {
+export default function ChatBot({
+  onFilter,
+  pendingPrompt,
+  onPendingPromptConsumed,
+  onMobileSheetOpenChange,
+  openSignal = 0,
+}: ChatBotProps) {
   const [mounted, setMounted]           = useState(false)
   const [isMobile, setIsMobile]         = useState(false)
   const [isOpen, setIsOpen]             = useState(false)
@@ -292,7 +302,18 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
     return () => mq.removeEventListener('change', sync)
   }, [mounted])
 
-  useEffect(() => { onMobileSheetOpenChange?.(isOpen && isMobile) }, [isOpen, isMobile, onMobileSheetOpenChange])
+  useEffect(() => {
+    onMobileSheetOpenChange?.(isOpen && isMobile)
+  }, [isOpen, isMobile, onMobileSheetOpenChange])
+
+  useEffect(() => {
+    if (openSignal <= 0) return
+    setIsOpen(true)
+    setExpanded(true)
+    setHasNew(false)
+    const t = window.setTimeout(() => inputRef.current?.focus(), 320)
+    return () => window.clearTimeout(t)
+  }, [openSignal])
 
   useEffect(() => {
     if (!isOpen || !isMobile || typeof window === 'undefined') { setKeyboardInset(0); return }
@@ -375,11 +396,13 @@ export default function ChatBot({ onFilter, pendingPrompt, onPendingPromptConsum
       {/* ══════════ FAB ══════════ */}
       <motion.button
         type="button" layoutId="chat-fab"
-        whileHover={{ scale: isMobile && isOpen ? 1 : 1.07 }}
-        whileTap={{ scale: isMobile && isOpen ? 1 : 0.93 }}
         onClick={() => setIsOpen((v) => !v)}
         aria-label={isOpen ? 'إغلاق مساعد دَورلي' : 'فتح مساعد دَورلي'}
-        className={['fixed z-[9999] flex h-14 w-14 items-center justify-center rounded-full overflow-hidden', isMobile && isOpen ? 'hidden' : ''].join(' ')}
+        className={[
+          'fixed z-[9999] flex h-14 w-14 items-center justify-center rounded-full overflow-hidden',
+          isMobile && isOpen ? 'hidden' : '',
+          !isOpen ? 'chat-invite-pulse' : '',
+        ].join(' ')}
         style={{ bottom: CHAT_FAB_BOTTOM_PX, right: '20px', left: 'auto', background: 'var(--brand-gradient-fab)', boxShadow: 'var(--brand-shadow-fab)' }}
       >
         <motion.div

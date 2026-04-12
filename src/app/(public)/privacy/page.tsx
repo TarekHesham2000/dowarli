@@ -1,164 +1,74 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import FooterLinks from "@/components/shared/FooterLinks";
+import InfoPageShell from "@/components/legal/InfoPageShell";
 
 export const metadata: Metadata = {
-  title: "سياسة الخصوصية - دَورلي",
-  description: "سياسة الخصوصية وحماية البيانات لمنصة دَورلي للإيجار العقاري في مصر",
+  title: "سياسة الخصوصية",
+  description: "سياسة الخصوصية وحماية البيانات لمنصة دورلي العقارية.",
 };
 
 export default function PrivacyPage() {
   return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
-      <nav className="bg-white border-b px-4 py-4 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-green-700 rounded-lg flex items-center justify-center">
-            <svg viewBox="0 0 24 24" fill="white" className="w-4 h-4">
-              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-              <polyline
-                points="9,22 9,12 15,12 15,22"
-                fill="none"
-                stroke="white"
-                strokeWidth="1.5"
-              />
-            </svg>
-          </div>
-          <span className="font-bold text-green-800 text-lg">دَورلي</span>
-        </Link>
-        <Link href="/" className="text-sm text-green-700 hover:underline">
-          العودة للرئيسية
-        </Link>
-      </nav>
+    <InfoPageShell title="سياسة الخصوصية" subtitle="آخر تحديث: أبريل 2026">
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">١. المقدمة</h2>
+        <p>
+          توضح هذه السياسة كيف تجمع منصة <strong>دورلي</strong> وتستخدم وتخزن معلومات المستخدمين
+          والزائرين عند استخدام الموقع أو التطبيق أو المساعد الذكي. باستخدامك للخدمة فإنك توافق
+          على ممارسات موضحة هنا ضمن حدود القانون المعمول به.
+        </p>
+      </section>
 
-      <div className="max-w-3xl mx-auto px-4 py-10">
-        <div className="bg-white rounded-2xl shadow-sm p-6 sm:p-10">
-          <h1 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2">
-            سياسة الخصوصية
-          </h1>
-          <p className="text-gray-500 text-sm mb-8">آخر تحديث: أبريل 2026</p>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٢. البيانات التي نجمعها</h2>
+        <ul className="list-inside list-disc space-y-1 text-slate-700">
+          <li>بيانات الحساب: الاسم، رقم الهاتف، البريد الإلكتروني عند التسجيل أو تسجيل الدخول.</li>
+          <li>بيانات الإعلانات: وصف العقار، الصور، السعر، العنوان، نوع الوحدة، وحالة التوافر.</li>
+          <li>بيانات التواصل: الأسماء وأرقام الهواتف المُدخلة عند طلب التواصل مع المعلن.</li>
+          <li>بيانات المحفظة والنقاط: طلبات الشحن، المبالغ، حالة المعاملات، ومرفقات الإثبات عند تقديمها.</li>
+          <li>بيانات تقنية: عنوان IP تقريبي، نوع المتصفح، وسجلات أخطاء عامة لتحسين الأداء والأمان.</li>
+          <li>استفسارات المساعد الذكي: النصوص التي تكتبها للبوت لأغراض الرد والاقتراح فقط.</li>
+        </ul>
+      </section>
 
-          <div className="space-y-8 text-gray-700 leading-relaxed">
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">١. مقدمة</h2>
-              <p className="text-sm leading-7">
-                نرحب بكم في منصة <strong>دَورلي</strong>، المنصة المتخصصة في
-                الإيجار العقاري في مصر. نحن نأخذ خصوصية مستخدمينا بجدية تامة،
-                وتوضح هذه السياسة كيفية جمع بياناتكم واستخدامها وحمايتها عند
-                استخدام خدماتنا.
-              </p>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٣. أساس الاستخدام</h2>
+        <p>نستخدم البيانات لتشغيل المنصة، عرض الإعلانات، مراجعة المحتوى، منع الإساءة، معالجة المدفوعات والنقاط، والتواصل معك بخصوص حسابك أو طلبات الدعم.</p>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">
-                ٢. البيانات التي نجمعها
-              </h2>
-              <p className="text-sm leading-7 mb-3">
-                نقوم بجمع الأنواع التالية من البيانات:
-              </p>
-              <ul className="text-sm space-y-2 list-none">
-                {[
-                  { icon: "👤", text: "بيانات التسجيل: الاسم، رقم الهاتف، البريد الإلكتروني" },
-                  { icon: "🏠", text: "بيانات الإعلانات: معلومات العقار، الصور، الأسعار، العناوين" },
-                  { icon: "💳", text: "بيانات المالية: معاملات المحفظة وصور الإيصالات" },
-                  { icon: "📱", text: "بيانات الاستخدام: سجلات الدخول، الأنشطة على المنصة" },
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-3 bg-gray-50 rounded-xl p-3">
-                    <span className="text-lg flex-shrink-0">{item.icon}</span>
-                    <span>{item.text}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٤. المشاركة مع أطراف ثالثة</h2>
+        <p>
+          لا نبيع بياناتك الشخصية. قد نعتمد على مزودي بنية تحتية (مثل استضافة قاعدة البيانات والمصادقة)
+          يعملون كمعالجين بموجب عقود، وقد نفصح عن بيانات إذا طُلب ذلك قضائياً.
+        </p>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">
-                ٣. كيف نستخدم بياناتكم
-              </h2>
-              <ul className="text-sm space-y-2">
-                {[
-                  "تفعيل حسابكم وتقديم الخدمات المطلوبة",
-                  "مراجعة الإعلانات والتحقق منها قبل النشر",
-                  "معالجة طلبات شحن المحفظة",
-                  "التواصل معكم بشأن حسابكم أو الإعلانات",
-                  "تحسين خدماتنا ومنصتنا",
-                  "الامتثال للمتطلبات القانونية",
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2 text-sm">
-                    <span className="text-green-600 mt-0.5 flex-shrink-0">✓</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٥. ملفات تعريف الارتباط والتخزين المحلي</h2>
+        <p>قد نستخدم تقنيات ضرورية لجلسة الدخول وتفضيلات الواجهة. يمكنك ضبط متصفحك لتقليل التتبع وفق إمكانياته.</p>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">
-                ٤. مشاركة البيانات
-              </h2>
-              <p className="text-sm leading-7">
-                <strong>لا نبيع بياناتكم الشخصية لأي طرف ثالث.</strong> قد نشارك
-                بعض البيانات مع:
-              </p>
-              <ul className="text-sm space-y-2 mt-3">
-                <li className="flex items-start gap-2">
-                  <span className="text-yellow-600 flex-shrink-0">•</span>
-                  <span>
-                    مزودي الخدمات التقنية (مثل Supabase للتخزين والمصادقة)
-                    المرتبطين باتفاقيات حماية البيانات
-                  </span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="text-yellow-600 flex-shrink-0">•</span>
-                  <span>السلطات المختصة في حال الطلب القانوني</span>
-                </li>
-              </ul>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٦. الاحتفاظ والأمان</h2>
+        <p>نطبق إجراءات أمنية معقولة (مثل الاتصال المشفّر) ونحتفظ بالبيانات للمدة اللازمة لتقديم الخدمة والالتزامات القانونية.</p>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">٥. أمان البيانات</h2>
-              <p className="text-sm leading-7">
-                نستخدم إجراءات أمنية معيارية في الصناعة لحماية بياناتكم، تشمل
-                التشفير عند النقل (HTTPS/TLS) وتطبيق سياسات صلاحيات صارمة على
-                مستوى قاعدة البيانات.
-              </p>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٧. حقوقك</h2>
+        <p>يمكنك طلب تصحيح أو حذف بياناتك أو سحب موافقات معينة حيث يسمح القانون، عبر صفحة التواصل.</p>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">٦. حقوقكم</h2>
-              <ul className="text-sm space-y-2">
-                {[
-                  "الوصول إلى بياناتكم الشخصية",
-                  "تصحيح البيانات غير الصحيحة",
-                  "طلب حذف حسابكم وبياناتكم",
-                  "الاعتراض على معالجة بياناتكم",
-                ].map((item, i) => (
-                  <li key={i} className="flex items-start gap-2">
-                    <span className="text-green-600 flex-shrink-0">✓</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-3">٧. التواصل معنا</h2>
-              <p className="text-sm leading-7">
-                لأي استفسارات تتعلق بسياسة الخصوصية أو بياناتكم، يرجى التواصل
-                معنا عبر صفحة{" "}
-                <Link href="/contact" className="text-green-700 hover:underline font-medium">
-                  تواصل معنا
-                </Link>
-                .
-              </p>
-            </section>
-          </div>
-        </div>
-      </div>
-
-      <footer className="bg-green-900 text-green-100 py-6 px-4 text-center text-sm mt-10">
-        <p>© 2025 دَورلي — منصة الإيجار العقاري المصرية</p>
-        <FooterLinks className="flex justify-center gap-4 mt-2 text-xs opacity-70" />
-      </footer>
-    </div>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٨. التواصل</h2>
+        <p>
+          لأسئلة الخصوصية:{" "}
+          <Link href="/contact" className="font-bold text-[#00d38d] hover:underline">
+            تواصل معنا
+          </Link>
+          .
+        </p>
+      </section>
+    </InfoPageShell>
   );
 }

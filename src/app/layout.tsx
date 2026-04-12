@@ -1,8 +1,15 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Cairo, Geist, Geist_Mono } from "next/font/google";
 import { AppProviders } from "@/components/AppProviders";
-import { getSiteUrl } from "@/lib/site";
+import FloatingWhatsAppSupport from "@/components/support/FloatingWhatsAppSupport";
+import { getMetadataSiteUrl } from "@/lib/site";
 import "./globals.css";
+
+const cairo = Cairo({
+  variable: "--font-cairo",
+  subsets: ["arabic", "latin"],
+  weight: ["400", "600", "700", "800"],
+});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,25 +21,43 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteUrl = getMetadataSiteUrl();
+const defaultTitle = "دورلي | منصتك الذكية للبحث عن سكن وإعلانات العقارات في مصر";
+const defaultDescription =
+  "دورلي هو مساعدك الذكي المعتمد على الذكاء الاصطناعي لإيجاد أفضل عروض السكن، الشقق، وسكن الطلاب في مصر. ابحث، قارن، وتواصل مع الملاك مباشرة وبسهولة.";
+
 export const metadata: Metadata = {
-  metadataBase: new URL(getSiteUrl()),
-  title: "دَورلي - منصة الإيجار الأولى في مصر",
-  description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
+  metadataBase: new URL(siteUrl),
+  title: { default: defaultTitle, template: "%s | دورلي" },
+  description: defaultDescription,
+  alternates: { canonical: siteUrl },
   icons: {
-    icon: [{ url: "/branding/app-icon.png", type: "image/png" }],
-    apple: "/branding/app-icon.png",
+    icon: [
+      { url: "/app-icon.png", sizes: "32x32", type: "image/png" },
+      { url: "/app-icon.png", sizes: "16x16", type: "image/png" },
+    ],
+    shortcut: "/app-icon.png",
+    apple: [{ url: "/app-icon.png", sizes: "180x180", type: "image/png" }],
   },
   openGraph: {
     type: "website",
     locale: "ar_EG",
-    siteName: "دَورلي",
-    title: "دَورلي - منصة الإيجار الأولى في مصر",
-    description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
+    url: siteUrl,
+    siteName: "دورلي",
+    title: defaultTitle,
+    description: defaultDescription,
+    images: [
+      { url: "/app-icon.png", width: 512, height: 512, type: "image/png", alt: "دورلي" },
+    ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "دَورلي - منصة الإيجار الأولى في مصر",
-    description: "ابحث عن شقتك أو سكن الطلاب بسهولة وأمان",
+    title: defaultTitle,
+    description: defaultDescription,
+    images: ["/app-icon.png"],
+  },
+  verification: {
+    google: "ggYGI2KOuy-niGIEtgGLsR8P-uvNoMeOaewI7KlflHM",
   },
 };
 
@@ -44,16 +69,20 @@ export default function RootLayout({
   return (
     <html lang="ar" dir="rtl">
       <head>
-        <link rel="icon" href="/branding/app-icon.png" type="image/png" sizes="any" />
-        <link rel="apple-touch-icon" href="/branding/app-icon.png" />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#1B783C" />
+        <meta name="theme-color" content="#00d38d" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="دَورلي" />
       </head>
-      <body suppressHydrationWarning={true} className={`${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col`}>
-        <AppProviders>{children}</AppProviders>
+      <body
+        suppressHydrationWarning={true}
+        className={`${cairo.variable} ${geistSans.variable} ${geistMono.variable} min-h-full flex flex-col bg-background antialiased`}
+      >
+        <AppProviders>
+          {children}
+          <FloatingWhatsAppSupport />
+        </AppProviders>
       </body>
     </html>
   );

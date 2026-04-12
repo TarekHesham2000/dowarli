@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { POINTS_CHANGED_EVENT } from "@/lib/profilePointsSync";
 import { AD_POST_COST_RENT, AD_POST_COST_SALE } from "@/lib/pointsConfig";
+import WelcomePointsBanner from "@/components/account/WelcomePointsBanner";
 
 type Property = {
   id: number;
@@ -459,6 +460,7 @@ export default function BrokerDashboardHomePage() {
 
   return (
     <>
+      <WelcomePointsBanner />
       <AnimatePresence>
         {selectedProperty ? (
           <motion.div

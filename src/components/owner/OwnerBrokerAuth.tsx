@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
+import { WELCOME_POINTS_BONUS } from "@/lib/pointsConfig";
 import { EGYPTIAN_PHONE_REGEX, toE164Egypt, validateEgyptianPhone } from "@/lib/egyptianPhone";
 
 function looksLikeEmail(s: string): boolean {
@@ -307,7 +308,7 @@ export default function OwnerBrokerAuth({
         email: emailNorm,
         role: "broker",
         wallet_balance: 0,
-        points: 0,
+        points: WELCOME_POINTS_BONUS,
       },
       { onConflict: "id" },
     );

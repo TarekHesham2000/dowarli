@@ -1,7 +1,10 @@
-/** Points charged on admin approval for a rental listing (after free slots are used). */
+/** New accounts start with this points balance (registration / profile creation). */
+export const WELCOME_POINTS_BONUS = 100;
+
+/** Points charged on admin approval for a rental listing. */
 export const AD_POST_COST_RENT = 20;
 
-/** Points charged on admin approval for a sale listing (after free slots are used). */
+/** Points charged on admin approval for a sale listing. */
 export const AD_POST_COST_SALE = 50;
 
 /** @deprecated use AD_POST_COST_RENT or getAdPostPointsCost */

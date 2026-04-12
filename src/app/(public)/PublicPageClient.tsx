@@ -10,8 +10,10 @@ import ChatBot from '@/components/shared/ChatBot'
 import Footer from '@/components/shared/Footer'
 import Navbar from '@/components/Navbar'
 import PartnerMarquee from '@/components/partners/PartnerMarquee'
+import { type ParsedFilters, type UnitType, parseSearchQuery } from "@/lib/parseHomeSearchQuery";
+import type { SavedSearchFiltersV1 } from "@/lib/matchSavedSearch";
+import { propertyPathFromRecord } from "@/lib/propertySlug";
 // ─── Types ────────────────────────────────────────────────────────────────────
-type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 type Property = {
   id: number;
   title: string;
@@ -21,6 +23,7 @@ type Property = {
   address: string;
   unit_type: UnitType;
   images: string[];
+  slug?: string | null;
   /** إيجار / بيع — يُملأ من قاعدة البيانات عند توفر العمود */
   listing_type?: string | null;
   listing_purpose?: string | null;
@@ -32,19 +35,12 @@ function effectiveListingKind(p: Pick<Property, "listing_type" | "listing_purpos
   return raw === "sale" ? "sale" : "rent";
 }
 
-type ParsedFilters = {
-  area: string;
-  maxPrice: number | null;
-  unitType: string;
-  keywords: string;
-};
-
 /** أعمدة واضحة + active فقط في الاستعلام (لا نعتمد على select *) */
 const HOME_PROPERTY_SELECT =
-  "id, title, description, price, area, address, unit_type, images, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
+  "id, title, description, price, area, address, unit_type, images, slug, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
 
 const HOME_PROPERTY_SELECT_FALLBACK =
-  "id, title, description, price, area, address, unit_type, images, availability_status, created_at, profiles(name, phone, low_trust)";
+  "id, title, description, price, area, address, unit_type, images, slug, availability_status, created_at, profiles(name, phone, low_trust)";
 
 function filterHomeLowTrustRows(rows: unknown[]): Property[] {
   const filtered = rows.filter((row) => {
@@ -148,11 +144,11 @@ const TYPE_LABELS: Record<UnitType, string> = {
 };
 
 const TYPE_COLORS: Record<UnitType, { bg: string; text: string; border: string }> = {
-  student: { bg: "rgba(27,120,60,0.18)",  text: "var(--brand-500)", border: "rgba(27,120,60,0.4)"  },
-  family:  { bg: "rgba(59,130,246,0.18)",  text: "#60a5fa", border: "rgba(59,130,246,0.4)"  },
-  studio:  { bg: "rgba(167,139,250,0.18)", text: "#c084fc", border: "rgba(167,139,250,0.4)" },
-  shared:  { bg: "rgba(251,146,60,0.18)",  text: "#fb923c", border: "rgba(251,146,60,0.4)"  },
-  employee: { bg: 'rgba(234,179,8,0.18)', text: '#eab308', border: 'rgba(234,179,8,0.4)' },
+  student: { bg: "rgba(0,211,141,0.08)", text: "#00a86b", border: "rgba(0,211,141,0.35)" },
+  family: { bg: "rgba(59,130,246,0.08)", text: "#2563eb", border: "rgba(59,130,246,0.3)" },
+  studio: { bg: "rgba(167,139,250,0.1)", text: "#9333ea", border: "rgba(167,139,250,0.35)" },
+  shared: { bg: "rgba(251,146,60,0.1)", text: "#ea580c", border: "rgba(251,146,60,0.35)" },
+  employee: { bg: "rgba(234,179,8,0.12)", text: "#ca8a04", border: "rgba(234,179,8,0.35)" },
 };
 
 // ─── Framer Motion Variants ───────────────────────────────────────────────────
@@ -202,146 +198,6 @@ const modalVariants: Variants = {
     transition: { duration: 0.4 } 
   }
 };
-// ─── Smart Query Parser ───────────────────────────────────────────────────────
-// لماذا خارج الـ Component؟ → pure function، لا تحتاج re-render، سهلة الـ testing
-function parseSearchQuery(query: string): ParsedFilters {
-  if (!query.trim()) return { area: "", maxPrice: null, unitType: "", keywords: "" };
-
-  let remaining = query.trim();
-
-  // ── 1. استخراج السعر (يدعم: 6000، 6 آلاف، 6k) ──────────────────────────────
-  let maxPrice: number | null = null;
-  const priceMatch = remaining.match(/(\d+(?:[.,]\d+)?)\s*(?:آلاف|الف|ألف|k)/i);
-  const rawMatch   = remaining.match(/(\d{3,})/); 
-
-  if (priceMatch) {
-    maxPrice = parseFloat(priceMatch[1]) * 1000;
-    remaining = remaining.replace(priceMatch[0], " ");
-  } else if (rawMatch) {
-    maxPrice = parseFloat(rawMatch[1]);
-    remaining = remaining.replace(rawMatch[0], " ");
-  }
-
-  // ── 2. خريطة المناطق (AREAS_MAP) ──────────────────────────────────────────
-const AREAS_MAP: Record<string, string> = {
-    // --- الدقهلية والمنصورة (قلب المشروع) ---
-    "المنصورة": "المنصورة", "منصورة": "المنصورة", "طلخا": "المنصورة","جامعة المنصورة": "المنصورة", "جامعة المنصوره": "المنصورة",
-    "المشاية": "المنصورة", "توريل": "المنصورة", "حي الجامعة": "المنصورة", "المشايه": "المنصورة","الجامعه": "المنصورة",
-    "الترعة": "المنصورة", "الترعه": "المنصورة", "جديلة": "المنصورة", "سندوب": "المنصورة",
-    "المجزر": "المنصورة", "الدراسات": "المنصورة", "عزبة عقل": "المنصورة",
-
-    // --- القاهرة الكبرى (العاصمة والأحياء) ---
-    "القاهرة": "القاهرة", "قاهرة": "القاهرة", "مدينة نصر": "القاهرة", "مدينه نصر": "القاهرة",
-    "التجمع": "القاهرة", "تجمع": "القاهرة", "الخامس": "القاهرة", "الرحاب": "القاهرة",
-    "مدينتي": "القاهرة", "مدينتى": "القاهرة", "المعادي": "القاهرة", "المعادى": "القاهرة",
-    "حلوان": "القاهرة", "شبرا": "القاهرة", "وسط البلد": "القاهرة", "الزمالك": "القاهرة",
-    "مصر الجديدة": "القاهرة", "مصر الجديده": "القاهرة", "عين شمس": "القاهرة", "المقطم": "القاهرة",
-
-    // --- الجيزة وضواحيها ---
-    "الجيزة": "الجيزة", "جيزة": "الجيزة", "الدقي": "الجيزة", "الدقى": "الجيزة",
-    "المهندسين": "الجيزة", "مهندسين": "الجيزة", "الهرم": "الجيزة", "فيصل": "الجيزة",
-    "أكتوبر": "الجيزة", "اكتوبر": "الجيزة", "زايد": "الجيزة", "الشيخ زايد": "الجيزة",
-    "حدائق الأهرام": "الجيزة", "المنيب": "الجيزة",
-
-    // --- الإسكندرية والساحل (المصايف) ---
-    "الإسكندرية": "الإسكندرية", "اسكندرية": "الإسكندرية", "إسكندرية": "الإسكندرية",
-    "سموحة": "الإسكندرية", "سموحه": "الإسكندرية", "ميامي": "الإسكندرية", "ميامى": "الإسكندرية",
-    "المنتدة": "الإسكندرية", "العجمي": "الإسكندرية", "السيوف": "الإسكندرية",
-    "الساحل": "الإسكندرية", "الساحل الشمالي": "الإسكندرية", "الساحل الشمالى": "الإسكندرية",
-    "مارينا": "الإسكندرية", "سيدي جابر": "الإسكندرية",
-
-    // --- محافظات الدلتا والقناة ---
-    "طنطا": "الغربية", "المحلة": "الغربية", "الزقازيق": "الشرقية", "بنها": "القليوبية",
-    "بورسعيد": "بورسعيد", "الإسماعيلية": "الإسماعيلية", "السويس": "السويس", "دمياط": "دمياط",
-    "راس البر": "دمياط", "رأس البر": "دمياط",
-
-    // --- الصعيد ---
-    "أسيوط": "أسيوط", "اسيوط": "أسيوط", "المنيا": "المنيا", "منيا": "المنيا",
-    "سوهاج": "سوهاج", "قنا": "قنا", "الأقصر": "الأقصر", "اسوان": "أسوان", "أسوان": "أسوان",
-
-    // --- مناطق ساحلية أخرى ---
-    "الغردقة": "البحر الأحمر", "شرم الشيخ": "جنوب سيناء", "مرسى مطروح": "مطروح", "مطروح": "مطروح"
-  };
-
-  let area = "";
-  for (const [keyword, canonical] of Object.entries(AREAS_MAP)) {
-    if (remaining.includes(keyword)) {
-      area = canonical;
-      remaining = remaining.replace(new RegExp(keyword, 'g'), " ");
-      break; 
-    }
-  }
-
-  // ── 3. تحديد نوع الوحدة (TYPE_MAP) ────────────────────────────────────────
-  const TYPE_MAP: [string[], UnitType][] = [
-    [["سكن طلاب","طلاب","طالب","طلبة","جامعة"], "student"],
-    [["موظفين","موظف","للعمل","عمال"], "employee"],
-    [["مشترك","شيرينج","شير"], "shared"],
-    [["ستوديو","استوديو"], "studio"],
-    [["عائلي","عائلة","أسرة","عيلة"], "family"],
-  ];
-
-  let unitType: UnitType | "" = "";
-  for (const [keywords, type] of TYPE_MAP) {
-    if (keywords.some(k => remaining.includes(k))) {
-      unitType = type;
-      keywords.forEach(k => { remaining = remaining.replace(new RegExp(k, 'g'), " "); });
-      break;
-    }
-  }
-
-  // ── 4. الكلمات الدالة والكلمات التي يجب تجاهلها (Stop Words) ───────────────
-  const stopWords = [
-    // 1. أفعال الطلب والبحث (User Intent)
-    "عايز", "عاوز", "محتاج", "ابحث", "لاقي", "دورلي", "شوفلي", "بدور", "ببحث", 
-    "محتاجين", "عاوزين", "نفسي", "نفسنا", "دور", "فتش", "ألاقي", "الاقي", "متاح", "موجود",
-
-    // 2. حروف الجر والروابط (العامية والفصحى)
-    "في", "فى", "بـ", "ب", "على", "ع", "من", "إلى", "الى", "و", "أو", "او", 
-    "مع", "عند", "جنب", "بجوار", "قدام", "ورا", "تحت", "فوق", "بين",
-
-    // 3. كلمات وصف العقار الحشوية (Object Fillers)
-    "شقة", "شقه", "وحدة", "وحده", "عقار", "مكان", "سكن", "أوضة", "اوضة", "غرفة", "غرفه",
-    "بيت", "منزل", "عمارة", "عماره", "دور", "ارضي", "أرضي", "روف", "سطوح", "بلكونة", "بلكونه",
-
-    // 4. كلمات المال والأسعار (Financial Fillers)
-    "ايجار", "إيجار", "بإيجار", "سعر", "سعرها", "سعره", "تمن", "ثمن", "فلوس", "رخيص", 
-    "غالي", "لقطة", "لقطه", "حدود", "بحدود", "رينج", "رينج", "تقريبا", "حوالي", "جنيه", 
-    "جم", "ج.م", "كاش", "قسط", "مطلوب", "بكام",
-
-    // 5. الضمائر والأسماء الموصولة
-    "اللي", "اللى", "الذي", "التي", "هو", "هي", "ده", "دي", "دى", "هنا", "هناك",
-
-    // 6. كلمات الحشو والذوقيات (Politeness & Fillers)
-    "لو سمحت", "من فضلك", "يا", "ياريت", "يا ريت", "بقولك", "ممكن", "العلم", "بص", 
-    "كده", "كدا", "حاجة", "حاجه", "تمام", "أوي", "قوي", "خالص", "جداً", "جدا", "يكون", "تكون",
-
-    // 7. كلمات النفي والاستدراك (Crucial for filtering)
-    "مش", "لا", "لأ", "مفيش", "بدون", "غير", "إلا", "الا", "بس",
-
-    // 8. كلمات الحالة (Status words)
-    "نضيف", "نظيف", "جديد", "لوكس", "سوبر", "مفروش", "فاضي", "فاضى", "هادي", "هادى",
-    // 📍 كلمات الموقع والمسافة (اللي سألت عليها)
-    "جنب", "جمب", "بجوار", "قريب", "قريبة", "قريبه", "عند", "عندي", "قدام", 
-    "ورا", "خلف", "أمام", "ناحية", "ناحيه", "على", "ع", "بين", 
-    "وسط", "قلب", "داخل", "برا", "بره", "حوالين", "من", "بتاع", "بتاعة",
-    // كلمات عامة
-    "في", "فى", "بـ", "ب", "حدود", "جنيه", "اللي", "ده", "دي", "ممكن", "ياريت"
-  ];
-
-  let keywords = remaining;
-  
-  // التنظيف باستخدام Regex الذكي اللي بيحافظ على الكلمات المستقلة
-  stopWords.forEach(w => {
-    const regex = new RegExp(`(^|\\s)${w}(\\s|$)`, "gi");
-    keywords = keywords.replace(regex, " ");
-  });
-
-  // التنظيف النهائي
-  keywords = keywords.replace(/\d+/g, " ").replace(/\s+/g, " ").trim();
-
-  return { area, maxPrice, unitType, keywords };
-}
 // ─── Component ────────────────────────────────────────────────────────────────
 export default function PublicPageClient() {
   const router = useRouter();
@@ -358,7 +214,10 @@ export default function PublicPageClient() {
   const [leadLoading, setLeadLoading]       = useState(false);
   const [activeFilter, setActiveFilter] = useState<UnitType | "all">("all");
   const [mobileChatFocus, setMobileChatFocus] = useState(false);
+  const [chatOpenSignal, setChatOpenSignal] = useState(0);
   const [listLayoutMobile, setListLayoutMobile] = useState(false);
+  const [saveAlertBusy, setSaveAlertBusy] = useState(false);
+  const [saveAlertTip, setSaveAlertTip] = useState<string | null>(null);
 
   useEffect(() => {
     void loadProperties();
@@ -462,6 +321,49 @@ export default function PublicPageClient() {
 
   const tc = (unitType: UnitType) => TYPE_COLORS[unitType] || TYPE_COLORS.family;
 
+  const saveSearchAlert = async () => {
+    if (!searchQuery.trim() && activeFilter === "all") {
+      setSaveAlertTip("اكتب بحثاً أو اختر نوع وحدة أولاً");
+      window.setTimeout(() => setSaveAlertTip(null), 4000);
+      return;
+    }
+    setSaveAlertBusy(true);
+    setSaveAlertTip(null);
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) {
+        router.push("/login?next=/");
+        return;
+      }
+      const parsed = parseSearchQuery(searchQuery);
+      const filters: SavedSearchFiltersV1 = {
+        v: 1,
+        searchQuery,
+        activeFilter,
+        parsed: {
+          area: parsed.area,
+          maxPrice: parsed.maxPrice,
+          unitType: parsed.unitType,
+          keywords: parsed.keywords,
+        },
+      };
+      const { error } = await supabase.from("saved_searches").insert({
+        user_id: user.id,
+        filters,
+      });
+      if (error) {
+        setSaveAlertTip("تعذّر حفظ التنبيه. تأكد من تسجيل الدخول وتشغيل سكربت قاعدة البيانات (saved_searches).");
+        return;
+      }
+      setSaveAlertTip("تم حفظ التنبيه — سنُبلغك عند ظهور عقار مشابه");
+    } finally {
+      setSaveAlertBusy(false);
+      window.setTimeout(() => setSaveAlertTip(null), 6000);
+    }
+  };
+
   // ─── Render ─────────────────────────────────────────────────────────────────
   return (
     <>
@@ -469,15 +371,13 @@ export default function PublicPageClient() {
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
         *, *::before, *::after { box-sizing: border-box; }
         html { scroll-behavior: smooth; }
-        body { font-family: 'Cairo', sans-serif; background: #020617; }
+        body { font-family: var(--font-cairo), 'Cairo', sans-serif; background: #f9fdfc; }
 
-        /* Scrollbar */
         ::-webkit-scrollbar       { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: var(--brand-500); border-radius: 99px; }
+        ::-webkit-scrollbar-thumb { background: #00d38d; border-radius: 99px; }
 
-        /* Select options dark theme */
-        select option { background: #0f172a; color: #f8fafc; }
+        select option { background: #fff; color: #0f172a; }
 
         /* Hide number input arrows */
         input[type=number]::-webkit-inner-spin-button,
@@ -485,12 +385,12 @@ export default function PublicPageClient() {
 
         /* Nav hover */
         .nav-link { transition: color 0.2s ease, border-color 0.2s ease; }
-        .nav-link:hover { color: var(--brand-500) !important; border-color: var(--brand-500) !important; }
+        .nav-link:hover { color: #00d38d !important; border-color: #00d38d !important; }
 
         /* Input focus glow */
         .field:focus {
-          border-color: rgba(27,120,60,0.6) !important;
-          box-shadow: 0 0 0 3px rgba(27,120,60,0.12);
+          border-color: rgba(0,211,141,0.45) !important;
+          box-shadow: 0 0 0 2px rgba(0,211,141,0.15);
         }
 
         /* WhatsApp pulse */
@@ -504,9 +404,11 @@ export default function PublicPageClient() {
         @keyframes spin { to { transform: rotate(360deg); } }
         .spinner { animation: spin 0.75s linear infinite; }
 
-        /* Active chip glow */
         .chip-active {
-          box-shadow: 0 0 16px rgba(27,120,60,0.35), inset 0 1px 0 rgba(255,255,255,0.08);
+          box-shadow: none;
+          border-color: #00d38d !important;
+          background: rgba(0,211,141,0.08) !important;
+          color: #009e6a !important;
         }
 
         /* Bottom nav – show only on mobile */
@@ -526,29 +428,13 @@ export default function PublicPageClient() {
         dir="rtl"
         style={{
           minHeight: "100vh",
-          /* Vibrant soft-dark radial background — emerald-900/20 → slate-950 */
-          background: "radial-gradient(ellipse 120% 80% at 100% 0%, rgba(6,78,59,0.22) 0%, #020617 55%)",
-          fontFamily: "'Cairo', sans-serif",
-          color: "#f8fafc",
+          background: "#f9fdfc",
+          fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
+          color: "#0f172a",
           overflowX: "hidden",
           position: "relative",
         }}
       >
-        {/* Secondary ambient glow — bottom-left */}
-        <div
-          aria-hidden="true"
-          style={{
-            position: "fixed",
-            bottom: 0,
-            left: 0,
-            width: 500,
-            height: 500,
-            background: "radial-gradient(circle, rgba(27,120,60,0.07) 0%, transparent 70%)",
-            pointerEvents: "none",
-            zIndex: 0,
-          }}
-        />
-
         <div
           className={[
             "transition-opacity duration-200 ease-out",
@@ -558,6 +444,12 @@ export default function PublicPageClient() {
         >
         <Banner />
 
+        {/* Soft green gradient band: nav + hero + search sit above mint page bg */}
+        <div
+          style={{
+            background: "linear-gradient(180deg, rgba(0, 211, 141, 0.14) 0%, rgba(0, 211, 141, 0.07) 28%, rgba(249, 253, 252, 0.92) 72%, #f9fdfc 100%)",
+          }}
+        >
         {/* ══════════════════ NAVIGATION ══════════════════ */}
         <Navbar />
 
@@ -567,34 +459,32 @@ export default function PublicPageClient() {
           initial="hidden"
           animate="visible"
           style={{
-            padding: "6rem 1.5rem 7rem",
+            padding: "4rem 1.5rem 3.5rem",
             textAlign: "center",
             position: "relative",
             zIndex: 1,
           }}
         >
-          {/* Badge */}
           <motion.div
-            initial={{ opacity: 0, scale: 0.95 }} // قللنا الـ scale عشان ما يكبرش بزيادة
+            initial={{ opacity: 0, scale: 0.98 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ 
-                delay: 0.3, // انتظار بسيط عشان العين تركز
-                duration: 0.8, 
-                ease: [0.16, 1, 0.3, 1] as any // Apple-style curve
+                delay: 0.2,
+                duration: 0.5, 
+                ease: [0.16, 1, 0.3, 1] as any
               }}
             style={{
               display: "inline-flex",
               alignItems: "center",
               gap: "0.4rem",
-              background: "rgba(27,120,60,0.1)",
-              border: "1px solid rgba(27,120,60,0.3)",
-              padding: "7px 22px",
-              borderRadius: 99,
+              background: "rgba(0,211,141,0.08)",
+              border: "1px solid rgba(0,211,141,0.25)",
+              padding: "6px 18px",
+              borderRadius: 999,
               fontSize: 13,
               fontWeight: 700,
-              color: "var(--brand-500)",
-              marginBottom: "1.75rem",
-              backdropFilter: "blur(8px)",
+              color: "#00a86b",
+              marginBottom: "1.5rem",
             }}
           >
             <span style={{ fontSize: 10 }}>●</span>
@@ -604,39 +494,28 @@ export default function PublicPageClient() {
           {/* H1 */}
           <h1
             style={{
-              fontSize: "clamp(2.1rem, 5.5vw, 3.75rem)",
+              fontSize: "clamp(1.85rem, 5vw, 3rem)",
               fontWeight: 900,
-              lineHeight: 1.18,
-              marginBottom: "1.1rem",
-              color: "#ffffff",
+              lineHeight: 1.2,
+              marginBottom: "1rem",
+              color: "#0f172a",
               letterSpacing: "-0.5px",
             }}
           >
             لاقي{" "}
-            <span
-              style={{
-                background: "linear-gradient(135deg, var(--brand-600) 0%, var(--brand-400) 100%)",
-                WebkitBackgroundClip: "text",
-                WebkitTextFillColor: "transparent",
-                backgroundClip: "text",
-              }}
-            >
-              سكنك
-            </span>{" "}
-            بسهولة وأمان
+            <span style={{ color: "#00d38d" }}>سكنك</span> بسهولة وأمان
           </h1>
 
-          {/* Subtitle */}
           <p
             style={{
               fontSize: 17,
-              color: "#94a3b8",
+              color: "#64748b",
               maxWidth: 500,
-              margin: "0 auto 3rem",
+              margin: "0 auto 2.25rem",
               lineHeight: 1.85,
             }}
           >
-
+            ابحث بالعربي عن المنطقة والسعر ونوع الوحدة — بدون تعقيد.
           </p>
 
           {/* ── SEARCH BOX ── */}
@@ -652,7 +531,7 @@ export default function PublicPageClient() {
               transition={{ delay: 0.5, duration: 0.6 }}
               style={{
                 fontSize: 14, color: "#64748b", textAlign: "center",
-                marginBottom: "0.9rem", lineHeight: 1.7,
+                marginBottom: "0.75rem", lineHeight: 1.7,
               }}
             >
               اكتب طلبك هنا — هنوجّه مباشرة لمساعد دَورلي الذكي 🤖✨
@@ -661,21 +540,20 @@ export default function PublicPageClient() {
             {/* Input Row */}
             <div
               style={{
-                background: "rgba(255,255,255,0.04)",
-                backdropFilter: "blur(24px)",
-                border: "1px solid rgba(255,255,255,0.08)",
-                borderRadius: 20,
-                padding: "0.75rem 0.75rem 0.75rem 0.9rem",
+                background: "#ffffff",
+                border: "1px solid rgba(226, 232, 240, 0.95)",
+                borderRadius: 12,
+                padding: "0.65rem 0.75rem",
                 display: "flex",
                 gap: "0.65rem",
                 alignItems: "center",
-                boxShadow: "0 32px 80px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06)",
-                transition: "border-color 0.25s",
+                boxShadow:
+                  "0 10px 40px rgba(15, 23, 42, 0.07), 0 2px 10px rgba(0, 211, 141, 0.06), 0 0 0 1px rgba(255,255,255,0.8) inset",
+                transition: "border-color 0.2s, box-shadow 0.2s",
               }}
-              onFocus={() => {/* يمكن إضافة glow لاحقاً */}}
             >
               {/* Search icon */}
-              <span style={{ fontSize: 18, flexShrink: 0, opacity: 0.5 }}>🔍</span>
+              <span style={{ fontSize: 18, flexShrink: 0, opacity: 0.45 }}>🔍</span>
 
               {/* The Smart Input */}
               <input
@@ -697,8 +575,8 @@ export default function PublicPageClient() {
                   border: "none",
                   outline: "none",
                   fontSize: 15,
-                  fontFamily: "'Cairo', sans-serif",
-                  color: "#f8fafc",
+                  fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
+                  color: "#0f172a",
                   padding: "8px 4px",
                 }}
               />
@@ -726,26 +604,30 @@ export default function PublicPageClient() {
                 >✕</button>
               )}
 
-              {/* Search Button */}
+              {/* Search Button — soft pulse on md+ (globals: .chat-invite-pulse) */}
               <button
                 type="button"
                 onClick={submitHeroToAi}
+                className="chat-invite-pulse chat-invite-pulse--desktop-only"
                 style={{
-                  background: "var(--brand-gradient-chat)",
-                  color: "#fff", border: "none", borderRadius: 14,
-                  padding: "11px 22px", fontFamily: "'Cairo', sans-serif",
-                  fontSize: 13, fontWeight: 800, cursor: "pointer",
-                  whiteSpace: "nowrap", flexShrink: 0,
-                  boxShadow: "0 0 0 1px rgba(27,120,60,0.4), 0 8px 28px rgba(27,120,60,0.35)",
-                  transition: "box-shadow 0.25s, transform 0.2s",
+                  background: "#00d38d",
+                  color: "#fff",
+                  border: "none",
+                  borderRadius: 8,
+                  padding: "10px 20px",
+                  fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  transition: "opacity 0.2s, background 0.2s, filter 0.2s",
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(27,120,60,0.6), 0 12px 36px rgba(27,120,60,0.5)";
-                  e.currentTarget.style.transform = "translateY(-1px)";
+                  e.currentTarget.style.background = "#00bf7f";
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.boxShadow = "0 0 0 1px rgba(27,120,60,0.4), 0 8px 28px rgba(27,120,60,0.35)";
-                  e.currentTarget.style.transform = "translateY(0)";
+                  e.currentTarget.style.background = "#00d38d";
                 }}
               >
                 اسأل دَورلي ✦
@@ -763,7 +645,7 @@ export default function PublicPageClient() {
                 }}
               >
                 {parsedFilters.area && (
-                  <span style={{ background: "rgba(27,120,60,0.12)", border: "1px solid rgba(27,120,60,0.3)", borderRadius: 99, fontSize: 11, fontWeight: 700, color: "var(--brand-500)", padding: "4px 12px" }}>
+                  <span style={{ background: "rgba(0,211,141,0.1)", border: "1px solid rgba(0,211,141,0.3)", borderRadius: 999, fontSize: 11, fontWeight: 700, color: "#00a86b", padding: "4px 12px" }}>
                     📍 {parsedFilters.area}
                   </span>
                 )}
@@ -781,6 +663,7 @@ export default function PublicPageClient() {
             )}
           </section>
         </motion.header>
+        </div>
 
         {/* ══════════════════ LISTINGS ══════════════════ */}
         <main
@@ -815,20 +698,19 @@ export default function PublicPageClient() {
                     className={isActive ? "chip-active" : ""}
                     style={{
                       cursor: "pointer",
-                      padding: "0.8rem 1.6rem",
-                      borderRadius: "1.2rem",
-                      fontSize: "0.95rem",
+                      padding: "0.65rem 1.25rem",
+                      borderRadius: 8,
+                      fontSize: "0.9rem",
                       fontWeight: 600,
                       display: "flex",
                       alignItems: "center",
-                      gap: "0.6rem",
-                      transition: "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                      // التعديل هنا: نربط الألوان بـ isActive الجديدة
-                      border: `1.5px solid ${isActive ? "rgba(27,120,60,0.7)" : "rgba(255,255,255,0.06)"}`,
-                      background: isActive ? "rgba(27,120,60,0.12)" : "rgba(255,255,255,0.03)",
-                      color: isActive ? "var(--brand-500)" : "#94a3b8",
+                      gap: "0.5rem",
+                      transition: "border-color 0.2s, background 0.2s, color 0.2s",
+                      border: `1px solid ${isActive ? "#00d38d" : "#e5e7eb"}`,
+                      background: isActive ? "rgba(0,211,141,0.08)" : "#ffffff",
+                      color: isActive ? "#009e6a" : "#64748b",
                       whiteSpace: "nowrap",
-                      boxShadow: isActive ? "0 0 20px rgba(27,120,60,0.15)" : "none",
+                      boxShadow: "none",
                     }}
                   >
                     <span style={{ fontSize: "1.2rem" }}>{t.icon}</span>
@@ -848,6 +730,33 @@ export default function PublicPageClient() {
             </p>
           )}
 
+          {!loading && (searchQuery.trim() || activeFilter !== "all") && (
+            <div style={{ marginBottom: "1.5rem", display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 8 }}>
+              <button
+                type="button"
+                disabled={saveAlertBusy}
+                onClick={() => void saveSearchAlert()}
+                style={{
+                  background: "#ffffff",
+                  color: "#00a86b",
+                  border: "1px solid rgba(0,211,141,0.4)",
+                  borderRadius: 8,
+                  padding: "10px 18px",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: saveAlertBusy ? "wait" : "pointer",
+                  fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
+                  opacity: saveAlertBusy ? 0.75 : 1,
+                }}
+              >
+                🔔 نبهني عند توفر عقار مشابه
+              </button>
+              {saveAlertTip ? (
+                <p style={{ margin: 0, fontSize: 12, color: "#94a3b8", maxWidth: 420, lineHeight: 1.6 }}>{saveAlertTip}</p>
+              ) : null}
+            </div>
+          )}
+
           {/* States */}
           {loading ? (
             <div style={{ textAlign: "center", padding: "6rem 0" }}>
@@ -857,8 +766,8 @@ export default function PublicPageClient() {
                   width: 48,
                   height: 48,
                   borderRadius: "50%",
-                  border: "3px solid rgba(27,120,60,0.15)",
-                  borderTop: "3px solid var(--brand-500)",
+                  border: "3px solid rgba(0,211,141,0.2)",
+                  borderTop: "3px solid #00d38d",
                   margin: "0 auto 1.25rem",
                 }}
               />
@@ -876,10 +785,15 @@ export default function PublicPageClient() {
                 <button
                   onClick={() => setSearchQuery("")}
                   style={{
-                    background: "rgba(27,120,60,0.1)", color: "var(--brand-500)",
-                    border: "1px solid rgba(27,120,60,0.3)", borderRadius: 12,
-                    padding: "10px 24px", fontSize: 13, fontWeight: 700,
-                    cursor: "pointer", fontFamily: "'Cairo', sans-serif",
+                    background: "#00d38d",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: 8,
+                    padding: "10px 24px",
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
                   }}
                 >
                   إلغاء الفلاتر وعرض الكل
@@ -924,17 +838,15 @@ export default function PublicPageClient() {
                         ? undefined
                         : { scale: 1.03, transition: { duration: 0.25, ease: [0.22, 1, 0.36, 1] as any } }
                     }
-                    onClick={() => router.push(`/property/${p.id}`)}
+                    onClick={() => router.push(propertyPathFromRecord(p))}
                     aria-label={`عقار: ${p.title}`}
                     style={{
-                      background: "rgba(255,255,255,0.04)",
-                      backdropFilter: "blur(20px)",
-                      WebkitBackdropFilter: "blur(20px)",
-                      border: "1px solid rgba(255,255,255,0.08)",
-                      borderRadius: 24,
+                      background: "#ffffff",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 12,
                       overflow: "hidden",
                       cursor: "pointer",
-                      transition: "border-color 0.3s, box-shadow 0.3s",
+                      transition: "border-color 0.2s",
                       ...(listLayoutMobile
                         ? {
                             flex: "0 0 min(86vw, 320px)",
@@ -946,12 +858,10 @@ export default function PublicPageClient() {
                         : {}),
                     }}
                     onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(27,120,60,0.45)";
-                      (e.currentTarget as HTMLElement).style.boxShadow = "0 24px 64px rgba(27,120,60,0.14)";
+                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(0,211,141,0.45)";
                     }}
                     onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(255,255,255,0.08)";
-                      (e.currentTarget as HTMLElement).style.boxShadow = "none";
+                      (e.currentTarget as HTMLElement).style.borderColor = "#e5e7eb";
                     }}
                   >
                     {/* Image */}
@@ -972,7 +882,7 @@ export default function PublicPageClient() {
                           aria-hidden="true"
                           style={{
                             height: "100%",
-                            background: "linear-gradient(135deg, rgba(27,120,60,0.08), rgba(27,120,60,0.18))",
+                            background: "linear-gradient(135deg, rgba(0,211,141,0.06), rgba(0,211,141,0.12))",
                             display: "flex",
                             alignItems: "center",
                             justifyContent: "center",
@@ -988,7 +898,7 @@ export default function PublicPageClient() {
                         style={{
                           position: "absolute",
                           inset: 0,
-                          background: "linear-gradient(to top, rgba(2,6,23,0.75) 0%, transparent 55%)",
+                          background: "linear-gradient(to top, rgba(15,23,42,0.45) 0%, transparent 55%)",
                         }}
                       />
                       {/* Type badge */}
@@ -1013,23 +923,19 @@ export default function PublicPageClient() {
                             fontSize: 11,
                             fontWeight: 700,
                             padding: "4px 13px",
-                            backdropFilter: "blur(12px)",
-                            WebkitBackdropFilter: "blur(12px)",
                           }}
                         >
                           {TYPE_LABELS[p.unit_type]}
                         </span>
                         <span
                           style={{
-                            background: "rgba(15,23,42,0.72)",
-                            color: effectiveListingKind(p) === "sale" ? "#fbbf24" : "#86efac",
-                            border: "1px solid rgba(255,255,255,0.12)",
+                            background: "rgba(255,255,255,0.92)",
+                            color: effectiveListingKind(p) === "sale" ? "#ca8a04" : "#059669",
+                            border: "1px solid #e5e7eb",
                             borderRadius: 99,
                             fontSize: 11,
                             fontWeight: 700,
                             padding: "4px 13px",
-                            backdropFilter: "blur(12px)",
-                            WebkitBackdropFilter: "blur(12px)",
                           }}
                         >
                           {effectiveListingKind(p) === "sale" ? "🏷️ بيع" : "🔑 إيجار"}
@@ -1043,7 +949,7 @@ export default function PublicPageClient() {
                         style={{
                           fontSize: 16,
                           fontWeight: 800,
-                          color: "#ffffff",
+                          color: "#0f172a",
                           marginBottom: "0.45rem",
                           lineHeight: 1.45,
                         }}
@@ -1062,7 +968,7 @@ export default function PublicPageClient() {
                       >
                         <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
                           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="var(--brand-500)"/>
-                          <circle cx="12" cy="9" r="2.5" fill="#020617"/>
+                          <circle cx="12" cy="9" r="2.5" fill="#ffffff"/>
                         </svg>
                         {p.area} — {p.address}
                       </p>
@@ -1072,7 +978,7 @@ export default function PublicPageClient() {
                           display: "flex",
                           justifyContent: "space-between",
                           alignItems: "center",
-                          borderTop: "1px solid rgba(255,255,255,0.06)",
+                          borderTop: "1px solid #f1f5f9",
                           paddingTop: "1rem",
                         }}
                       >
@@ -1085,26 +991,24 @@ export default function PublicPageClient() {
                           </span>
                         </div>
                         <button
-                          onClick={(e) => { e.stopPropagation(); router.push(`/property/${p.id}`); }}
+                          onClick={(e) => { e.stopPropagation(); router.push(propertyPathFromRecord(p)); }}
                           style={{
-                            background: "rgba(27,120,60,0.1)",
-                            color: "var(--brand-500)",
-                            border: "1px solid rgba(27,120,60,0.3)",
-                            borderRadius: 10,
+                            background: "#00d38d",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 8,
                             fontSize: 12,
                             fontWeight: 700,
                             padding: "8px 16px",
                             cursor: "pointer",
-                            fontFamily: "'Cairo', sans-serif",
-                            transition: "background 0.2s, box-shadow 0.2s",
+                            fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
+                            transition: "opacity 0.2s, background 0.2s",
                           }}
                           onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(27,120,60,0.2)";
-                            (e.currentTarget as HTMLButtonElement).style.boxShadow = "0 0 12px rgba(27,120,60,0.3)";
+                            (e.currentTarget as HTMLButtonElement).style.background = "#00bf7f";
                           }}
                           onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "rgba(27,120,60,0.1)";
-                            (e.currentTarget as HTMLButtonElement).style.boxShadow = "none";
+                            (e.currentTarget as HTMLButtonElement).style.background = "#00d38d";
                           }}
                         >
                           تفاصيل ←
@@ -1144,9 +1048,7 @@ export default function PublicPageClient() {
               style={{
                 position: "fixed",
                 inset: 0,
-                background: "rgba(2,6,23,0.85)",
-                backdropFilter: "blur(16px)",
-                WebkitBackdropFilter: "blur(16px)",
+                background: "rgba(15,23,42,0.35)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -1162,28 +1064,28 @@ export default function PublicPageClient() {
                 exit="exit"
                 
                 style={{
-                  background: "rgba(10,20,38,0.97)",
-                  border: "1px solid rgba(27,120,60,0.2)",
-                  borderRadius: 28,
+                  background: "#ffffff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 12,
                   width: "100%",
                   maxWidth: 500,
                   maxHeight: "90vh",
                   overflowY: "auto",
-                  boxShadow: "0 48px 120px rgba(0,0,0,0.7), 0 0 0 1px rgba(27,120,60,0.08) inset",
+                  boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
                 }}
               >
                 {/* Modal header */}
                 <div
                   style={{
-                    background: "linear-gradient(135deg, rgba(27,120,60,0.18), rgba(27,120,60,0.08))",
-                    borderBottom: "1px solid rgba(255,255,255,0.06)",
-                    padding: "1.6rem",
-                    borderRadius: "28px 28px 0 0",
+                    background: "#f9fafb",
+                    borderBottom: "1px solid #e5e7eb",
+                    padding: "1.35rem 1.5rem",
+                    borderRadius: "12px 12px 0 0",
                   }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                     <div>
-                      <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800, color: "#ffffff" }}>
+                      <h2 style={{ margin: "0 0 6px", fontSize: 18, fontWeight: 800, color: "#0f172a" }}>
                         {selectedProperty.title}
                       </h2>
                       <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>
@@ -1194,9 +1096,9 @@ export default function PublicPageClient() {
                       onClick={closeModal}
                       aria-label="إغلاق"
                       style={{
-                        background: "rgba(255,255,255,0.07)",
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        color: "#94a3b8",
+                        background: "#ffffff",
+                        border: "1px solid #e5e7eb",
+                        color: "#64748b",
                         width: 34,
                         height: 34,
                         borderRadius: "50%",
@@ -1208,8 +1110,8 @@ export default function PublicPageClient() {
                         flexShrink: 0,
                         transition: "background 0.2s",
                       }}
-                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.14)"; }}
-                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.07)"; }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#f1f5f9"; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "#ffffff"; }}
                     >
                       ✕
                     </button>
@@ -1226,7 +1128,7 @@ export default function PublicPageClient() {
                         borderRadius: 16,
                         overflow: "hidden",
                         marginBottom: "1.4rem",
-                        border: "1px solid rgba(255,255,255,0.06)",
+                        border: "1px solid #e5e7eb",
                       }}
                     >
                       <Image
@@ -1244,9 +1146,9 @@ export default function PublicPageClient() {
                     <div
                       style={{
                         flex: 1,
-                        background: "rgba(27,120,60,0.08)",
-                        border: "1px solid rgba(27,120,60,0.22)",
-                        borderRadius: 14,
+                        background: "rgba(0,211,141,0.06)",
+                        border: "1px solid rgba(0,211,141,0.2)",
+                        borderRadius: 8,
                         padding: "13px 16px",
                       }}
                     >
@@ -1258,14 +1160,14 @@ export default function PublicPageClient() {
                     <div
                       style={{
                         flex: 1,
-                        background: "rgba(255,255,255,0.04)",
-                        border: "1px solid rgba(255,255,255,0.08)",
-                        borderRadius: 14,
+                        background: "#ffffff",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: 8,
                         padding: "13px 16px",
                       }}
                     >
                       <div style={{ fontSize: 11, color: "#64748b", marginBottom: 5 }}>نوع الوحدة</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: "#f8fafc" }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>
                         {TYPE_LABELS[selectedProperty.unit_type]}
                       </div>
                     </div>
@@ -1275,10 +1177,10 @@ export default function PublicPageClient() {
                     <p
                       style={{
                         fontSize: 13,
-                        color: "#94a3b8",
+                        color: "#64748b",
                         lineHeight: 1.9,
                         marginBottom: "1.4rem",
-                        borderBottom: "1px solid rgba(255,255,255,0.06)",
+                        borderBottom: "1px solid #f1f5f9",
                         paddingBottom: "1.4rem",
                       }}
                     >
@@ -1291,7 +1193,7 @@ export default function PublicPageClient() {
                       onSubmit={handleLeadSubmit}
                       style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}
                     >
-                      <p style={{ fontSize: 14, fontWeight: 700, color: "#f8fafc", marginBottom: 2 }}>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", marginBottom: 2 }}>
                         أدخل بياناتك للتواصل مع المالك
                       </p>
                       {["text", "tel"].map((inputType, i) => (
@@ -1310,13 +1212,13 @@ export default function PublicPageClient() {
                           }
                           className="field"
                           style={{
-                            background: "rgba(255,255,255,0.04)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            borderRadius: 12,
+                            background: "#ffffff",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: 8,
                             padding: "13px 16px",
                             fontSize: 14,
-                            fontFamily: "'Cairo', sans-serif",
-                            color: "#f8fafc",
+                            fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
+                            color: "#0f172a",
                             outline: "none",
                             transition: "border-color 0.2s, box-shadow 0.2s",
                           }}
@@ -1360,9 +1262,9 @@ export default function PublicPageClient() {
                       initial={{ opacity: 0, scale: 0.9 }}
                       animate={{ opacity: 1, scale: 1 }}
                       style={{
-                        background: "rgba(27,120,60,0.1)",
-                        border: "1px solid rgba(27,120,60,0.3)",
-                        borderRadius: 16,
+                        background: "rgba(0,211,141,0.08)",
+                        border: "1px solid rgba(0,211,141,0.25)",
+                        borderRadius: 8,
                         padding: "1.75rem",
                         textAlign: "center",
                       }}
@@ -1392,70 +1294,47 @@ export default function PublicPageClient() {
         >
           <div
             style={{
-              background: "rgba(255,255,255,0.04)",
-              backdropFilter: "blur(20px)",
-              WebkitBackdropFilter: "blur(20px)",
-              border: "1px solid rgba(27,120,60,0.18)",
-              borderRadius: 28,
-              padding: "3rem 2.5rem",
+              background: "#ffffff",
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: "2.5rem 2rem",
               display: "flex",
               justifyContent: "space-between",
               alignItems: "center",
               flexWrap: "wrap",
               gap: "1.5rem",
-              position: "relative",
-              overflow: "hidden",
             }}
           >
-            <div
-              aria-hidden="true"
-              style={{
-                position: "absolute",
-                left: -80,
-                top: -80,
-                width: 280,
-                height: 280,
-                background: "radial-gradient(circle, rgba(27,120,60,0.12) 0%, transparent 70%)",
-                pointerEvents: "none",
-              }}
-            />
-            <div style={{ position: "relative" }}>
-              <h2 style={{ fontSize: 24, fontWeight: 900, color: "#ffffff", marginBottom: 10 }}>
+            <div>
+              <h2 style={{ fontSize: 22, fontWeight: 900, color: "#0f172a", marginBottom: 10 }}>
                 أنت مالك عقار؟
               </h2>
-              <p style={{ color: "#94a3b8", fontSize: 15, lineHeight: 1.75 }}>
-                ارفع أول إعلانين مجاناً مع{" "}
-                <strong style={{ color: "var(--brand-500)" }}>دَورلي</strong>{" "}
-                وابدأ تستقبل عملاء من أول يوم
+              <p style={{ color: "#64748b", fontSize: 15, lineHeight: 1.75, margin: 0 }}>
+                انضم إلى <strong style={{ color: "#00d38d" }}>دورلي</strong> وانشر إعلانك بسهولة مع نظام النقاط
+                والمراجعة.
               </p>
             </div>
             <a
               href="/register"
               style={{
-                background: "var(--brand-gradient-chat)",
+                background: "#00d38d",
                 color: "#fff",
-                borderRadius: 16,
-                padding: "16px 40px",
+                borderRadius: 8,
+                padding: "14px 32px",
                 fontSize: 15,
-                fontWeight: 900,
+                fontWeight: 800,
                 textDecoration: "none",
                 whiteSpace: "nowrap",
-                boxShadow: "0 0 0 1px rgba(27,120,60,0.4), 0 10px 36px rgba(27,120,60,0.4)",
-                position: "relative",
-                transition: "box-shadow 0.25s, transform 0.2s",
+                transition: "background 0.2s",
               }}
               onMouseEnter={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.boxShadow =
-                  "0 0 0 1px rgba(27,120,60,0.6), 0 14px 44px rgba(27,120,60,0.6)";
-                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(-2px)";
+                (e.currentTarget as HTMLAnchorElement).style.background = "#00bf7f";
               }}
               onMouseLeave={(e) => {
-                (e.currentTarget as HTMLAnchorElement).style.boxShadow =
-                  "0 0 0 1px rgba(27,120,60,0.4), 0 10px 36px rgba(27,120,60,0.4)";
-                (e.currentTarget as HTMLAnchorElement).style.transform = "translateY(0)";
+                (e.currentTarget as HTMLAnchorElement).style.background = "#00d38d";
               }}
             >
-              ابدأ مجاناً الآن ✦
+              سجّل الآن
             </a>
           </div>
         </section>
@@ -1473,46 +1352,78 @@ export default function PublicPageClient() {
             bottom: 0,
             left: 0,
             right: 0,
-            background: "rgba(2,6,23,0.92)",
-            backdropFilter: "blur(24px)",
-            WebkitBackdropFilter: "blur(24px)",
-            borderTop: "1px solid rgba(255,255,255,0.06)",
+            background: "#ffffff",
+            borderTop: "1px solid #e5e7eb",
             display: "flex",
             justifyContent: "space-around",
-            padding: "0.8rem 0 1.1rem",
+            padding: "0.65rem 0 calc(0.85rem + env(safe-area-inset-bottom))",
             zIndex: 150,
           }}
         >
-          {[
-            { href: "/",         icon: "🏠", label: "الرئيسية" },
-            { href: "/search",   icon: "🔍", label: "بحث"      },
-            { href: "/register", icon: "➕", label: "إعلان"    },
-            { href: "/login",    icon: "👤", label: "حسابي"    },
-          ].map((item) => (
-            <a
-              key={item.href}
-              href={item.href}
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                gap: "4px",
-                textDecoration: "none",
-                color: "#64748b",
-                fontSize: 10,
-                fontWeight: 700,
-                minWidth: 56,
-                transition: "color 0.2s",
-              }}
-            >
-              <span style={{ fontSize: 22 }}>{item.icon}</span>
-              {item.label}
-            </a>
-          ))}
+          {(
+            [
+              { kind: "link" as const, href: "/", icon: "🏠", label: "الرئيسية" },
+              { kind: "chat" as const, icon: "🔍", label: "بحث" },
+              { kind: "link" as const, href: "/register", icon: "➕", label: "إعلان" },
+              { kind: "link" as const, href: "/login", icon: "👤", label: "حسابي" },
+            ] as const
+          ).map((item) => {
+            if (item.kind === "chat") {
+              const active = mobileChatFocus;
+              return (
+                <button
+                  key="nav-chat-search"
+                  type="button"
+                  aria-label="فتح مساعد دورلي للبحث"
+                  aria-pressed={active}
+                  onClick={() => setChatOpenSignal((n) => n + 1)}
+                  className="flex flex-col items-center gap-1 border-0 bg-transparent p-0"
+                  style={{
+                    color: active ? "#00d38d" : "#64748b",
+                    fontSize: 10,
+                    fontWeight: 700,
+                    minWidth: 56,
+                    transition: "color 0.2s, background 0.2s, box-shadow 0.2s",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-cairo), Cairo, sans-serif",
+                    borderRadius: 12,
+                    padding: "2px 8px 0",
+                    boxShadow: active ? "0 0 0 2px rgba(0,211,141,0.35)" : "none",
+                    background: active ? "rgba(0,211,141,0.08)" : "transparent",
+                  }}
+                >
+                  <span style={{ fontSize: 22 }}>{item.icon}</span>
+                  {item.label}
+                </button>
+              );
+            }
+            return (
+              <a
+                key={item.href}
+                href={item.href}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: "4px",
+                  textDecoration: "none",
+                  color: "#64748b",
+                  fontSize: 10,
+                  fontWeight: 700,
+                  minWidth: 56,
+                  transition: "color 0.2s",
+                }}
+              >
+                <span style={{ fontSize: 22 }}>{item.icon}</span>
+                {item.label}
+              </a>
+            );
+          })}
         </nav>
         </div>
 
         <ChatBot
+          openSignal={chatOpenSignal}
           pendingPrompt={chatBootstrap}
           onPendingPromptConsumed={handleChatBootstrapConsumed}
           onMobileSheetOpenChange={setMobileChatFocus}

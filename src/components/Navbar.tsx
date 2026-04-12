@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Menu, X } from "lucide-react";
@@ -9,8 +8,10 @@ import { supabase } from "@/lib/supabase";
 import { POINTS_CHANGED_EVENT } from "@/lib/profilePointsSync";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
 
+const BRAND = "#00d38d";
+
 /**
- * شريط التنقل العام — يتزامن مع جلسة Supabase ويعرض أزرار الضيف أو المستخدم بدون رمشة أولية.
+ * شريط تنقل خفيف — شعار نصي، خلفية بيضاء، أزرار أساسية باللون الأساسي.
  */
 export default function Navbar() {
   const router = useRouter();
@@ -119,56 +120,46 @@ export default function Navbar() {
         role="navigation"
         aria-label="القائمة الرئيسية"
         dir="rtl"
-        className="sticky top-0 z-[100] flex h-[58px] flex-nowrap items-center justify-between gap-2 border-b border-white/10 bg-slate-950/75 px-3 backdrop-blur-xl sm:h-[70px] sm:gap-3 sm:px-6 md:px-8"
+        className="sticky top-0 z-[100] flex h-11 flex-nowrap items-center justify-between gap-2 border-b border-gray-200/60 bg-transparent px-3 sm:h-12 sm:gap-3 sm:px-5"
       >
         <Link
           href="/"
           onClick={closeMobile}
-          className="flex min-w-0 max-w-[min(52vw,168px)] shrink items-center rounded-lg py-1.5 no-underline transition-opacity duration-200 hover:opacity-[0.92] sm:max-w-[200px] sm:px-2 md:max-w-none md:px-3"
-          aria-label="دَورلي – الصفحة الرئيسية"
+          className="flex min-w-0 shrink items-center py-1 no-underline transition-opacity hover:opacity-90"
+          aria-label="دورلي – الصفحة الرئيسية"
         >
-          <Image
-            src="/images/full-logo.png"
-            alt="دَورلي — Dowarly"
-            width={220}
-            height={44}
-            className="h-8 w-full max-h-9 object-contain object-center sm:h-10 sm:max-h-[2.5rem] md:w-auto"
-            priority
-            quality={75}
-          />
+          <span
+            className="text-xl font-extrabold tracking-tight sm:text-[1.35rem]"
+            style={{ color: BRAND, fontFamily: "var(--font-cairo), Cairo, sans-serif" }}
+          >
+            دورلي
+          </span>
         </Link>
 
         {userId && !loading ? (
           <Link
             href="/wallet"
-            className="hidden shrink-0 items-center rounded-full border border-emerald-500/35 bg-emerald-950/30 px-2.5 py-1.5 text-[11px] font-bold text-emerald-200 transition hover:border-emerald-400/50 hover:bg-emerald-950/45 sm:px-3 sm:text-xs md:flex"
+            className="hidden shrink-0 items-center rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 transition hover:border-gray-300 hover:bg-white sm:px-3 sm:text-xs md:flex"
             title="المحفظة والنقاط"
           >
             <span dir="ltr" className="whitespace-nowrap">
-              💎 {points} Points
+              💎 {points}
             </span>
           </Link>
         ) : null}
 
-        {/* Desktop / tablet — min-w يثبت العرض تقريباً بين حالتَي ضيف/مستخدم */}
-        <div className="hidden min-h-[38px] min-w-0 flex-nowrap items-center justify-end gap-2 md:flex md:min-w-[210px] md:gap-2.5 lg:min-w-[260px] lg:gap-3">
+        <div className="hidden min-h-[34px] min-w-0 flex-nowrap items-center justify-end gap-2 md:flex md:min-w-[200px] lg:min-w-[240px]">
           {loading ? (
             <>
-              <div
-                className="h-9 w-[5.75rem] shrink-0 animate-pulse rounded-xl bg-slate-700/55 ring-1 ring-white/5"
-                aria-hidden
-              />
-              <div
-                className="h-9 w-24 shrink-0 animate-pulse rounded-xl bg-slate-700/45 ring-1 ring-white/5"
-                aria-hidden
-              />
+              <div className="h-8 w-20 shrink-0 animate-pulse rounded-lg bg-gray-100" aria-hidden />
+              <div className="h-8 w-24 shrink-0 animate-pulse rounded-lg bg-gray-100" aria-hidden />
             </>
           ) : userId ? (
             <>
               {showDashboard ? (
                 <Link
                   href={dashboardHref}
-                  className="whitespace-nowrap rounded-xl border border-amber-500/45 bg-amber-950/20 px-4 py-2 text-center text-[13px] font-bold text-amber-100 transition hover:border-amber-400/70 hover:bg-amber-950/40"
+                  className="whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-center text-[13px] font-bold text-slate-700 transition hover:border-gray-300 hover:bg-gray-50"
                 >
                   لوحة التحكم
                 </Link>
@@ -176,7 +167,7 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                className="whitespace-nowrap rounded-xl border border-white/15 bg-white/[0.06] px-4 py-2 text-[13px] font-bold text-slate-200 transition hover:border-amber-500/35 hover:bg-amber-950/25 hover:text-amber-50"
+                className="whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-bold text-slate-600 transition hover:bg-gray-50"
               >
                 تسجيل الخروج
               </button>
@@ -185,13 +176,14 @@ export default function Navbar() {
             <>
               <Link
                 href="/register"
-                className="nav-link whitespace-nowrap rounded-xl border-[1.5px] border-emerald-500/50 px-[22px] py-2 text-center text-[13px] font-bold text-emerald-300 transition hover:border-emerald-400 hover:bg-emerald-950/25"
+                className="whitespace-nowrap rounded-lg border border-gray-200 bg-white px-4 py-1.5 text-center text-[13px] font-bold text-slate-700 transition hover:bg-gray-50"
               >
                 انضم كمالك
               </Link>
               <Link
                 href="/login"
-                className="whitespace-nowrap rounded-xl bg-gradient-to-l from-amber-600 to-emerald-700 px-[22px] py-2 text-center text-[13px] font-bold text-white shadow-lg shadow-amber-900/30 transition hover:brightness-110"
+                className="whitespace-nowrap rounded-lg px-4 py-1.5 text-center text-[13px] font-bold text-white transition hover:opacity-95"
+                style={{ backgroundColor: BRAND }}
               >
                 تسجيل الدخول
               </Link>
@@ -199,12 +191,11 @@ export default function Navbar() {
           )}
         </div>
 
-        {/* Mobile — نقاط + القائمة */}
         <div className="flex shrink-0 items-center gap-1.5 md:hidden">
           {userId && !loading ? (
             <Link
               href="/wallet"
-              className="flex min-h-[40px] min-w-[40px] items-center justify-center rounded-full border border-emerald-500/35 bg-emerald-950/35 px-2 text-[10px] font-bold text-emerald-200"
+              className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-gray-200 bg-gray-50 px-2 text-[10px] font-bold text-slate-700"
               title="المحفظة"
             >
               <span dir="ltr" className="whitespace-nowrap">
@@ -213,14 +204,11 @@ export default function Navbar() {
             </Link>
           ) : null}
           {loading ? (
-            <div
-              className="h-9 w-9 shrink-0 animate-pulse rounded-xl bg-slate-700/55 ring-1 ring-white/5"
-              aria-hidden
-            />
+            <div className="h-8 w-8 shrink-0 animate-pulse rounded-lg bg-gray-100" aria-hidden />
           ) : (
             <button
               type="button"
-              className="flex items-center justify-center rounded-xl border border-white/15 bg-white/[0.06] p-2 text-slate-200 transition hover:border-emerald-500/35 hover:bg-emerald-950/20 hover:text-emerald-100"
+              className="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-2 text-slate-600 transition hover:bg-gray-50"
               aria-expanded={mobileOpen}
               aria-controls="mobile-nav-drawer"
               aria-label={mobileOpen ? "إغلاق القائمة" : "فتح القائمة"}
@@ -232,16 +220,13 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* شريط جانبي — أقل من md */}
       <div
         className={`fixed inset-0 z-[110] md:hidden ${mobileOpen ? "pointer-events-auto" : "pointer-events-none"}`}
         aria-hidden={!mobileOpen}
       >
         <button
           type="button"
-          className={`absolute inset-0 bg-black/65 backdrop-blur-[2px] transition-opacity duration-300 ${
-            mobileOpen ? "opacity-100" : "opacity-0"
-          }`}
+          className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ${mobileOpen ? "opacity-100" : "opacity-0"}`}
           aria-label="إغلاق القائمة"
           tabIndex={mobileOpen ? 0 : -1}
           onClick={closeMobile}
@@ -252,17 +237,17 @@ export default function Navbar() {
           aria-modal="true"
           aria-label="قائمة التنقل"
           dir="rtl"
-          className={`absolute left-0 top-0 flex h-full w-[min(100%,300px)] max-w-[85vw] flex-col gap-3 border-r border-white/10 bg-slate-950/98 p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] shadow-2xl backdrop-blur-xl transition-transform duration-300 ease-out ${
+          className={`absolute left-0 top-0 flex h-full w-[min(100%,280px)] max-w-[85vw] flex-col gap-3 border-r border-gray-200 bg-white p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] transition-transform duration-200 ease-out ${
             mobileOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          <div className="mb-2 flex items-center justify-between gap-2 border-b border-white/10 pb-3">
-            <span className="text-sm font-bold text-slate-300" style={{ fontFamily: "'Cairo', sans-serif" }}>
+          <div className="mb-2 flex items-center justify-between gap-2 border-b border-gray-100 pb-3">
+            <span className="text-sm font-bold text-slate-600" style={{ fontFamily: "var(--font-cairo), sans-serif" }}>
               القائمة
             </span>
             <button
               type="button"
-              className="rounded-lg p-2 text-slate-400 hover:bg-white/10 hover:text-white"
+              className="rounded-lg p-2 text-slate-400 hover:bg-gray-100 hover:text-slate-700"
               aria-label="إغلاق"
               onClick={closeMobile}
             >
@@ -271,11 +256,11 @@ export default function Navbar() {
           </div>
 
           {!loading && userId ? (
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2">
               <Link
                 href="/wallet"
                 onClick={closeMobile}
-                className="rounded-xl border border-emerald-500/40 bg-emerald-950/25 px-4 py-3 text-center text-sm font-bold text-emerald-100"
+                className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm font-bold text-slate-800"
               >
                 💎 المحفظة ({points} نقطة)
               </Link>
@@ -283,7 +268,7 @@ export default function Navbar() {
                 <Link
                   href={dashboardHref}
                   onClick={closeMobile}
-                  className="rounded-xl border border-amber-500/45 bg-amber-950/20 px-4 py-3 text-center text-sm font-bold text-amber-100"
+                  className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800"
                 >
                   لوحة التحكم
                 </Link>
@@ -291,39 +276,40 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                className="rounded-xl border border-white/15 bg-white/[0.06] px-4 py-3 text-sm font-bold text-slate-200"
+                className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-slate-600"
               >
                 تسجيل الخروج
               </button>
             </div>
           ) : !loading ? (
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2">
               <Link
                 href="/register"
                 onClick={closeMobile}
-                className="rounded-xl border-[1.5px] border-emerald-500/50 bg-emerald-950/15 px-4 py-3 text-center text-sm font-bold text-emerald-300"
+                className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800"
               >
                 انضم كمالك
               </Link>
               <Link
                 href="/login"
                 onClick={closeMobile}
-                className="rounded-xl bg-gradient-to-l from-amber-600 to-emerald-700 px-4 py-3 text-center text-sm font-bold text-white shadow-lg shadow-amber-900/30"
+                className="rounded-lg px-4 py-3 text-center text-sm font-bold text-white"
+                style={{ backgroundColor: BRAND }}
               >
                 تسجيل الدخول
               </Link>
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <div className="h-12 animate-pulse rounded-xl bg-slate-700/50" />
-              <div className="h-12 animate-pulse rounded-xl bg-slate-700/40" />
+              <div className="h-11 animate-pulse rounded-lg bg-gray-100" />
+              <div className="h-11 animate-pulse rounded-lg bg-gray-100" />
             </div>
           )}
 
           <Link
             href="/"
             onClick={closeMobile}
-            className="mt-auto border-t border-white/10 pt-4 text-center text-xs font-semibold text-slate-500 hover:text-slate-300"
+            className="mt-auto border-t border-gray-100 pt-4 text-center text-xs font-semibold text-slate-400 hover:text-slate-600"
           >
             الصفحة الرئيسية
           </Link>

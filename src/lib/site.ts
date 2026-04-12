@@ -1,6 +1,6 @@
 /**
  * Canonical site URL for metadata, sitemap, and robots.
- * Set NEXT_PUBLIC_SITE_URL in production (e.g. https://agrly.vercel.app).
+ * Set NEXT_PUBLIC_SITE_URL in production (e.g. https://dowarly.com).
  */
 export function getSiteUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
@@ -15,4 +15,28 @@ export function getSiteUrl(): string {
   }
 
   return "http://localhost:3000";
+}
+
+/**
+ * Base URL for layout metadata (OG, Twitter, canonical).
+ * Prefers NEXT_PUBLIC_SITE_URL; local dev uses localhost; production default is dowarly.com.
+ */
+export function getMetadataSiteUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (fromEnv) {
+    return fromEnv.replace(/\/$/, "");
+  }
+  if (process.env.NODE_ENV === "development") {
+    return "http://localhost:3000";
+  }
+  return "https://dowarly.com";
+}
+
+/** Sitemap URL for robots.txt (production default dowarly.com when env unset). */
+export function getPublicSitemapUrl(): string {
+  const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (fromEnv) {
+    return `${fromEnv.replace(/\/$/, "")}/sitemap.xml`;
+  }
+  return "https://dowarly.com/sitemap.xml";
 }

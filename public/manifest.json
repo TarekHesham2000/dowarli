@@ -1,26 +1,26 @@
 {
-  "name": "Dowarli",
-  "short_name": "Dowarli",
-  "description": "منصة إيجار عقارات لسكن الطلاب والمغتربين في مصر",
+  "name": "دورلي",
+  "short_name": "دورلي",
+  "description": "مساعدك الذكي للبحث عن سكن وشقق وسكن الطلاب في مصر",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f8fafc",
-  "theme_color": "#1B783C",
+  "background_color": "#f9fdfc",
+  "theme_color": "#00d38d",
   "icons": [
     {
-      "src": "/branding/app-icon.png",
+      "src": "/app-icon.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/branding/app-icon.png",
+      "src": "/app-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/branding/app-icon.png",
+      "src": "/app-icon.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

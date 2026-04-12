@@ -8,17 +8,17 @@ export default function Footer() {
   return (
     <footer
       style={{
-        background: "rgba(2,6,23,0.98)",
-        borderTop: "1px solid rgba(255,255,255,0.05)",
-        padding: "3rem 1.5rem 2rem",
+        background: "#ffffff",
+        borderTop: "1px solid #e5e7eb",
+        padding: "3rem 1.5rem 2.5rem",
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 23, fontWeight: 900, color: "#ffffff", marginBottom: "0.3rem" }}>
-        دَورلي{" "}
-        <span style={{ color: "var(--brand-500)", fontSize: 16, fontWeight: 600 }}>Dowarly</span>
+      <div style={{ fontSize: 22, fontWeight: 900, color: "#00d38d", marginBottom: "0.35rem", fontFamily: "var(--font-cairo), Cairo, sans-serif" }}>
+        دورلي{" "}
+        <span style={{ color: "#64748b", fontSize: 15, fontWeight: 600 }}>Dowarly</span>
       </div>
-      <p style={{ fontSize: 12, color: "#475569", marginBottom: "2rem" }}>
+      <p style={{ fontSize: 12, color: "#64748b", marginBottom: "2rem" }}>
         منصة الإيجار الأولى في مصر
       </p>
 
@@ -34,29 +34,19 @@ export default function Footer() {
               gap: 8,
               border: "none",
               cursor: "pointer",
-              borderRadius: 14,
+              borderRadius: 8,
               padding: "12px 28px",
               fontSize: 14,
               fontWeight: 800,
               color: "#fff",
-              background: "linear-gradient(135deg, #fb923c 0%, #f97316 45%, #ea580c 100%)",
-              boxShadow:
-                "0 0 0 1px rgba(251, 146, 60, 0.35), 0 8px 28px rgba(234, 88, 12, 0.42)",
-              transition: "transform 0.22s ease, box-shadow 0.22s ease, filter 0.22s ease",
+              background: "#00d38d",
+              transition: "background 0.2s ease",
             }}
             onMouseEnter={(e) => {
-              const el = e.currentTarget;
-              el.style.transform = "translateY(-3px) scale(1.02)";
-              el.style.filter = "brightness(1.08)";
-              el.style.boxShadow =
-                "0 0 0 1px rgba(253, 186, 116, 0.55), 0 14px 40px rgba(234, 88, 12, 0.55)";
+              e.currentTarget.style.background = "#00bf7f";
             }}
             onMouseLeave={(e) => {
-              const el = e.currentTarget;
-              el.style.transform = "translateY(0) scale(1)";
-              el.style.filter = "brightness(1)";
-              el.style.boxShadow =
-                "0 0 0 1px rgba(251, 146, 60, 0.35), 0 8px 28px rgba(234, 88, 12, 0.42)";
+              e.currentTarget.style.background = "#00d38d";
             }}
           >
             <span aria-hidden>⬇</span>

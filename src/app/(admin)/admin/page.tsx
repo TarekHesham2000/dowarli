@@ -6,6 +6,7 @@ import { Copy, Loader2 } from 'lucide-react'
 import { safeRouterRefresh } from '@/lib/safeRouterRefresh'
 import { getAdPostPointsCost, type ListingPurpose } from '@/lib/pointsConfig'
 import { notifyPointsChanged } from '@/lib/profilePointsSync'
+import { propertyPathFromRecord } from '@/lib/propertySlug'
 
 type Property = {
   id: number
@@ -16,6 +17,7 @@ type Property = {
   images: string[]
   description: string
   address: string
+  slug?: string | null
   video_url?: string; // 👈 لازم السطر ده يكون موجود هنا عشان الـ Error يروح
   listing_type?: string | null
   listing_purpose?: string | null
@@ -189,7 +191,7 @@ export default function AdminDashboard() {
     try {
       const [propsRes, transRes, verifiedRes, brokersRes, leadsRes, settingsRes] = await Promise.all([
         supabase.from('properties')
-          .select('id, title, area, price, status, images, description, address, video_url, listing_type, listing_purpose, was_charged, profiles(name, phone, id, points)')
+          .select('id, title, area, price, status, images, description, address, slug, video_url, listing_type, listing_purpose, was_charged, profiles(name, phone, id, points)')
           .order('created_at', { ascending: false }),
         supabase.from('transactions')
           .select('id, amount, screenshot_url, status, broker_id, sender_phone, points_requested, package_name, profiles(name, phone)')
@@ -467,9 +469,15 @@ useEffect(() => {
       showToast(
         property.was_charged
           ? 'تم تفعيل الإعلان وخصم النقاط من رصيد المالك'
-          : 'تم تفعيل الإعلان (بدون خصم — ضمن الحد المجاني)',
+          : 'تم تفعيل الإعلان (بدون خصم — إعلان مسجّل قبل نظام النقاط الحالي)',
         'success',
       )
+      void fetch('/api/admin/trigger-property-alerts', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ property_id: property.id }),
+      }).catch(() => {})
       setSelectedProperty(null)
       await loadAll()
       safeRouterRefresh(router)
@@ -1674,7 +1682,7 @@ useEffect(() => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
                   {/* 👇 ضيف الزرار ده هنا قبل زرار الحذف */}
                     <a 
-                      href={`/property/${p.id}`} 
+                      href={propertyPathFromRecord(p)} 
                       target="_blank" 
                       rel="noopener noreferrer"
                       style={{

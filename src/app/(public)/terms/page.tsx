@@ -1,91 +1,63 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import FooterLinks from "@/components/shared/FooterLinks";
+import InfoPageShell from "@/components/legal/InfoPageShell";
 
 export const metadata: Metadata = {
-  title: "الشروط والأحكام - دَورلي",
-  description: "الشروط والأحكام المنظمة لاستخدام منصة دَورلي.",
+  title: "الشروط والأحكام",
+  description: "شروط استخدام منصة دورلي ونشر الإعلانات ونظام النقاط.",
 };
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
-      <nav className="bg-white border-b px-4 py-4 flex items-center justify-between">
-        <Link href="/" className="font-bold text-green-800 text-lg">
-          دَورلي
-        </Link>
-        <Link href="/" className="text-sm text-green-700 hover:underline">
-          العودة للرئيسية
-        </Link>
-      </nav>
+    <InfoPageShell title="الشروط والأحكام" subtitle="آخر تحديث: أبريل 2026">
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">١. القبول</h2>
+        <p>باستخدامك لموقع أو تطبيق <strong>دورلي</strong> فإنك تقر بأنك قرأت هذه الشروط وتوافق عليها. إن لم توافق، يُرجى عدم استخدام الخدمة.</p>
+      </section>
 
-      <main className="max-w-3xl mx-auto px-4 py-10">
-        <div className="bg-white rounded-2xl shadow-sm p-6 sm:p-10">
-          <h1 className="text-2xl sm:text-3xl font-black text-gray-900 mb-2">
-            الشروط والأحكام
-          </h1>
-          <p className="text-gray-500 text-sm mb-8">آخر تحديث: أبريل 2026</p>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٢. الحساب والمسؤولية</h2>
+        <p>أنت مسؤول عن صحة بيانات التسجيل وعن أي نشاط يتم عبر حسابك. يجب عدم مشاركة بيانات الدخول مع الغير.</p>
+      </section>
 
-          <div className="space-y-6 text-gray-700 leading-8">
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-2">
-                1. قبول الشروط
-              </h2>
-              <p>
-                باستخدامك منصة دَورلي، فأنت توافق على الالتزام بهذه الشروط
-                والأحكام وجميع السياسات المرتبطة بها.
-              </p>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٣. نشر الإعلانات</h2>
+        <ul className="list-inside list-disc space-y-1">
+          <li>يلتزم المعلن بأن تكون المعلومات (السعر، العنوان، الصور، التوافر) صادقة ومحدّثة قدر الإمكان.</li>
+          <li>يحق للإدارة مراجعة الإعلان، تأخير النشر، الرفض، أو إيقاف إعلان يخالف السياسات دون إلزام بتعويض.</li>
+          <li>يُمنع نشر محتوى مخالف للقانون المصري أو مسيء أو مضلل أو مكرر بقصد الإزعاج.</li>
+        </ul>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-2">
-                2. مسؤولية الحساب
-              </h2>
-              <p>
-                أنت مسؤول عن صحة بياناتك وسرية معلومات تسجيل الدخول، وعن أي نشاط
-                يتم من خلال حسابك.
-              </p>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٤. نظام النقاط والمحفظة</h2>
+        <ul className="list-inside list-disc space-y-1">
+          <li>قد تُخصم نقاط عند نشر أو تفعيل إعلان وفق نوع الإعلان (إيجار/بيع) وسياسات المنصة الظاهرة في الواجهة.</li>
+          <li>طلبات شحن النقاط تخضع للمراجعة اليدوية؛ يجب إرسال إثبات السداد الصحيح.</li>
+          <li>النقاط غير قابلة للتحويل كعملة نقدية إلا إذا نصت السياسة لاحقاً على خلاف ذلك.</li>
+        </ul>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-2">
-                3. نشر الإعلانات
-              </h2>
-              <p>
-                يجب أن تكون بيانات العقار صحيحة وغير مضللة. يحق للإدارة مراجعة
-                الإعلانات وقبولها أو رفضها وفق سياسات المنصة.
-              </p>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٥. المساعد الذكي</h2>
+        <p>إجابات المساعد الآلي استرشادية ولا تغني عن التحقق من تفاصيل الإعلان والتواصل مع المعلن. دورلي غير مسؤولة عن قرارات تتخذ اعتماداً على المخرجات الآلية وحدها.</p>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-2">
-                4. استخدام المنصة
-              </h2>
-              <p>
-                يُمنع استخدام المنصة لأي أنشطة غير قانونية أو مسيئة، ويحق لدَورلي
-                تعليق أو إيقاف الحسابات المخالفة.
-              </p>
-            </section>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٦. إيقاف الخدمة</h2>
+        <p>يجوز تعليق أو إنهاء حساب يخالف الشروط أو يسيء استخدام المنصة، مع الاحتفاظ بالحق في اتخاذ الإجراءات القانونية عند اللزوم.</p>
+      </section>
 
-            <section>
-              <h2 className="text-lg font-bold text-gray-900 mb-2">
-                5. التواصل
-              </h2>
-              <p>
-                لأي استفسار بخصوص الشروط، يمكنك التواصل معنا عبر صفحة{" "}
-                <Link href="/contact" className="text-green-700 hover:underline">
-                  تواصل معنا
-                </Link>
-                .
-              </p>
-            </section>
-          </div>
-        </div>
-      </main>
-      <footer className="bg-green-900 text-green-100 py-6 px-4 text-center text-sm mt-10">
-        <p>© 2025 دَورلي — منصة الإيجار العقاري المصرية</p>
-        <FooterLinks className="flex justify-center gap-4 mt-2 text-xs opacity-70" />
-      </footer>
-    </div>
+      <section className="space-y-2">
+        <h2 className="text-base font-bold text-slate-900">٧. التواصل</h2>
+        <p>
+          للاستفسارات:{" "}
+          <Link href="/contact" className="font-bold text-[#00d38d] hover:underline">
+            تواصل معنا
+          </Link>
+          .
+        </p>
+      </section>
+    </InfoPageShell>
   );
 }

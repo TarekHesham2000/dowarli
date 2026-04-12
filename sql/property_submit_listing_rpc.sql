@@ -1,7 +1,7 @@
 -- =============================================================================
 -- دَورلي — Atomic listing submit: insert pending_approval (points deducted on admin approval only)
 -- Run once in Supabase SQL Editor after points_system_migration.sql
--- Pair with handle_admin_approval_rpc.sql for activation + point charge.
+-- Pair with handle_admin_approval_rpc.sql for activation + point charge (no free-ad slots).
 --
 -- If INSERT fails on `images`: your column may be text[] — use ARRAY[]::text[]
 -- instead of '[]'::jsonb, and skip the jsonb DEFAULT block below.
@@ -82,7 +82,7 @@ DROP FUNCTION IF EXISTS public.submit_property_with_points(
 );
 
 -- -----------------------------------------------------------------------------
--- RPC: handle_property_submission — caller = owner; was_charged set for paid slots (charge on admin approval)
+-- RPC: handle_property_submission — caller = owner; was_charged = true (points deducted on admin approval)
 -- -----------------------------------------------------------------------------
 -- Drop every signature so an older overload cannot keep running (common cause of “still text” errors).
 DO $$
@@ -118,11 +118,6 @@ SET search_path = public
 AS $$
 DECLARE
   uid uuid;
-  free_lim int := 2;
-  cnt_user int := 0;
-  cnt_dev int := 0;
-  published_count int := 0;
-  is_free boolean;
   new_id bigint;
   purpose text;
   dev_key text;
@@ -138,31 +133,12 @@ BEGIN
     RAISE EXCEPTION 'invalid_title';
   END IF;
 
-  SELECT COALESCE((SELECT NULLIF(btrim(value), '')::int FROM public.settings WHERE key = 'free_property_limit' LIMIT 1), 2)
-  INTO free_lim;
-
   purpose := lower(btrim(coalesce(p_listing_purpose, 'rent')));
   IF purpose NOT IN ('rent', 'sale') THEN
     RAISE EXCEPTION 'invalid_listing_purpose';
   END IF;
 
-  SELECT count(*)::int INTO cnt_user
-  FROM public.properties
-  WHERE owner_id = uid
-    AND status IN ('active', 'pending', 'pending_approval');
-
   dev_key := NULLIF(btrim(coalesce(p_device_id, '')), '');
-  IF dev_key IS NOT NULL THEN
-    SELECT count(*)::int INTO cnt_dev
-    FROM public.properties
-    WHERE device_id = dev_key
-      AND status IN ('active', 'pending', 'pending_approval');
-  ELSE
-    cnt_dev := 0;
-  END IF;
-
-  published_count := GREATEST(cnt_user, cnt_dev);
-  is_free := published_count < free_lim;
 
   -- rental_unit: enum — use a single CASE so every branch is rental_unit_type (never plain text).
   ru_raw := NULLIF(lower(btrim(coalesce(p_rental_unit, ''))), '');
@@ -204,7 +180,7 @@ BEGIN
     btrim(p_unit_type),
     btrim(p_address),
     'pending_approval',
-    NOT is_free,
+    true,
     '[]'::jsonb,
     dev_key,
     NULLIF(btrim(coalesce(p_video_url, '')), ''),

@@ -16,12 +16,12 @@ const PARTNERS = [
 function LogoTile({ name, abbr }: Readonly<{ name: string; abbr: string }>) {
   return (
     <div
-      className="flex h-[52px] min-w-[140px] shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.06] px-5 backdrop-blur-sm transition-colors hover:border-emerald-500/25 hover:bg-white/[0.09]"
+      className="flex h-[52px] min-w-[140px] shrink-0 items-center justify-center rounded-lg border border-gray-200 bg-white px-5 transition-colors hover:border-[#00d38d]/35 hover:bg-gray-50"
       style={{ fontFamily: "'Cairo', sans-serif" }}
     >
       <div className="flex flex-col items-center gap-0.5 text-center">
-        <span className="text-[10px] font-black tracking-wider text-emerald-400/90">{abbr}</span>
-        <span className="text-[11px] font-bold text-slate-300">{name}</span>
+        <span className="text-[10px] font-black tracking-wider text-[#00d38d]">{abbr}</span>
+        <span className="text-[11px] font-bold text-slate-600">{name}</span>
       </div>
     </div>
   );
@@ -32,7 +32,7 @@ export default function PartnerMarquee({ className = "" }: Readonly<{ className?
 
   return (
     <section
-      className={`partner-marquee-section overflow-hidden border-y border-white/[0.06] bg-slate-950/40 py-5 ${className}`.trim()}
+      className={`partner-marquee-section overflow-hidden border-y border-gray-100 bg-gray-50 py-6 ${className}`.trim()}
       aria-label="شركاء ومجتمعات عقارية"
     >
       <p

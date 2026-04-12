@@ -24,6 +24,7 @@ type PropertyResult = {
   address: string | null;
   unit_type: string;
   images: string[];
+  slug?: string | null;
   /** ISO — تأكيد التوافر من الوسيط */
   last_verified_at?: string;
   report_count?: number;
@@ -295,7 +296,7 @@ ${recentUserBlock}
 }
 
 const SELECT_ROW =
-  "id, title, price, area, address, unit_type, images, last_verified_at, report_count, owner_id, profiles(low_trust)";
+  "id, title, price, area, address, unit_type, images, slug, last_verified_at, report_count, owner_id, profiles(low_trust)";
 
 async function queryTopProperties(
   filters: FilterAction,

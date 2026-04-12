@@ -1,49 +1,27 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import FooterLinks from "@/components/shared/FooterLinks";
+import InfoPageShell from "@/components/legal/InfoPageShell";
 
 export const metadata: Metadata = {
-  title: "من نحن - دَورلي",
+  title: "من نحن",
   description:
-    "تعرف على منصة دَورلي المتخصصة في إيجار سكن الطلاب والمغتربين في مصر.",
+    "دورلي — مساعدك الذكي للبحث عن سكن وشقق وإعلانات عقارية في مصر مدعوم بالذكاء الاصطناعي.",
 };
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen bg-gray-50" dir="rtl">
-      <nav className="bg-white border-b px-4 py-4 flex items-center justify-between">
-        <Link href="/" className="font-bold text-green-800 text-lg">
-          دَورلي
-        </Link>
-        <Link href="/" className="text-sm text-green-700 hover:underline">
-          العودة للرئيسية
-        </Link>
-      </nav>
-
-      <main className="max-w-3xl mx-auto px-4 py-10">
-        <div className="bg-white rounded-2xl shadow-sm p-6 sm:p-10">
-          <h1 className="text-2xl sm:text-3xl font-black text-gray-900 mb-4">
-            من نحن
-          </h1>
-          <p className="text-gray-700 leading-8 mb-4">
-            دَورلي منصة مصرية متخصصة في تأجير العقارات المناسبة للطلاب
-            والمغتربين، مع التركيز على السهولة، الثقة، وسرعة الوصول للسكن
-            المناسب.
-          </p>
-          <p className="text-gray-700 leading-8 mb-4">
-            نعمل على ربط الملاك والوسطاء بالمستأجرين عبر تجربة رقمية واضحة،
-            تشمل نشر الإعلانات، التحقق منها، وإدارة الطلبات بشكل منظم.
-          </p>
-          <p className="text-gray-700 leading-8">
-            هدفنا تقديم سوق إيجاري أكثر احترافية يخدم احتياجات السكن في المدن
-            الجامعية ومناطق العمل داخل مصر.
-          </p>
-        </div>
-      </main>
-      <footer className="bg-green-900 text-green-100 py-6 px-4 text-center text-sm mt-10">
-        <p>© 2025 دَورلي — منصة الإيجار العقاري المصرية</p>
-        <FooterLinks className="flex justify-center gap-4 mt-2 text-xs opacity-70" />
-      </footer>
-    </div>
+    <InfoPageShell title="من نحن" subtitle="دورلي — Dowarly">
+      <p>
+        <strong>دورلي</strong> منصة مصرية تجمع بين البحث العقاري والمساعدة الذكية: نساعدك على صياغة
+        بحثك بالعربية، فهم عروض السكن والإيجار والبيع، والتواصل مع الملاك والوسطاء بثقة.
+      </p>
+      <p>
+        نعتمد على نماذج لغوية وذكاء اصطناعي لتوجيهك نحو إعلانات مناسبة لمنطقتك وميزانيتك ونوع
+        الوحدة، مع الحفاظ على تجربة بسيطة ومناسبة للجوال.
+      </p>
+      <p>
+        هدفنا أن يكون <strong>البحث عن سكن أو إعلان عقار</strong> أسرع وأوضح، مع مراجعة إدارية
+        للإعلانات وسياسات واضحة للخصوصية والاستخدام.
+      </p>
+    </InfoPageShell>
   );
 }

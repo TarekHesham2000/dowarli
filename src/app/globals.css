@@ -1,51 +1,54 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Very light mint-gray — white cards pop on top */
+  --background: #f9fdfc;
+  --foreground: #0f172a;
 
-  /* Dowarly brand — anchored to logo / PWA theme (#1B783C), gradient toward #2EB865 → #145A2E */
-  --brand-400: #5ee4a3;
-  --brand-500: #2eb865;
-  --brand-600: #1b783c;
-  --brand-700: #145a2e;
-  --brand-800: #0f4824;
-  --brand-rgb: 27, 120, 60;
-  --brand-gradient: linear-gradient(135deg, #2eb865 0%, #1b783c 52%, #145a2e 100%);
-  --brand-gradient-chat: linear-gradient(135deg, #2eb865, #1b783c);
-  --brand-gradient-fab: linear-gradient(135deg, #2eb865 0%, #1b783c 58%, #145a2e 100%);
-  --brand-shadow-fab: 0 8px 28px rgba(27, 120, 60, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.12);
-  --brand-shadow-soft: 0 4px 18px rgba(27, 120, 60, 0.28);
-  --brand-shadow-card: 0 2px 8px rgba(27, 120, 60, 0.5);
-  --brand-shadow-avatar: 0 2px 12px rgba(27, 120, 60, 0.35);
-  --brand-a03: rgba(27, 120, 60, 0.03);
-  --brand-a04: rgba(27, 120, 60, 0.04);
-  --brand-a06: rgba(27, 120, 60, 0.06);
-  --brand-a12: rgba(27, 120, 60, 0.12);
-  --brand-a15: rgba(27, 120, 60, 0.15);
-  --brand-a25: rgba(27, 120, 60, 0.25);
-  --brand-a35: rgba(27, 120, 60, 0.35);
-  --brand-a45: rgba(27, 120, 60, 0.45);
-  --brand-a50: rgba(46, 184, 101, 0.5);
-  --brand-a60: rgba(46, 184, 101, 0.6);
-  --brand-a80: rgba(46, 184, 101, 0.8);
+  /* Primary brand — #00d38d (minimal UI, no heavy gradients) */
+  --brand-primary: #00d38d;
+  --brand-primary-hover: #00bf7f;
+  --brand-400: #4dffc4;
+  --brand-500: #00d38d;
+  --brand-600: #00b87a;
+  --brand-700: #009e6a;
+  --brand-800: #007a52;
+  --brand-rgb: 0, 211, 141;
+  --brand-gradient: #00d38d;
+  --brand-gradient-chat: #00d38d;
+  --brand-gradient-fab: #00d38d;
+  --brand-shadow-fab: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --brand-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --brand-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --brand-shadow-avatar: none;
+  --brand-a03: rgba(0, 211, 141, 0.06);
+  --brand-a04: rgba(0, 211, 141, 0.08);
+  --brand-a06: rgba(0, 211, 141, 0.1);
+  --brand-a12: rgba(0, 211, 141, 0.14);
+  --brand-a15: rgba(0, 211, 141, 0.18);
+  --brand-a25: rgba(0, 211, 141, 0.25);
+  --brand-a35: rgba(0, 211, 141, 0.35);
+  --brand-a45: rgba(0, 211, 141, 0.45);
+  --brand-a50: rgba(0, 211, 141, 0.5);
+  --brand-a60: rgba(0, 211, 141, 0.55);
+  --brand-a80: rgba(0, 211, 141, 0.75);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-cairo), var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 
-  /* Subtle remap: keep emerald-* utilities but tint toward logo greens */
-  --color-emerald-300: #86efac;
-  --color-emerald-400: #4ade90;
-  --color-emerald-500: #2eb865;
-  --color-emerald-600: #1b783c;
-  --color-emerald-700: #145a2e;
-  --color-emerald-800: #124428;
-  --color-emerald-900: #052e16;
-  --color-emerald-950: #022c16;
+  /* Align emerald-* with brand #00d38d */
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #00d38d;
+  --color-emerald-600: #00b87a;
+  --color-emerald-700: #009e6a;
+  --color-emerald-800: #047857;
+  --color-emerald-900: #064e3b;
+  --color-emerald-950: #022c22;
 }
 
 /* ❌ حذفنا dark mode block — كان بيحول الخلفية لسوداء على أجهزة الـ Dark Mode */
@@ -53,7 +56,7 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-cairo), var(--font-geist-sans), system-ui, sans-serif;
 }
 
 /* Hide scrollbar (chat + widgets) */
@@ -78,6 +81,42 @@ body {
 @keyframes chat-dot {
   0%, 100% { transform: translateY(0); opacity: 0.45; }
   50% { transform: translateY(-3px); opacity: 1; }
+}
+
+/*
+ * Soft “breathing” scale for chat CTAs (not named `pulse` — Tailwind’s `animate-pulse`
+ * uses @keyframes pulse for opacity skeletons; this avoids breaking those utilities).
+ */
+@keyframes dowarli-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+.chat-invite-pulse {
+  animation: dowarli-pulse 3.2s ease-in-out infinite;
+  transform-origin: center center;
+  will-change: transform;
+}
+
+.chat-invite-pulse:hover {
+  filter: brightness(1.05);
+}
+
+/* Hero search button: pulse only from md up (desktop) */
+@media (max-width: 767px) {
+  .chat-invite-pulse--desktop-only {
+    animation: none;
+    will-change: auto;
+  }
+
+  .chat-invite-pulse--desktop-only:hover {
+    filter: none;
+  }
 }
 
 /* ChatBot — خلفية شبكية وهالة وكتابة */

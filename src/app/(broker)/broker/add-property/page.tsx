@@ -73,14 +73,9 @@ export default function AddPropertyPage() {
   const [videoUrl, setVideoUrl]         = useState('')
   const [videoPreview, setVideoPreview] = useState(false)
 
-  // ── Settings من الداتابيز ──────────────────────────────────
-  const [bannerText, setBannerText]               = useState('أول إعلانين مجاناً بالكامل')
-  const [freePropertyLimit, setFreePropertyLimit] = useState(2)
-
-  // ── Anti-Fraud State ───────────────────────────────────────
+  // ── Anti-Fraud / counts ───────────────────────────────────
   const [deviceId, setDeviceId]                         = useState('')
   const [devicePropertyCount, setDevicePropertyCount]   = useState(0)
-  const [deviceLimitReached, setDeviceLimitReached]     = useState(false)
   const [checkingDevice, setCheckingDevice]             = useState(true)
   const [userPoints, setUserPoints]                     = useState(0)
   const [successMessage, setSuccessMessage]             = useState('')
@@ -111,21 +106,13 @@ export default function AddPropertyPage() {
   }, [listingPurpose])
 
   const activationPointsCost = useMemo(() => getAdPostPointsCost(listingPurpose), [listingPurpose])
-  const requiresPaidActivation = devicePropertyCount >= freePropertyLimit
-  const insufficientPointsToPublish = requiresPaidActivation && userPoints < activationPointsCost
+  const insufficientPointsToPublish = userPoints < activationPointsCost
 
   // ── تحميل الإعدادات + فحص الـ Device + رصيد النقاط ─────────
   useEffect(() => {
     const init = async () => {
       const did = getDeviceId()
       setDeviceId(did)
-
-      const { data: settingsData } = await supabase.from('settings').select('key, value')
-
-      const get = (k: string) => settingsData?.find((s) => s.key === k)?.value
-      const limit = Number(get('free_property_limit') ?? 2)
-      setFreePropertyLimit(limit)
-      setBannerText(get('banner_text') ?? `أول ${limit} إعلانات مجاناً بالكامل`)
 
       const {
         data: { user },
@@ -152,12 +139,7 @@ export default function AddPropertyPage() {
           .eq('owner_id', user.id)
           .in('status', ['active', 'pending', 'pending_approval'])
 
-        const maxCount = Math.max(deviceCount, userCount ?? 0)
-        setDevicePropertyCount(maxCount)
-
-        if (maxCount >= limit && (!profile || pts < AD_POST_COST_RENT)) {
-          setDeviceLimitReached(true)
-        }
+        setDevicePropertyCount(Math.max(deviceCount, userCount ?? 0))
       }
 
       setCheckingDevice(false)
@@ -242,13 +224,6 @@ export default function AddPropertyPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) { router.push('/login'); return }
 
-      const { data: settingsData } = await supabase
-        .from('settings')
-        .select('key, value')
-
-      const get = (k: string) => settingsData?.find((s: { key: string; value: string }) => s.key === k)?.value
-      const limit = Number(get('free_property_limit') ?? freePropertyLimit)
-
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
         .select('is_active, points')
@@ -270,24 +245,9 @@ export default function AddPropertyPage() {
       const livePoints = profile.points ?? 0
       setUserPoints(livePoints)
 
-      // Anti-Fraud
-      const { count: userCount } = await supabase
-        .from('properties')
-        .select('id', { count: 'exact', head: true })
-        .eq('owner_id', user.id)
-        .in('status', ['active', 'pending', 'pending_approval'])
-
-      const { count: devCount } = await supabase
-        .from('properties')
-        .select('id', { count: 'exact', head: true })
-        .eq('device_id', deviceId)
-        .in('status', ['active', 'pending', 'pending_approval'])
-
-      const publishedCount = Math.max(userCount ?? 0, devCount ?? 0)
-      const isFree = publishedCount < limit
       const pointsCost = getAdPostPointsCost(listingPurpose)
 
-      if (!isFree && livePoints < pointsCost) {
+      if (livePoints < pointsCost) {
         setError(
           `رصيد النقاط غير كافٍ. مطلوب ${pointsCost} نقطة عند موافقة الإدارة على إعلان ${listingPurpose === 'sale' ? 'بيع' : 'إيجار'}.`,
         )
@@ -343,7 +303,7 @@ export default function AddPropertyPage() {
       }
 
       setSuccessMessage(
-        'تم استلام إعلانك بنجاح. سيُراجع من الإدارة؛ تُخصم النقاط فقط عند الموافقة إن كان الإعلان خارج الحد المجاني.',
+        'تم استلام إعلانك بنجاح. سيُراجع من الإدارة وتُخصم النقاط عند الموافقة على النشر.',
       )
       safeRouterRefresh(router)
       await new Promise((r) => setTimeout(r, 700))
@@ -371,30 +331,6 @@ export default function AddPropertyPage() {
     </div>
   )
 
-  // ── Device Limit Reached Screen ────────────────────────────
-  if (deviceLimitReached) return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Cairo, sans-serif', background: '#f0fdf4', direction: 'rtl', padding: '1rem' }}>
-      <div style={{ background: '#fff', borderRadius: 24, padding: '2.5rem', maxWidth: 420, width: '100%', textAlign: 'center', border: '1px solid #e2e8f0', boxShadow: '0 8px 32px rgba(0,0,0,0.08)' }}>
-        <div style={{ fontSize: 56, marginBottom: '1rem' }}>🔒</div>
-        <h2 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>استنفدت الإعلانات المجانية</h2>
-        <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.8, marginBottom: '1.5rem' }}>
-          لقد وصلت للحد المجاني وهو <strong style={{ color: '#166534' }}>{freePropertyLimit} إعلانات</strong>.<br />
-          لمواصلة النشر تحتاج نقاطاً 💎 حسب نوع الإعلان (إيجار {AD_POST_COST_RENT} / بيع {getAdPostPointsCost('sale')}) — اشحن من المحفظة.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <button onClick={() => router.push('/wallet')}
-            style={{ background: '#166534', color: 'white', border: 'none', borderRadius: 12, padding: '14px', fontSize: 15, fontWeight: 900, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
-            💎 شحن النقاط من المحفظة
-          </button>
-          <button onClick={() => router.push('/dashboard')}
-            style={{ background: '#f0fdf4', color: '#166534', border: '1px solid #bbf7d0', borderRadius: 12, padding: '12px', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: 'Cairo, sans-serif' }}>
-            ← العودة للوحة التحكم
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-
   // ──────────────────────────────────────────────────────────────
   // Main Render
   // ──────────────────────────────────────────────────────────────
@@ -419,29 +355,25 @@ export default function AddPropertyPage() {
         <div style={{ marginBottom: '1.25rem' }}>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', margin: '0 0 4px' }}>رفع عقار جديد 🏠</h1>
           <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>
-            أول {freePropertyLimit} إعلانات مجاناً — بعدها تُخصم النقاط عند موافقة الإدارة (إيجار {AD_POST_COST_RENT} / بيع {getAdPostPointsCost('sale')})
+            تُخصم النقاط عند موافقة الإدارة: إيجار {AD_POST_COST_RENT} نقطة — بيع {getAdPostPointsCost('sale')} نقطة. حسابك يبدأ بـ 100 نقطة هدية.
           </p>
         </div>
 
-        {/* FREE BADGE */}
         <div style={{ background: 'linear-gradient(135deg, #dcfce7, #bbf7d0)', border: '1px solid #86efac', borderRadius: 14, padding: '12px 18px', marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 22 }}>✨</span>
+          <span style={{ fontSize: 22 }}>💎</span>
           <div>
-            <p style={{ fontSize: 13, fontWeight: 800, color: '#14532d', margin: 0 }}>{bannerText}</p>
+            <p style={{ fontSize: 13, fontWeight: 800, color: '#14532d', margin: 0 }}>نظام النقاط</p>
             <p style={{ fontSize: 12, color: '#166534', margin: '2px 0 0' }}>
-              بعد الحد المجاني: إيجار {AD_POST_COST_RENT} نقطة 💎 — بيع {getAdPostPointsCost('sale')} نقطة (يُخصم عند الموافقة على النشر)
+              تأكد أن رصيدك يكفي لنوع الإعلان قبل الإرسال — الخصم عند الموافقة فقط.
             </p>
           </div>
         </div>
 
-        {/* إعلانات الجهاز الحالية */}
         {devicePropertyCount > 0 && (
-          <div style={{ background: devicePropertyCount >= freePropertyLimit ? '#fef3c7' : '#eff6ff', border: `1px solid ${devicePropertyCount >= freePropertyLimit ? '#fde68a' : '#bfdbfe'}`, borderRadius: 12, padding: '10px 16px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 16 }}>{devicePropertyCount >= freePropertyLimit ? '⚠️' : 'ℹ️'}</span>
-            <p style={{ fontSize: 13, fontWeight: 700, color: devicePropertyCount >= freePropertyLimit ? '#92400e' : '#1d4ed8', margin: 0 }}>
-              لديك {devicePropertyCount} إعلان من أصل {freePropertyLimit} مجانية
-              {devicePropertyCount >= freePropertyLimit &&
-                ` — الإعلانات التالية بالنقاط (إيجار ${AD_POST_COST_RENT} / بيع ${getAdPostPointsCost('sale')})`}
+          <div style={{ background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 12, padding: '10px 16px', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 16 }}>ℹ️</span>
+            <p style={{ fontSize: 13, fontWeight: 700, color: '#1d4ed8', margin: 0 }}>
+              لديك {devicePropertyCount} إعلاناً نشطاً أو قيد المراجعة مرتبطاً بحسابك أو جهازك
             </p>
           </div>
         )}
@@ -456,7 +388,7 @@ export default function AddPropertyPage() {
           ) : null}
           {insufficientPointsToPublish ? (
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, padding: '12px 16px', fontSize: 13, color: '#991b1b', marginBottom: '1.25rem', lineHeight: 1.7 }}>
-              <strong>رصيد منخفض:</strong> تحتاج {activationPointsCost} نقطة على الأقل لإعلان {listingPurpose === 'sale' ? 'بيع' : 'إيجار'} خارج الحد المجاني (تُخصم عند موافقة الإدارة).{' '}
+              <strong>رصيد منخفض:</strong> تحتاج {activationPointsCost} نقطة على الأقل لإعلان {listingPurpose === 'sale' ? 'بيع' : 'إيجار'} (تُخصم عند موافقة الإدارة).{' '}
               <Link href="/wallet" style={{ color: '#166534', fontWeight: 900, textDecoration: 'underline' }}>
                 شحن النقاط — المحفظة
               </Link>

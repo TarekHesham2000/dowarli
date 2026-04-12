@@ -64,7 +64,7 @@ BEGIN
     v_avatar := NULL;
   END IF;
 
-  INSERT INTO public.profiles (id, name, email, phone, role, wallet_balance, avatar_url)
+  INSERT INTO public.profiles (id, name, email, phone, role, wallet_balance, avatar_url, points)
   VALUES (
     new.id,
     v_name,
@@ -72,7 +72,8 @@ BEGIN
     v_phone,
     'broker',
     0,
-    v_avatar
+    v_avatar,
+    100
   )
   ON CONFLICT (id) DO UPDATE SET
     name = COALESCE(NULLIF(trim(EXCLUDED.name), ''), public.profiles.name),
