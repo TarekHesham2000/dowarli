@@ -534,7 +534,7 @@ export default function PublicPageClient() {
                 marginBottom: "0.75rem", lineHeight: 1.7,
               }}
             >
-              اكتب طلبك هنا — هنوجّه مباشرة لمساعد دَورلي الذكي 🤖✨
+              اكتب طلبك هنا — هنوجّك مباشرة لمساعد دَورلي الذكي 🤖✨
             </motion.p>
 
             {/* Input Row */}

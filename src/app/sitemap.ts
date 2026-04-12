@@ -1,6 +1,8 @@
 import type { MetadataRoute } from "next";
-import { getSiteUrl } from "@/lib/site";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
+
+/** Canonical production origin for sitemap URLs (Search Console / indexing). */
+const SITE_BASE = "https://dowarly.com";
 
 /** Properties are loaded from Supabase on each request (not frozen at build time). */
 export const dynamic = "force-dynamic";
@@ -23,7 +25,7 @@ const STATIC_ROUTES: StaticRoute[] = [
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const base = getSiteUrl().replace(/\/$/, "");
+  const base = SITE_BASE.replace(/\/$/, "");
   const now = new Date();
 
   const staticEntries: MetadataRoute.Sitemap = STATIC_ROUTES.map(({ path, changeFrequency, priority }) => ({

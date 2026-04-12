@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { Cairo, Geist, Geist_Mono } from "next/font/google";
 import { AppProviders } from "@/components/AppProviders";
 import FloatingWhatsAppSupport from "@/components/support/FloatingWhatsAppSupport";
-import { getMetadataSiteUrl } from "@/lib/site";
 import "./globals.css";
 
 const cairo = Cairo({
@@ -21,7 +20,7 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteUrl = getMetadataSiteUrl();
+const siteUrl = "https://dowarly.com";
 const defaultTitle = "دورلي | منصتك الذكية للبحث عن سكن وإعلانات العقارات في مصر";
 const defaultDescription =
   "دورلي هو مساعدك الذكي المعتمد على الذكاء الاصطناعي لإيجاد أفضل عروض السكن، الشقق، وسكن الطلاب في مصر. ابحث، قارن، وتواصل مع الملاك مباشرة وبسهولة.";
