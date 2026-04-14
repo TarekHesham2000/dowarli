@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useState, useCallback } from 'react'
+import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
@@ -19,6 +19,9 @@ type Property = {
   description:  string
   price:        number
   area:         string
+  governorate?: string | null
+  district?:    string | null
+  landmark?:    string | null
   address:      string
   unit_type:    UnitType
   images:       string[]
@@ -34,6 +37,16 @@ type Property = {
   listing_type?: string | null
   listing_purpose?: string | null
   slug?: string | null
+}
+
+function propertyLocationLine(p: Pick<Property, 'governorate' | 'district' | 'area'>): string {
+  const parts = [p.governorate, p.district].map((x) => (x ?? '').trim()).filter(Boolean)
+  if (parts.length) return parts.join(' — ')
+  return (p.area ?? '').trim()
+}
+
+function propertyDetailLine(p: Pick<Property, 'landmark' | 'address'>): string {
+  return ((p.landmark ?? '').trim() || (p.address ?? '').trim()).trim()
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -87,6 +100,13 @@ function toInternationalEG(phone: string): string {
  * لماذا هنا وليس في add-property فقط؟
  * → المالك حفظ الرابط الأصلي في الـ DB، فنحتاج نحوّله مرة ثانية للعرض
  */
+function clientDeviceHintForAnalytics(): 'mobile' | 'desktop' | 'unknown' {
+  if (typeof navigator === 'undefined') return 'unknown'
+  const ua = navigator.userAgent || ''
+  if (/Mobile|Android|iPhone|iPad|iPod|webOS|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return 'mobile'
+  return 'desktop'
+}
+
 function getEmbedUrl(url: string | null): string | null {
   if (!url?.trim()) return null
   const u = url.trim()
@@ -145,6 +165,7 @@ export default function PropertyPageClient() {
   const [authModalOpen, setAuthModalOpen] = useState(false)
   const [reasonModalOpen, setReasonModalOpen] = useState(false)
   const [reportReason, setReportReason]   = useState('العقار غير متاح أو مؤجر')
+  const listingViewLoggedRef = useRef<string | null>(null)
 
   const propertyPath = pathname || `/property/${slugParam}`
 
@@ -167,7 +188,7 @@ export default function PropertyPageClient() {
       let q = supabase
         .from('properties')
         .select(`
-          id, title, description, price, area, address,
+          id, title, description, price, area, governorate, district, landmark, address,
           unit_type, images, status,
           video_url, rental_unit, beds_count,
           listing_type, listing_purpose,
@@ -192,6 +213,50 @@ export default function PropertyPageClient() {
     }
     void load()
   }, [slugParam, router])
+
+  // ── تتبع مشاهدة صفحة الإعلان (لوحة الوكالة — analytics) ──
+  useEffect(() => {
+    if (!property || property.status !== 'active') return
+    const sid = `plv:${property.id}`
+    if (typeof window !== 'undefined') {
+      try {
+        if (window.sessionStorage.getItem(sid)) return
+      } catch {
+        /* private mode */
+      }
+    }
+    if (listingViewLoggedRef.current === sid) return
+    listingViewLoggedRef.current = sid
+    const hint = clientDeviceHintForAnalytics()
+    const tryInsert = (payload: { property_id: number; client_device_hint?: string }) =>
+      supabase.from("property_listing_view_events").insert(payload)
+
+    void tryInsert({ property_id: property.id, client_device_hint: hint }).then(({ error }) => {
+      if (error && (error.message ?? '').toLowerCase().includes('client_device_hint')) {
+        void tryInsert({ property_id: property.id }).then((r2) => {
+          if (r2.error) {
+            listingViewLoggedRef.current = null
+            return
+          }
+          try {
+            if (typeof window !== 'undefined') window.sessionStorage.setItem(sid, '1')
+          } catch {
+            /* ignore */
+          }
+        })
+        return
+      }
+      if (error) {
+        listingViewLoggedRef.current = null
+        return
+      }
+      try {
+        if (typeof window !== 'undefined') window.sessionStorage.setItem(sid, '1')
+      } catch {
+        /* ignore */
+      }
+    })
+  }, [property?.id, property?.status])
 
   // ── إرسال طلب التواصل ────────────────────────────────────
   const handleLeadSubmit = useCallback(async (e: React.SyntheticEvent) => {
@@ -239,7 +304,7 @@ export default function PropertyPageClient() {
     setTimeout(() => {
       const prof    = getProfile(property.profiles)
       const waPhone = toInternationalEG(prof.phone ?? '')
-      const message = `أنا مهتم بالعقار "${property.title}" في ${property.area}.\nالاسم: ${leadForm.name}\nرقم الهاتف: ${cleanedPhone}`
+      const message = `أنا مهتم بالعقار "${property.title}" في ${propertyLocationLine(property)}.\nالاسم: ${leadForm.name}\nرقم الهاتف: ${cleanedPhone}`
       window.open('https://wa.me/' + waPhone + '?text=' + encodeURIComponent(message), '_blank')
     }, 500)
   }, [property, leadForm])
@@ -425,9 +490,13 @@ export default function PropertyPageClient() {
   // بناء قائمة Details ديناميكياً — لماذا؟
   // → بدل ما نكتب if/else في الـ JSX، نبني الـ array مرة وتتعمل map نظيف
   const detailItems: { label: string; value: string; icon: string }[] = [
-    { label: 'المنطقة',         value: property.area,                    icon: '📍' },
+    { label: 'الموقع', value: propertyLocationLine(property) || '—', icon: '📍' },
     { label: 'نوع الوحدة',      value: TYPE_LABELS[property.unit_type],  icon: meta.icon },
-    { label: 'العنوان التفصيلي', value: property.address,                icon: '🗺️' },
+    {
+      label: 'العنوان بالتفصيل / علامة مميزة',
+      value: propertyDetailLine(property) || '—',
+      icon: '🗺️',
+    },
     {
       label: isSaleListing ? 'سعر البيع' : 'السعر الشهري',
       value: `${property.price?.toLocaleString()} ج.م`,
@@ -536,7 +605,7 @@ export default function PropertyPageClient() {
               </span>
             )}
             <span style={{ color: '#334155', fontSize: 13 }}>·</span>
-            <span style={{ color: '#475569', fontSize: 13 }}>📍 {property.area}</span>
+            <span style={{ color: '#475569', fontSize: 13 }}>📍 {propertyLocationLine(property)}</span>
           </div>
 
           {showAvailabilityBanner ? (
@@ -645,7 +714,8 @@ export default function PropertyPageClient() {
                 <h1 style={{ fontSize: 'clamp(1.4rem, 3vw, 1.9rem)', fontWeight: 900, color: '#0f172a', lineHeight: 1.3, marginBottom: '0.5rem' }}>{property.title}</h1>
                 <p style={{ fontSize: 14, color: '#64748b', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill={meta.accent}/><circle cx="12" cy="9" r="2.5" fill="#ffffff"/></svg>
-                  {property.area} — {property.address}
+                  {propertyLocationLine(property)}
+                  {propertyDetailLine(property) ? ` — ${propertyDetailLine(property)}` : ''}
                 </p>
               </div>
 
@@ -703,7 +773,10 @@ export default function PropertyPageClient() {
                 </div>
 
                 <h1 style={{ fontSize: 19, fontWeight: 900, color: '#0f172a', margin: '0 0 6px', lineHeight: 1.35 }}>{property.title}</h1>
-                <p style={{ fontSize: 12, color: '#475569', margin: '0 0 1.25rem', lineHeight: 1.6 }}>📍 {property.area} — {property.address}</p>
+                <p style={{ fontSize: 12, color: '#475569', margin: '0 0 1.25rem', lineHeight: 1.6 }}>
+                  📍 {propertyLocationLine(property)}
+                  {propertyDetailLine(property) ? ` — ${propertyDetailLine(property)}` : ''}
+                </p>
 
                 <div style={{ background: `linear-gradient(135deg, ${meta.accent}14, ${meta.accent}08)`, border: `1px solid ${meta.accent}25`, borderRadius: 16, padding: '1.1rem 1.25rem', marginBottom: '0.5rem' }}>
                   <p style={{ fontSize: 11, color: '#475569', margin: '0 0 4px', fontWeight: 600 }}>

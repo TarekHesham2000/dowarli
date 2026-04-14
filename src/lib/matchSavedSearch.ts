@@ -7,6 +7,8 @@ export type SavedSearchFiltersV1 = {
   activeFilter: string;
   parsed: {
     area: string;
+    district?: string;
+    governorate?: string;
     maxPrice: number | null;
     unitType: string;
     keywords: string;
@@ -15,6 +17,9 @@ export type SavedSearchFiltersV1 = {
 
 export type PropertyMatchFields = {
   area: string;
+  governorate?: string | null;
+  district?: string | null;
+  landmark?: string | null;
   price: number;
   unit_type: string;
   title: string;
@@ -27,10 +32,16 @@ export function propertyMatchesSavedSearch(
   filters: SavedSearchFiltersV1,
 ): boolean {
   const { parsed, activeFilter } = filters;
-  if (parsed.area) {
-    const hay = String(prop.area ?? "");
-    if (!hay.includes(parsed.area)) return false;
+  const dist = (parsed.district || "").replace(/\s+/g, " ").trim();
+  const gov = (parsed.governorate || "").replace(/\s+/g, " ").trim();
+  const locHay =
+    `${prop.governorate ?? ""} ${prop.district ?? ""} ${prop.area ?? ""}`.replace(/\s+/g, " ");
+
+  if (dist && !locHay.includes(dist)) return false;
+  if (gov && !locHay.includes(gov)) {
+    if (!(dist && locHay.includes(dist))) return false;
   }
+  if (!dist && !gov && parsed.area && !locHay.includes(parsed.area)) return false;
   if (parsed.maxPrice != null && Number(prop.price) > parsed.maxPrice) return false;
 
   const effectiveUnit =
@@ -39,7 +50,8 @@ export function propertyMatchesSavedSearch(
 
   const kw = (parsed.keywords || "").replace(/\s+/g, " ").trim();
   if (kw.length > 2) {
-    const hay = `${prop.title} ${prop.description} ${prop.address}`.toLowerCase();
+    const hay =
+      `${prop.title} ${prop.description} ${prop.address} ${prop.landmark ?? ""}`.toLowerCase();
     const blob = kw.toLowerCase();
     if (!hay.includes(blob)) return false;
   }

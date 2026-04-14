@@ -73,11 +73,15 @@ export default function BrokerDashboardHomePage() {
   const [verifyingId, setVerifyingId] = useState<number | null>(null);
   const [truthDeclaration, setTruthDeclaration] = useState(false);
   const [lowTrustProfile, setLowTrustProfile] = useState(false);
+  const [hasAgency, setHasAgency] = useState(false);
+  const [userRole, setUserRole] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
       setLoading(true);
       setLoadError("");
+      setHasAgency(false);
+      setUserRole(null);
       const {
         data: { user },
         error: userError,
@@ -117,12 +121,13 @@ export default function BrokerDashboardHomePage() {
       setPointsBalance(typeof profile.points === "number" ? profile.points : 0);
       setLowTrustProfile(profile.low_trust === true);
       setAvatarUrl(typeof profile.avatar_url === "string" && profile.avatar_url.startsWith("http") ? profile.avatar_url : null);
+      setUserRole(typeof profile.role === "string" ? profile.role : null);
 
-      const { data: userProperties, error: propsError } = await supabase
-        .from("properties")
-        .select("*")
-        .eq("owner_id", user.id)
-        .order("created_at", { ascending: false });
+      const [{ data: userProperties, error: propsError }, { data: agencyOwnRow }] = await Promise.all([
+        supabase.from("properties").select("*").eq("owner_id", user.id).order("created_at", { ascending: false }),
+        supabase.from("agencies").select("id").eq("owner_id", user.id).maybeSingle(),
+      ]);
+      setHasAgency(Boolean(agencyOwnRow?.id));
 
       if (propsError) throw propsError;
       const propsList = userProperties ?? [];
@@ -797,6 +802,49 @@ export default function BrokerDashboardHomePage() {
             المحفظة والنقاط
           </Link>
         </div>
+
+        {userRole === "broker" && !hasAgency ? (
+          <div
+            style={{
+              marginBottom: "1.75rem",
+              borderRadius: 18,
+              border: "2px solid #00d38d",
+              boxShadow: "0 12px 40px rgba(0, 211, 141, 0.18)",
+              background: "linear-gradient(145deg, #ecfdf5 0%, #ffffff 45%, #f0fdf4 100%)",
+              padding: "1.35rem 1.5rem",
+              display: "flex",
+              flexWrap: "wrap",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "1.25rem",
+            }}
+          >
+            <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+              <p style={{ margin: 0, fontSize: 17, fontWeight: 900, color: "#064e3b", lineHeight: 1.45 }}>
+                هل أنت مكتب تسويق؟ أنشئ وكالتك المعتمدة الآن
+              </p>
+              <p style={{ margin: "8px 0 0", fontSize: 13, color: "#047857", fontWeight: 600, lineHeight: 1.5 }}>
+                ملف وكالة رسمي، صفحة عامة، وربط إعلاناتك — يبدأ من هنا.
+              </p>
+            </div>
+            <Link
+              href="/become-an-agency"
+              style={{
+                background: "#00d38d",
+                color: "white",
+                borderRadius: 14,
+                padding: "12px 22px",
+                fontSize: 15,
+                fontWeight: 900,
+                textDecoration: "none",
+                whiteSpace: "nowrap",
+                boxShadow: "0 4px 14px rgba(0, 211, 141, 0.45)",
+              }}
+            >
+              إنشاء وكالة معتمدة
+            </Link>
+          </div>
+        ) : null}
 
         <section aria-labelledby="sec-listings" style={{ marginBottom: "2rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.75rem" }}>

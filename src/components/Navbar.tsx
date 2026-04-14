@@ -2,16 +2,18 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Menu, X } from "lucide-react";
+import { Menu, Plus, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { POINTS_CHANGED_EVENT } from "@/lib/profilePointsSync";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
 
 const BRAND = "#00d38d";
+const ADD_PROPERTY_BTN =
+  "inline-flex shrink-0 items-center justify-center rounded-lg bg-[#00d38d] px-3 py-2 text-center text-[12px] font-black text-white shadow-md shadow-emerald-600/20 no-underline transition hover:bg-[#00bf7f] sm:px-4 sm:text-[13px]";
 
 /**
- * شريط تنقل خفيف — شعار نصي، خلفية بيضاء، أزرار أساسية باللون الأساسي.
+ * شريط تنقل — سطح المكتب: صف مع flex-wrap ومسافات؛ الجوال: زر همبرغر + درج.
  */
 export default function Navbar() {
   const router = useRouter();
@@ -20,6 +22,8 @@ export default function Navbar() {
   const [role, setRole] = useState<string | null>(null);
   const [points, setPoints] = useState(0);
   const [mobileOpen, setMobileOpen] = useState(false);
+  /** null = not loaded yet (avoid flashing wrong agency link) */
+  const [hasAgency, setHasAgency] = useState<boolean | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -30,11 +34,20 @@ export default function Navbar() {
       if (uid) {
         const { data } = await supabase.from("profiles").select("role, points").eq("id", uid).maybeSingle();
         if (!mounted) return;
-        setRole(typeof data?.role === "string" ? data.role : null);
+        const r = typeof data?.role === "string" ? data.role : null;
+        setRole(r);
         setPoints(typeof data?.points === "number" ? data.points : 0);
+        if (r === "broker" || r === "admin") {
+          const { data: ag } = await supabase.from("agencies").select("id").eq("owner_id", uid).maybeSingle();
+          if (!mounted) return;
+          setHasAgency(Boolean(ag?.id));
+        } else {
+          setHasAgency(null);
+        }
       } else {
         setRole(null);
         setPoints(0);
+        setHasAgency(null);
       }
       setLoading(false);
     };
@@ -105,12 +118,14 @@ export default function Navbar() {
     setUserId(null);
     setRole(null);
     setPoints(0);
+    setHasAgency(null);
     router.push("/");
     safeRouterRefresh(router);
   };
 
   const showDashboard = Boolean(userId && (role === "broker" || role === "admin"));
   const dashboardHref = role === "admin" ? "/admin" : "/dashboard";
+  const showBrokerTools = role === "broker" || role === "admin";
 
   const closeMobile = () => setMobileOpen(false);
 
@@ -120,69 +135,95 @@ export default function Navbar() {
         role="navigation"
         aria-label="القائمة الرئيسية"
         dir="rtl"
-        className="sticky top-0 z-[100] flex h-11 flex-nowrap items-center justify-between gap-2 border-b border-gray-200/60 bg-transparent px-3 sm:h-12 sm:gap-3 sm:px-5"
+        className="sticky top-0 z-[100] flex flex-wrap items-center justify-between gap-x-2 gap-y-2 border-b border-gray-200/60 bg-white/95 px-3 py-2 backdrop-blur-sm sm:px-4 md:min-h-[52px] md:py-2.5"
       >
-        <Link
-          href="/"
-          onClick={closeMobile}
-          className="flex min-w-0 shrink items-center py-1 no-underline transition-opacity hover:opacity-90"
-          aria-label="دورلي – الصفحة الرئيسية"
-        >
-          <span
-            className="text-xl font-extrabold tracking-tight sm:text-[1.35rem]"
-            style={{ color: BRAND, fontFamily: "var(--font-cairo), Cairo, sans-serif" }}
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:flex-initial md:gap-3">
+          <button
+            type="button"
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-slate-700 shadow-sm transition hover:bg-gray-50 md:hidden"
+            aria-expanded={mobileOpen}
+            aria-controls="main-nav-drawer"
+            aria-label={mobileOpen ? "إغلاق القائمة" : "فتح القائمة"}
+            onClick={() => setMobileOpen((o) => !o)}
           >
-            دورلي
-          </span>
-        </Link>
+            {mobileOpen ? <X className="h-5 w-5" strokeWidth={2} /> : <Menu className="h-5 w-5" strokeWidth={2} />}
+          </button>
 
-        {userId && !loading ? (
           <Link
-            href="/wallet"
-            className="hidden shrink-0 items-center rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-1 text-[11px] font-bold text-slate-700 transition hover:border-gray-300 hover:bg-white sm:px-3 sm:text-xs md:flex"
-            title="المحفظة والنقاط"
+            href="/"
+            onClick={closeMobile}
+            className="flex min-w-0 shrink items-center py-0.5 no-underline transition-opacity hover:opacity-90"
+            aria-label="دورلي – الصفحة الرئيسية"
           >
-            <span dir="ltr" className="whitespace-nowrap">
-              💎 {points}
+            <span
+              className="text-lg font-extrabold tracking-tight sm:text-[1.35rem]"
+              style={{ color: BRAND, fontFamily: "var(--font-cairo), Cairo, sans-serif" }}
+            >
+              دورلي
             </span>
           </Link>
-        ) : null}
+          {showBrokerTools && !loading ? (
+            <Link
+              href="/broker/add-property"
+              onClick={closeMobile}
+              className={`${ADD_PROPERTY_BTN} ms-auto h-10 min-w-[40px] px-0 md:hidden`}
+              aria-label="إضافة عقار"
+              title="إضافة عقار"
+            >
+              <Plus className="h-5 w-5 shrink-0" strokeWidth={2.5} aria-hidden />
+            </Link>
+          ) : null}
+        </div>
 
-        <div className="hidden min-h-[34px] min-w-0 flex-nowrap items-center justify-end gap-2 md:flex md:min-w-[200px] lg:min-w-[240px]">
+        {/* Desktop: لا تتداخل — flex-wrap + gap */}
+        <div className="hidden min-w-0 flex-1 flex-wrap items-center justify-center gap-2 md:flex lg:gap-3">
+          <Link
+            href="/agencies"
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-700 no-underline transition hover:bg-gray-50"
+          >
+            الوكالات
+          </Link>
           {loading ? (
-            <>
-              <div className="h-8 w-20 shrink-0 animate-pulse rounded-lg bg-gray-100" aria-hidden />
-              <div className="h-8 w-24 shrink-0 animate-pulse rounded-lg bg-gray-100" aria-hidden />
-            </>
+            <div className="h-9 w-24 animate-pulse rounded-lg bg-gray-100" aria-hidden />
           ) : userId ? (
             <>
               {showDashboard ? (
                 <Link
                   href={dashboardHref}
-                  className="whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-center text-[13px] font-bold text-slate-700 transition hover:border-gray-300 hover:bg-gray-50"
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-700 no-underline transition hover:bg-gray-50"
                 >
                   لوحة التحكم
                 </Link>
               ) : null}
-              <button
-                type="button"
-                onClick={() => void handleLogout()}
-                className="whitespace-nowrap rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-bold text-slate-600 transition hover:bg-gray-50"
-              >
-                تسجيل الخروج
-              </button>
+              {showBrokerTools ? (
+                <>
+                  {hasAgency === null ? (
+                    <div className="h-9 w-[5.5rem] animate-pulse rounded-lg bg-gray-100" aria-hidden />
+                  ) : (
+                    <Link
+                      href={hasAgency ? "/agency" : "/become-an-agency"}
+                      className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-700 no-underline transition hover:bg-gray-50"
+                    >
+                      {hasAgency ? "وكالتي" : "أنشئ وكالة"}
+                    </Link>
+                  )}
+                  <Link href="/broker/add-property" className={`${ADD_PROPERTY_BTN} hidden md:inline-flex`}>
+                    + إضافة عقار
+                  </Link>
+                </>
+              ) : null}
             </>
           ) : (
             <>
               <Link
                 href="/register"
-                className="whitespace-nowrap rounded-lg border border-gray-200 bg-white px-4 py-1.5 text-center text-[13px] font-bold text-slate-700 transition hover:bg-gray-50"
+                className="rounded-lg border border-gray-200 bg-white px-4 py-2 text-[13px] font-bold text-slate-700 no-underline transition hover:bg-gray-50"
               >
                 انضم كمالك
               </Link>
               <Link
                 href="/login"
-                className="whitespace-nowrap rounded-lg px-4 py-1.5 text-center text-[13px] font-bold text-white transition hover:opacity-95"
+                className="rounded-lg px-4 py-2 text-[13px] font-bold text-white no-underline transition hover:opacity-95"
                 style={{ backgroundColor: BRAND }}
               >
                 تسجيل الدخول
@@ -191,53 +232,49 @@ export default function Navbar() {
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5 md:hidden">
+        <div className="hidden shrink-0 items-center gap-2 md:flex">
           {userId && !loading ? (
-            <Link
-              href="/wallet"
-              className="flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg border border-gray-200 bg-gray-50 px-2 text-[10px] font-bold text-slate-700"
-              title="المحفظة"
-            >
-              <span dir="ltr" className="whitespace-nowrap">
-                💎{points}
-              </span>
-            </Link>
+            <>
+              <Link
+                href="/wallet"
+                className="inline-flex min-h-[40px] min-w-[40px] items-center justify-center rounded-xl border border-gray-200 bg-gray-50 px-2.5 text-[11px] font-bold text-slate-700 transition hover:border-emerald-300 hover:bg-white sm:px-3 sm:text-xs"
+                title="المحفظة والنقاط"
+              >
+                <span dir="ltr" className="whitespace-nowrap">
+                  💎 {points}
+                </span>
+              </Link>
+              <button
+                type="button"
+                onClick={() => void handleLogout()}
+                className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-600 transition hover:bg-gray-50"
+              >
+                خروج
+              </button>
+            </>
           ) : null}
-          {loading ? (
-            <div className="h-8 w-8 shrink-0 animate-pulse rounded-lg bg-gray-100" aria-hidden />
-          ) : (
-            <button
-              type="button"
-              className="flex items-center justify-center rounded-lg border border-gray-200 bg-white p-2 text-slate-600 transition hover:bg-gray-50"
-              aria-expanded={mobileOpen}
-              aria-controls="mobile-nav-drawer"
-              aria-label={mobileOpen ? "إغلاق القائمة" : "فتح القائمة"}
-              onClick={() => setMobileOpen((o) => !o)}
-            >
-              {mobileOpen ? <X className="h-5 w-5 shrink-0" strokeWidth={2} /> : <Menu className="h-5 w-5 shrink-0" strokeWidth={2} />}
-            </button>
-          )}
         </div>
       </nav>
 
+      {/* Mobile drawer — كل الروابط هنا لتجنب الزحام */}
       <div
         className={`fixed inset-0 z-[110] md:hidden ${mobileOpen ? "pointer-events-auto" : "pointer-events-none"}`}
         aria-hidden={!mobileOpen}
       >
         <button
           type="button"
-          className={`absolute inset-0 bg-black/30 transition-opacity duration-200 ${mobileOpen ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 bg-black/35 transition-opacity duration-200 ${mobileOpen ? "opacity-100" : "opacity-0"}`}
           aria-label="إغلاق القائمة"
           tabIndex={mobileOpen ? 0 : -1}
           onClick={closeMobile}
         />
         <div
-          id="mobile-nav-drawer"
+          id="main-nav-drawer"
           role="dialog"
           aria-modal="true"
           aria-label="قائمة التنقل"
           dir="rtl"
-          className={`absolute left-0 top-0 flex h-full w-[min(100%,280px)] max-w-[85vw] flex-col gap-3 border-r border-gray-200 bg-white p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] transition-transform duration-200 ease-out ${
+          className={`absolute left-0 top-0 flex h-full w-[min(100%,300px)] max-w-[90vw] flex-col gap-2 border-r border-gray-200 bg-white p-4 pt-[calc(0.75rem+env(safe-area-inset-top))] shadow-xl transition-transform duration-200 ease-out ${
             mobileOpen ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -258,25 +295,59 @@ export default function Navbar() {
           {!loading && userId ? (
             <div className="flex flex-col gap-2">
               <Link
+                href="/agencies"
+                onClick={closeMobile}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
+              >
+                دليل الوكالات
+              </Link>
+              <Link
                 href="/wallet"
                 onClick={closeMobile}
-                className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm font-bold text-slate-800"
+                className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
               >
                 💎 المحفظة ({points} نقطة)
               </Link>
+              {showDashboard && role === "broker" ? (
+                <Link
+                  href="/dashboard/alerts"
+                  onClick={closeMobile}
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
+                >
+                  التنبيهات
+                </Link>
+              ) : null}
               {showDashboard ? (
                 <Link
                   href={dashboardHref}
                   onClick={closeMobile}
-                  className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800"
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
                 >
                   لوحة التحكم
                 </Link>
               ) : null}
+              {showBrokerTools ? (
+                <>
+                  {hasAgency === null ? (
+                    <div className="h-12 animate-pulse rounded-xl bg-gray-100" aria-hidden />
+                  ) : (
+                    <Link
+                      href={hasAgency ? "/agency" : "/become-an-agency"}
+                      onClick={closeMobile}
+                      className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
+                    >
+                      {hasAgency ? "وكالتي" : "أنشئ وكالة"}
+                    </Link>
+                  )}
+                  <Link href="/broker/add-property" onClick={closeMobile} className={`${ADD_PROPERTY_BTN} w-full py-3 text-sm`}>
+                    + إضافة عقار
+                  </Link>
+                </>
+              ) : null}
               <button
                 type="button"
                 onClick={() => void handleLogout()}
-                className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-slate-600"
+                className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm font-bold text-slate-600"
               >
                 تسجيل الخروج
               </button>
@@ -284,16 +355,23 @@ export default function Navbar() {
           ) : !loading ? (
             <div className="flex flex-col gap-2">
               <Link
+                href="/agencies"
+                onClick={closeMobile}
+                className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
+              >
+                دليل الوكالات
+              </Link>
+              <Link
                 href="/register"
                 onClick={closeMobile}
-                className="rounded-lg border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800"
+                className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
               >
                 انضم كمالك
               </Link>
               <Link
                 href="/login"
                 onClick={closeMobile}
-                className="rounded-lg px-4 py-3 text-center text-sm font-bold text-white"
+                className="rounded-xl px-4 py-3 text-center text-sm font-bold text-white no-underline"
                 style={{ backgroundColor: BRAND }}
               >
                 تسجيل الدخول
@@ -301,15 +379,15 @@ export default function Navbar() {
             </div>
           ) : (
             <div className="flex flex-col gap-2">
-              <div className="h-11 animate-pulse rounded-lg bg-gray-100" />
-              <div className="h-11 animate-pulse rounded-lg bg-gray-100" />
+              <div className="h-12 animate-pulse rounded-xl bg-gray-100" />
+              <div className="h-12 animate-pulse rounded-xl bg-gray-100" />
             </div>
           )}
 
           <Link
             href="/"
             onClick={closeMobile}
-            className="mt-auto border-t border-gray-100 pt-4 text-center text-xs font-semibold text-slate-400 hover:text-slate-600"
+            className="mt-auto border-t border-gray-100 pt-4 text-center text-xs font-semibold text-slate-400 no-underline hover:text-slate-600"
           >
             الصفحة الرئيسية
           </Link>

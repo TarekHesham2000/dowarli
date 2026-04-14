@@ -27,6 +27,25 @@ export type PointsPackage = {
   popular?: boolean;
 };
 
+/** Wallet top-up for agency Pro (1000 EGP) — shown only to users who own an agency row. */
+export type AgencyBusinessProWalletPackage = {
+  id: "agency_business_pro";
+  nameEn: string;
+  nameAr: string;
+  points: number;
+  priceEGP: number;
+};
+
+export const AGENCY_BUSINESS_PRO_WALLET: AgencyBusinessProWalletPackage = {
+  id: "agency_business_pro",
+  nameEn: "Business Pro Package",
+  nameAr: "باقة أعمال Pro (وكالة) — 1000 ج.م",
+  points: 0,
+  priceEGP: 1000,
+};
+
+export type WalletSelectablePackage = PointsPackage | AgencyBusinessProWalletPackage;
+
 export const POINTS_PACKAGES: PointsPackage[] = [
   { id: "basic", nameEn: "Basic", nameAr: "أساسي", points: 20, priceEGP: 20 },
   {

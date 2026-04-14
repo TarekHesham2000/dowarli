@@ -1,16 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Copy, Loader2 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import {
   AD_POST_COST_RENT,
   AD_POST_COST_SALE,
+  AGENCY_BUSINESS_PRO_WALLET,
   getWalletDisplayNumber,
   POINTS_PACKAGES,
-  type PointsPackage,
+  type WalletSelectablePackage,
 } from "@/lib/pointsConfig";
 import { POINTS_CHANGED_EVENT } from "@/lib/profilePointsSync";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
@@ -25,13 +26,16 @@ type TxRow = {
   points_requested: number | null;
 };
 
-export default function WalletPage() {
+function WalletPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const packageParam = searchParams.get("package");
   const [points, setPoints] = useState(0);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [hasRegisteredAgency, setHasRegisteredAgency] = useState(false);
   const [transactions, setTransactions] = useState<TxRow[]>([]);
-  const [selected, setSelected] = useState<PointsPackage | null>(null);
+  const [selected, setSelected] = useState<WalletSelectablePackage | null>(null);
   const [senderPhone, setSenderPhone] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -55,8 +59,12 @@ export default function WalletPage() {
       return;
     }
     setUserId(user.id);
-    const { data: profile } = await supabase.from("profiles").select("points").eq("id", user.id).maybeSingle();
+    const [{ data: profile }, { data: agencyRow }] = await Promise.all([
+      supabase.from("profiles").select("points").eq("id", user.id).maybeSingle(),
+      supabase.from("agencies").select("id").eq("owner_id", user.id).maybeSingle(),
+    ]);
     setPoints(profile?.points ?? 0);
+    setHasRegisteredAgency(Boolean(agencyRow?.id));
     const { data: trans } = await supabase
       .from("transactions")
       .select("id, amount, status, created_at, rejection_reason, package_name, points_requested")
@@ -70,6 +78,14 @@ export default function WalletPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- mount bootstrap for Supabase
     void load();
   }, [load]);
+
+  useEffect(() => {
+    if (!hasRegisteredAgency) return;
+    if (packageParam !== "pro") return;
+    setSelected(AGENCY_BUSINESS_PRO_WALLET);
+    setSuccess("");
+    setError("");
+  }, [hasRegisteredAgency, packageParam]);
 
   useEffect(() => {
     const onSync = () => {
@@ -198,6 +214,9 @@ export default function WalletPage() {
         </div>
 
         <h2 className="mb-3 text-lg font-black text-slate-900">باقات الشحن</h2>
+        <p className="mb-3 text-xs font-medium text-slate-500">
+          باقات النقاط للإعلانات. باقة الوكالة Pro تظهر فقط إذا كان لديك ملف وكالة مسجّل.
+        </p>
         <div className="mb-8 grid w-full max-w-full grid-cols-1 gap-3">
           {POINTS_PACKAGES.map((pkg) => (
             <button
@@ -233,9 +252,51 @@ export default function WalletPage() {
           ))}
         </div>
 
+        {hasRegisteredAgency ? (
+          <>
+            <h2 className="mb-3 text-lg font-black text-slate-900">اشتراك الوكالة</h2>
+            <div className="mb-8 grid w-full max-w-full grid-cols-1 gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelected(AGENCY_BUSINESS_PRO_WALLET);
+                  setSuccess("");
+                  setError("");
+                }}
+                className={`relative w-full max-w-full rounded-2xl border-2 p-4 text-right transition-all active:scale-[0.99] ${
+                  selected?.id === AGENCY_BUSINESS_PRO_WALLET.id
+                    ? "border-amber-500 bg-gradient-to-l from-amber-50 to-emerald-50 shadow-md ring-2 ring-amber-400/40"
+                    : "border-slate-200 bg-white hover:border-emerald-300"
+                }`}
+              >
+                <span className="absolute left-3 top-3 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white">
+                  وكالة
+                </span>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-lg font-black text-slate-900">{AGENCY_BUSINESS_PRO_WALLET.nameAr}</p>
+                    <p className="text-xs text-slate-500">{AGENCY_BUSINESS_PRO_WALLET.nameEn}</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
+                      دفع اشتراك إداري — تفعيل مزايا Pro للوكالة بعد مراجعة الإدارة (بدون نقاط إعلانات).
+                    </p>
+                  </div>
+                  <div className="text-left">
+                    <p className="text-2xl font-black text-emerald-700">{AGENCY_BUSINESS_PRO_WALLET.priceEGP.toLocaleString("ar-EG")} ج.م</p>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </>
+        ) : null}
+
         {selected ? (
           <div className="mb-8 w-full max-w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
             <h3 className="mb-3 text-base font-black text-slate-900">إتمام الطلب — {selected.nameAr}</h3>
+            {selected.id === AGENCY_BUSINESS_PRO_WALLET.id ? (
+              <p className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-xs font-bold text-emerald-900">
+                اذكر في ملاحظة التحويل (إن أمكن) اسم الوكالة. سيُفعّل Pro بعد تأكيد الدفع يدوياً من الإدارة.
+              </p>
+            ) : null}
             <div className="mb-4 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 p-4">
               <p className="mb-2 text-sm font-bold text-slate-600">حوّل المبلغ إلى:</p>
               <div className="flex flex-wrap items-center gap-3">
@@ -343,10 +404,16 @@ export default function WalletPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-lg font-black text-slate-900">
-                      {t.points_requested != null ? `${t.points_requested} 💎` : `${t.amount} ج.م`}
+                      {t.points_requested != null && t.points_requested > 0
+                        ? `${t.points_requested} 💎`
+                        : `${t.amount.toLocaleString("ar-EG")} ج.م`}
                     </p>
                     <p className="text-sm text-slate-500">
-                      {t.package_name ? `${t.package_name} · ` : ""}
+                      {t.package_name === "agency_business_pro"
+                        ? "باقة أعمال Pro (وكالة) · "
+                        : t.package_name
+                          ? `${t.package_name} · `
+                          : ""}
                       {new Date(t.created_at).toLocaleDateString("ar-EG")}
                     </p>
                   </div>
@@ -369,5 +436,17 @@ export default function WalletPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function WalletPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[50vh] items-center justify-center text-slate-600">جاري تحميل المحفظة…</div>
+      }
+    >
+      <WalletPageContent />
+    </Suspense>
   );
 }

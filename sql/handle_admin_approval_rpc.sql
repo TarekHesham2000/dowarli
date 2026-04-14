@@ -70,7 +70,7 @@ BEGIN
   END IF;
 
   UPDATE public.properties
-  SET status = 'active'
+  SET status = 'active', is_approved = true
   WHERE id = p_property_id;
 END;
 $$;

@@ -1,7 +1,14 @@
+import { matchDistrictInText } from "@/lib/locationHierarchy";
+
 export type UnitType = "student" | "family" | "studio" | "shared" | "employee";
 
 export type ParsedFilters = {
+  /** Governorate or legacy broad area label */
   area: string;
+  /** Known district from location hierarchy (finer than area) */
+  district: string;
+  /** محافظة صريحة عند استخراج حي من القائمة */
+  governorate: string;
   maxPrice: number | null;
   unitType: string;
   keywords: string;
@@ -9,7 +16,15 @@ export type ParsedFilters = {
 
 /** Smart home search query parser (Arabic). */
 export function parseSearchQuery(query: string): ParsedFilters {
-  if (!query.trim()) return { area: "", maxPrice: null, unitType: "", keywords: "" };
+  if (!query.trim())
+    return {
+      area: "",
+      district: "",
+      governorate: "",
+      maxPrice: null,
+      unitType: "",
+      keywords: "",
+    };
 
   let remaining = query.trim();
 
@@ -118,11 +133,22 @@ export function parseSearchQuery(query: string): ParsedFilters {
   };
 
   let area = "";
-  for (const [keyword, canonical] of Object.entries(AREAS_MAP)) {
-    if (remaining.includes(keyword)) {
-      area = canonical;
-      remaining = remaining.replace(new RegExp(keyword, "g"), " ");
-      break;
+  let district = "";
+  let governorate = "";
+  const districtMatch = matchDistrictInText(remaining);
+  if (districtMatch) {
+    district = districtMatch.district;
+    governorate = districtMatch.governorate;
+    area = districtMatch.governorate;
+    const esc = districtMatch.district.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    remaining = remaining.replace(new RegExp(esc, "g"), " ");
+  } else {
+    for (const [keyword, canonical] of Object.entries(AREAS_MAP)) {
+      if (remaining.includes(keyword)) {
+        area = canonical;
+        remaining = remaining.replace(new RegExp(keyword, "g"), " ");
+        break;
+      }
     }
   }
 
@@ -310,5 +336,5 @@ export function parseSearchQuery(query: string): ParsedFilters {
   });
   keywords = keywords.replace(/\d+/g, " ").replace(/\s+/g, " ").trim();
 
-  return { area, maxPrice, unitType, keywords };
+  return { area, district, governorate, maxPrice, unitType, keywords };
 }

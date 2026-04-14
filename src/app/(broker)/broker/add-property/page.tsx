@@ -6,11 +6,18 @@ import { useRouter } from 'next/navigation'
 import { getDeviceId } from '@/lib/fingerprint'
 import { AD_POST_COST_RENT, getAdPostPointsCost, type ListingPurpose } from '@/lib/pointsConfig'
 import { safeRouterRefresh } from '@/lib/safeRouterRefresh'
+import {
+  GOVERNORATE_OPTIONS,
+  districtsForGovernorate,
+} from '@/lib/locationHierarchy'
+import {
+  BLOCK_PHONE_IN_LISTING_MESSAGE,
+  listingTextContainsPhoneSequence,
+} from '@/lib/blockPhoneInListingText'
 
 // ──────────────────────────────────────────────────────────────
 // Constants
 // ──────────────────────────────────────────────────────────────
-const AREAS = ['المنصورة', 'القاهرة', 'الإسكندرية', 'الجيزة', 'أسيوط', 'سوهاج', 'المنيا']
 
 const UNIT_TYPES = [
   { value: 'student',  label: 'سكن طلاب',    icon: '🎓' },
@@ -87,9 +94,10 @@ export default function AddPropertyPage() {
     title:       '',
     description: '',
     price:       '',
-    area:        '',
+    governorate: '',
+    district:    '',
+    landmark:    '',
     unit_type:   '',
-    address:     '',
     rental_unit: '' as 'bed' | 'room' | '',  // ✨ جديد
     beds_count:  '' as string,                // ✨ جديد — string للـ input ثم نحوله number
   })
@@ -104,6 +112,11 @@ export default function AddPropertyPage() {
       setForm((prev) => ({ ...prev, rental_unit: '', beds_count: '' }))
     }
   }, [listingPurpose])
+
+  const districtOptions = useMemo(
+    () => (form.governorate ? districtsForGovernorate(form.governorate) : []),
+    [form.governorate],
+  )
 
   const activationPointsCost = useMemo(() => getAdPostPointsCost(listingPurpose), [listingPurpose])
   const insufficientPointsToPublish = userPoints < activationPointsCost
@@ -203,6 +216,12 @@ export default function AddPropertyPage() {
       return
     }
 
+    if (listingTextContainsPhoneSequence(form.title, form.description)) {
+      setError(BLOCK_PHONE_IN_LISTING_MESSAGE)
+      setLoading(false)
+      return
+    }
+
     // Validation: الـ Sub-filter لو الإعلان إيجار والفئة تتطلبه
     if (listingPurpose === 'rent' && showRentalSubFilter && !form.rental_unit) {
       setError('يرجى تحديد نوع الإيجار: سرير أم أوضة كاملة')
@@ -269,20 +288,25 @@ export default function AddPropertyPage() {
         p_title: form.title.trim(),
         p_description: (form.description || '').trim(),
         p_price: Number(form.price),
-        p_area: form.area.trim(),
+        p_area: '',
         p_unit_type: form.unit_type.trim(),
-        p_address: (form.address || '').trim(),
+        p_address: '',
         p_device_id: deviceId || null,
         p_video_url: videoUrl.trim() || null,
         p_rental_unit: rentalUnitForRpc,
         p_beds_count: bedsForRpc,
         p_listing_purpose: listingPurpose,
+        p_governorate: form.governorate.trim(),
+        p_district: form.district.trim(),
+        p_landmark: (form.landmark || '').trim() || null,
       })
 
       if (rpcError) {
         const msg = rpcError.message ?? ''
         if (msg.includes('not_authenticated')) {
           setError('انتهت الجلسة — سجّل الدخول من جديد.')
+        } else if (msg.includes('ممنوع وضع أرقام تليفونات')) {
+          setError(BLOCK_PHONE_IN_LISTING_MESSAGE)
         } else {
           setError(msg || 'تعذّر حفظ الإعلان. حاول مرة أخرى.')
         }
@@ -423,7 +447,7 @@ export default function AddPropertyPage() {
                 onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }} />
             </div>
 
-            {/* PRICE + AREA */}
+            {/* PRICE + GOVERNORATE */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 8 }}>
@@ -440,16 +464,43 @@ export default function AddPropertyPage() {
               </div>
               <div>
                 <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 8 }}>
-                  المنطقة <span style={{ color: '#dc2626' }}>*</span>
+                  المحافظة <span style={{ color: '#dc2626' }}>*</span>
                 </label>
-                <select required value={form.area} onChange={e => setForm({ ...form, area: e.target.value })}
+                <select
+                  required
+                  value={form.governorate}
+                  onChange={e =>
+                    setForm({ ...form, governorate: e.target.value, district: '' })
+                  }
                   style={{ ...inputStyle, cursor: 'pointer' }}
                   onFocus={e => { e.target.style.borderColor = '#16a34a'; e.target.style.background = '#fff' }}
                   onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }}>
-                  <option value="">اختار...</option>
-                  {AREAS.map(a => <option key={a} value={a}>{a}</option>)}
+                  <option value="">اختار المحافظة...</option>
+                  {GOVERNORATE_OPTIONS.map((g) => (
+                    <option key={g.value} value={g.value}>{g.label}</option>
+                  ))}
                 </select>
               </div>
+            </div>
+
+            {/* DISTRICT */}
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 8 }}>
+                المنطقة / الحي <span style={{ color: '#dc2626' }}>*</span>
+              </label>
+              <select
+                required
+                value={form.district}
+                onChange={e => setForm({ ...form, district: e.target.value })}
+                disabled={!form.governorate}
+                style={{ ...inputStyle, cursor: form.governorate ? 'pointer' : 'not-allowed', opacity: form.governorate ? 1 : 0.65 }}
+                onFocus={e => { e.target.style.borderColor = '#16a34a'; e.target.style.background = '#fff' }}
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }}>
+                <option value="">{form.governorate ? 'اختار المنطقة...' : 'اختر المحافظة أولاً'}</option>
+                {districtOptions.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
             </div>
 
             {/* إيجار vs بيع — يحدد تكلفة النقاط */}
@@ -499,11 +550,13 @@ export default function AddPropertyPage() {
               </div>
             </div>
 
-            {/* ADDRESS */}
+            {/* LANDMARK / DETAIL ADDRESS */}
             <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 8 }}>العنوان التفصيلي</label>
-              <input type="text" placeholder="مثال: شارع النصر، بجوار المسجد" value={form.address}
-                onChange={e => setForm({ ...form, address: e.target.value })} style={inputStyle}
+              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 8 }}>
+                العنوان بالتفصيل / علامة مميزة
+              </label>
+              <input type="text" placeholder="مثال: شارع النصر، بجوار المسجد" value={form.landmark}
+                onChange={e => setForm({ ...form, landmark: e.target.value })} style={inputStyle}
                 onFocus={e => { e.target.style.borderColor = '#16a34a'; e.target.style.background = '#fff' }}
                 onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }} />
             </div>

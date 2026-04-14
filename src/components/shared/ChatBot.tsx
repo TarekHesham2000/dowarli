@@ -4,15 +4,25 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Send, Trash2, Minimize2, Maximize2, X, Sparkles, MapPin, DollarSign } from 'lucide-react'
 import { propertyPathFromRecord } from '@/lib/propertySlug'
+import {
+  AGENCY_CHAT_FREE_TIER_MESSAGE,
+  isAgencyChatPaywalled,
+  type AgencySubscriptionStatus,
+} from '@/lib/agencySubscription'
 
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 
 type FilterAction = {
   type: 'FILTER'
   unitType: UnitType | ''
-  area: string
+  governorate?: string
+  district?: string
+  area?: string
   maxPrice: number | null
-  keywords: string
+  minPrice?: number | null
+  priceSearchMode?: 'band' | 'higher'
+  listingPurpose?: '' | 'rent' | 'sale'
+  keywords?: string
 }
 
 type PropertyResult = {
@@ -20,6 +30,9 @@ type PropertyResult = {
   title: string
   price: number
   area: string
+  governorate?: string | null
+  district?: string | null
+  landmark?: string | null
   address: string | null
   unit_type: string
   images: string[]
@@ -48,6 +61,8 @@ type Message = {
 type ChatBotProps = {
   onFilter?: (params: {
     unitType: UnitType | ''
+    governorate: string
+    district: string
     area: string
     maxPrice: number | null
     keywords: string
@@ -57,6 +72,12 @@ type ChatBotProps = {
   onMobileSheetOpenChange?: (open: boolean) => void
   /** Increment (e.g. from mobile bottom nav) to open the panel programmatically. */
   openSignal?: number
+  /** When set, sent with every `/api/chat` request so the backend can scope search + prompts to this agency. */
+  agencyId?: string | null
+  /** Shown in the chat header / welcome when `agencyId` is set */
+  agencyName?: string | null
+  /** When `free` with `agencyId`, AI chat is paywalled (no `/api/chat` calls). */
+  agencySubscriptionStatus?: AgencySubscriptionStatus | null
 }
 
 const TYPE_LABELS: Record<UnitType, string> = {
@@ -67,17 +88,39 @@ const TYPE_LABELS: Record<UnitType, string> = {
   employee: 'سكن موظفين',
 }
 
-const ACTION_CHIPS: { label: string; message: string }[] = [
-  { label: '🎓 سكن طلاب', message: 'دور على سكن طلاب قريب من الجامعة بميزانية محدودة' },
-  { label: '🏙️ التجمع',   message: 'عايز وحدة سكنية في التجمع الخامس' },
-  { label: '🔑 إيجار',    message: 'ابحث عن شقة للإيجار في القاهرة' },
-  { label: '💰 بيع',      message: 'ابحث عن شقة للبيع بميزانية مناسبة' },
-]
-
 const MAX_SEND_HISTORY = 28
 const uid = () => Math.random().toString(36).slice(2, 9)
+
+function buildDefaultAssistantMessage(
+  agencyId?: string | null,
+  agencyName?: string | null,
+  agencySubscriptionStatus?: AgencySubscriptionStatus | null,
+): Message {
+  if (isAgencyChatPaywalled(agencyId, agencySubscriptionStatus)) {
+    return {
+      id: uid(),
+      role: 'assistant',
+      content: AGENCY_CHAT_FREE_TIER_MESSAGE,
+      action: null,
+      timestamp: new Date(),
+    }
+  }
+  const id = agencyId?.trim()
+  const name = agencyName?.trim()
+  const content =
+    id && name
+      ? `أهلاً بيك 👋 أنا مساعد دَورلي لعروض «${name}». قولّي الميزانية والمنطقة أو أي سؤال عن الوحدات — هنحافظ على سياق عروض الوكالة دي في الإجابات.`
+      : 'أهلاً بيك في دَورلي 👋\nأنا دليلك العقاري: قولّي الميزانية والمنطقة (أو اسألني أي حاجة) وهظبطلك البحث.'
+  return { id: uid(), role: 'assistant', content, action: null, timestamp: new Date() }
+}
 const CHAT_FAB_BOTTOM_PX = 100
 const MOBILE_MAX_PX = 768
+
+function chatLocationLine(r: Pick<PropertyResult, 'governorate' | 'district' | 'area'>): string {
+  const parts = [r.governorate, r.district].map((x) => (x ?? '').trim()).filter(Boolean)
+  if (parts.length) return parts.join(' — ')
+  return (r.area ?? '').trim()
+}
 
 // ─── Ambient background ───────────────────────────────────────────────────────
 function AnimatedBackground() {
@@ -124,23 +167,39 @@ function TypingOrb() {
 
 // ─── Filter badge ─────────────────────────────────────────────────────────────
 function FilterBadge({ action }: { action: FilterAction }) {
-  if (!action.unitType && !action.area && !action.maxPrice) return null
+  const loc =
+    action.district?.trim() ||
+    action.governorate?.trim() ||
+    action.area?.trim() ||
+    ''
+  const higherFloor =
+    action.priceSearchMode === 'higher' &&
+    typeof action.minPrice === 'number' &&
+    action.minPrice > 0
+  if (!action.unitType && !loc && !action.maxPrice && !higherFloor) return null
   return (
     <div className="mt-3 flex flex-wrap items-center gap-2">
       <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--brand-a50)' }}>فلتر</span>
-      {action.area && (
+      {loc && (
         <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
           style={{ background: 'var(--brand-a12)', border: '1px solid var(--brand-a25)', color: 'var(--brand-400)' }}>
-          <MapPin size={9} />{action.area}
+          <MapPin size={9} />{loc}
         </span>
       )}
-      {action.maxPrice && (
+      {higherFloor && typeof action.minPrice === 'number' && (
+        <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
+          <DollarSign size={9} style={{ color: 'var(--brand-400)' }} />
+          من {action.minPrice.toLocaleString('ar-EG')} ج.م
+        </span>
+      )}
+      {!higherFloor && action.maxPrice ? (
         <span className="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
           <DollarSign size={9} style={{ color: 'var(--brand-400)' }} />
           حتى {action.maxPrice.toLocaleString('ar-EG')} ج.م
         </span>
-      )}
+      ) : null}
       {action.unitType && (
         <span className="rounded-full px-2.5 py-1 text-[11px] font-semibold"
           style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}>
@@ -199,7 +258,7 @@ function PropertySlider({
                 <div className="flex items-center justify-between px-2.5 py-2"
                   style={{ borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                   <p className="flex min-w-0 truncate items-center gap-1 text-[10px]" style={{ color: '#94a3b8' }}>
-                    <MapPin size={8} style={{ color: 'var(--brand-400)', flexShrink: 0 }} />{r.area}
+                    <MapPin size={8} style={{ color: 'var(--brand-400)', flexShrink: 0 }} />{chatLocationLine(r)}
                   </p>
                   <span className="shrink-0 text-[10px] font-bold" style={{ color: 'var(--brand-500)' }}>عرض ↗</span>
                 </div>
@@ -268,6 +327,9 @@ export default function ChatBot({
   onPendingPromptConsumed,
   onMobileSheetOpenChange,
   openSignal = 0,
+  agencyId = null,
+  agencyName = null,
+  agencySubscriptionStatus = null,
 }: ChatBotProps) {
   const [mounted, setMounted]           = useState(false)
   const [isMobile, setIsMobile]         = useState(false)
@@ -275,11 +337,9 @@ export default function ChatBot({
   const [expanded, setExpanded]         = useState(false)
   const [keyboardInset, setKeyboardInset] = useState(0)
   const dragStartY                      = useRef<number | null>(null)
-  const [messages, setMessages]         = useState<Message[]>([{
-    id: uid(), role: 'assistant',
-    content: 'أهلاً بيك في دَورلي 👋\nأنا دليلك العقاري: قولّي الميزانية والمنطقة (أو اسألني أي حاجة) وهظبطلك البحث.',
-    action: null, timestamp: new Date(),
-  }])
+  const [messages, setMessages]         = useState<Message[]>(() => [
+    buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus),
+  ])
   const [input, setInput]   = useState('')
   const [loading, setLoading] = useState(false)
   const [hasNew, setHasNew]   = useState(false)
@@ -326,7 +386,14 @@ export default function ChatBot({
 
   const applyAction = useCallback((action: FilterAction) => {
     if (action.type !== 'FILTER') return
-    onFilter?.({ unitType: action.unitType || '', area: action.area || '', maxPrice: action.maxPrice ?? null, keywords: action.keywords || '' })
+    onFilter?.({
+      unitType: action.unitType || '',
+      governorate: action.governorate || '',
+      district: action.district || '',
+      area: action.area || '',
+      maxPrice: action.maxPrice ?? null,
+      keywords: action.keywords || '',
+    })
   }, [onFilter])
 
   const sendMessage = useCallback(async (text: string) => {
@@ -334,12 +401,38 @@ export default function ChatBot({
     if (!trimmed || sendingRef.current) return
     sendingRef.current = true
     const userMsg: Message = { id: uid(), role: 'user', content: trimmed, timestamp: new Date() }
-    setMessages((prev) => [...prev, userMsg]); setInput(''); setLoading(true)
+
+    if (isAgencyChatPaywalled(agencyId, agencySubscriptionStatus)) {
+      const botMsg: Message = {
+        id: uid(),
+        role: 'assistant',
+        content: AGENCY_CHAT_FREE_TIER_MESSAGE,
+        action: null,
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, userMsg, botMsg])
+      setInput('')
+      sendingRef.current = false
+      if (!isOpen) setHasNew(true)
+      return
+    }
+
+    setMessages((prev) => [...prev, userMsg])
+    setInput('')
+    setLoading(true)
     const controller = new AbortController()
     const timeoutId  = setTimeout(() => controller.abort(), 22_000)
     try {
       const history = [...messagesRef.current, userMsg].slice(-MAX_SEND_HISTORY).map((m) => ({ role: m.role, content: m.content }))
-      const res = await fetch('/api/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: history }), signal: controller.signal })
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: history,
+          ...(agencyId?.trim() ? { agency_id: agencyId.trim() } : {}),
+        }),
+        signal: controller.signal,
+      })
       clearTimeout(timeoutId)
       const rawText = await res.text()
       if (!res.ok) {
@@ -359,7 +452,7 @@ export default function ChatBot({
       const errMsg  = err instanceof Error && err.message ? err.message : isAbort ? 'الاتصال اتأخر — جرّب تاني 🔄' : 'في مشكلة مؤقتة، جرب بعد لحظة 🙏'
       setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: errMsg, action: null, timestamp: new Date() }])
     } finally { sendingRef.current = false; setLoading(false) }
-  }, [isOpen, applyAction])
+  }, [isOpen, applyAction, agencyId, agencySubscriptionStatus])
 
   sendMessageFn.current = sendMessage
 
@@ -383,9 +476,12 @@ export default function ChatBot({
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); void sendMessage(input) }
 
-  const clearChat = () => setMessages([{ id: uid(), role: 'assistant', content: 'اتمسحت المحادثة ✨\nنبدأ من جديد: الموقع الأول ولا الميزانية؟', action: null, timestamp: new Date() }])
+  const clearChat = () =>
+    setMessages([buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus)])
 
   if (!mounted) return null
+
+  const agencyPaywalledUi = isAgencyChatPaywalled(agencyId, agencySubscriptionStatus)
 
   const sheetTransition = isMobile
     ? { type: 'spring' as const, stiffness: 440, damping: 38, mass: 0.85 }
@@ -397,7 +493,13 @@ export default function ChatBot({
       <motion.button
         type="button" layoutId="chat-fab"
         onClick={() => setIsOpen((v) => !v)}
-        aria-label={isOpen ? 'إغلاق مساعد دَورلي' : 'فتح مساعد دَورلي'}
+        aria-label={
+          isOpen
+            ? 'إغلاق مساعد دَورلي'
+            : agencyName?.trim()
+              ? `فتح مساعد دَورلي — عروض ${agencyName.trim()}`
+              : 'فتح مساعد دَورلي'
+        }
         className={[
           'fixed z-[9999] flex h-14 w-14 items-center justify-center rounded-full overflow-hidden',
           isMobile && isOpen ? 'hidden' : '',
@@ -492,7 +594,13 @@ export default function ChatBot({
                     backgroundSize: '200% auto', animation: 'shimmer 2s linear infinite',
                     WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
                   } : { color: 'var(--brand-a80)' }}>
-                    {loading ? 'جاري التحليل…' : 'مستشار عقاري · Dowrly Guide'}
+                    {loading
+                      ? 'جاري التحليل…'
+                      : agencyPaywalledUi
+                        ? 'باقة مجانية — الترقية للوكلاء المعتمدين'
+                        : agencyName?.trim()
+                          ? `وكالة: ${agencyName.trim()} · Dowarly`
+                          : 'مستشار عقاري · Dowarly Guide'}
                   </p>
                 </div>
               </div>
@@ -543,38 +651,6 @@ export default function ChatBot({
               <div ref={messagesEndRef} />
             </div>
 
-            {/* Quick chips */}
-            {messages.length === 1 && !loading && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.25, type: 'spring', stiffness: 380, damping: 30 }}
-                className="shrink-0 px-4 pt-3 pb-3 relative z-10"
-                style={{ borderTop: '1px solid rgba(255,255,255,0.06)', background: 'rgba(0,0,0,0.2)' }}>
-                <p className="mb-3 text-center text-[10px] font-semibold uppercase tracking-widest" style={{ color: 'rgba(148,163,184,0.5)' }}>
-                  اختيارات سريعة
-                </p>
-                <div className="flex flex-wrap justify-center gap-2">
-                  {ACTION_CHIPS.map((c, i) => (
-                    <motion.button key={c.label} type="button"
-                      initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.3 + i * 0.06, type: 'spring', stiffness: 420, damping: 26 }}
-                      whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.96 }}
-                      onClick={() => void sendMessage(c.message)}
-                      className="inline-flex h-9 items-center gap-1.5 rounded-full px-4 text-[12px] font-semibold transition-all"
-                      style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#cbd5e1' }}
-                      onMouseEnter={(e) => {
-                        const el = e.currentTarget as HTMLButtonElement
-                        el.style.background = 'var(--brand-a15)'; el.style.borderColor = 'var(--brand-a35)'; el.style.color = '#fff'
-                      }}
-                      onMouseLeave={(e) => {
-                        const el = e.currentTarget as HTMLButtonElement
-                        el.style.background = 'rgba(255,255,255,0.06)'; el.style.borderColor = 'rgba(255,255,255,0.1)'; el.style.color = '#cbd5e1'
-                      }}
-                    >{c.label}</motion.button>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
             {/* Input */}
             <form
               className="relative z-10 flex shrink-0 items-center gap-3 px-4 py-3"
@@ -590,8 +666,15 @@ export default function ChatBot({
                 <input
                   ref={inputRef} value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  disabled={loading}
-                  placeholder="ميزانية، منطقة، نوع السكن…"
+                  placeholder={
+                    agencyPaywalledUi
+                      ? AGENCY_CHAT_FREE_TIER_MESSAGE
+                      : agencyId?.trim()
+                        ? 'اسأل عن عروض الوكالة…'
+                        : 'ميزانية، منطقة، نوع السكن…'
+                  }
+                  readOnly={agencyPaywalledUi}
+                  disabled={loading || agencyPaywalledUi}
                   enterKeyHint="send"
                   className="w-full h-11 rounded-2xl bg-transparent px-4 text-[13px] font-medium outline-none disabled:opacity-40"
                   style={{ color: '#f1f5f9' }}
@@ -600,7 +683,7 @@ export default function ChatBot({
 
               <motion.button
                 type="submit"
-                disabled={!input.trim() || loading}
+                disabled={!input.trim() || loading || agencyPaywalledUi}
                 whileTap={{ scale: 0.88 }}
                 whileHover={input.trim() && !loading ? { scale: 1.08 } : {}}
                 className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-25"

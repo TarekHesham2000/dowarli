@@ -31,6 +31,15 @@
 -- =============================================================================
 
 ALTER TABLE public.properties
+  ADD COLUMN IF NOT EXISTS governorate text;
+
+ALTER TABLE public.properties
+  ADD COLUMN IF NOT EXISTS district text;
+
+ALTER TABLE public.properties
+  ADD COLUMN IF NOT EXISTS landmark text;
+
+ALTER TABLE public.properties
   ADD COLUMN IF NOT EXISTS listing_purpose text NOT NULL DEFAULT 'rent';
 
 ALTER TABLE public.properties
@@ -110,7 +119,10 @@ CREATE OR REPLACE FUNCTION public.handle_property_submission(
   p_video_url text,
   p_rental_unit text,
   p_beds_count integer,
-  p_listing_purpose text
+  p_listing_purpose text,
+  p_governorate text DEFAULT NULL,
+  p_district text DEFAULT NULL,
+  p_landmark text DEFAULT NULL
 ) RETURNS bigint
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -119,10 +131,17 @@ AS $$
 DECLARE
   uid uuid;
   new_id bigint;
+  v_agency_id uuid;
   purpose text;
   dev_key text;
   ru_raw text;
   beds_final integer;
+  gov text;
+  dist text;
+  lm text;
+  legacy_area text;
+  area_for_row text;
+  addr_row text;
 BEGIN
   uid := auth.uid();
   IF uid IS NULL THEN
@@ -154,6 +173,32 @@ BEGIN
     RAISE EXCEPTION 'invalid_rental_unit';
   END IF;
 
+  gov := NULLIF(btrim(coalesce(p_governorate, '')), '');
+  dist := NULLIF(btrim(coalesce(p_district, '')), '');
+  lm := btrim(coalesce(p_landmark, ''));
+  legacy_area := NULLIF(btrim(coalesce(p_area, '')), '');
+
+  IF gov IS NOT NULL AND dist IS NOT NULL THEN
+    area_for_row := dist;
+  ELSIF legacy_area IS NOT NULL THEN
+    area_for_row := legacy_area;
+    gov := NULL;
+    dist := NULL;
+  ELSE
+    RAISE EXCEPTION 'invalid_location';
+  END IF;
+
+  addr_row := NULLIF(btrim(coalesce(p_address, '')), '');
+  IF addr_row IS NULL AND lm <> '' THEN
+    addr_row := lm;
+  END IF;
+
+  -- Link new listing to the caller's agency row when present (avoids client-supplied agency_id).
+  SELECT ag.id INTO v_agency_id
+  FROM public.agencies ag
+  WHERE ag.owner_id = uid
+  LIMIT 1;
+
   INSERT INTO public.properties (
     owner_id,
     title,
@@ -162,6 +207,9 @@ BEGIN
     area,
     unit_type,
     address,
+    governorate,
+    district,
+    landmark,
     status,
     was_charged,
     images,
@@ -170,15 +218,19 @@ BEGIN
     rental_unit,
     beds_count,
     listing_purpose,
-    listing_type
+    listing_type,
+    agency_id
   ) VALUES (
     uid,
     btrim(p_title),
     coalesce(p_description, ''),
     p_price,
-    btrim(p_area),
+    area_for_row,
     btrim(p_unit_type),
-    btrim(p_address),
+    coalesce(addr_row, ''),
+    gov,
+    dist,
+    NULLIF(lm, ''),
     'pending_approval',
     true,
     '[]'::jsonb,
@@ -193,7 +245,8 @@ BEGIN
     END,
     beds_final,
     purpose,
-    purpose
+    purpose,
+    v_agency_id
   )
   RETURNING id INTO new_id;
 
@@ -202,11 +255,11 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public.handle_property_submission(
-  text, text, numeric, text, text, text, text, text, text, integer, text
+  text, text, numeric, text, text, text, text, text, text, integer, text, text, text, text
 ) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.handle_property_submission(
-  text, text, numeric, text, text, text, text, text, text, integer, text
+  text, text, numeric, text, text, text, text, text, text, integer, text, text, text, text
 ) TO authenticated;
 
 -- ─── Verify installed signatures (use p.oid — both pg_proc and pg_namespace have oid) ───

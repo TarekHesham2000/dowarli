@@ -13,6 +13,8 @@ type SavedFiltersV1 = {
   activeFilter: string;
   parsed: {
     area: string;
+    district?: string;
+    governorate?: string;
     maxPrice: number | null;
     unitType: string;
     keywords: string;
@@ -22,6 +24,9 @@ type SavedFiltersV1 = {
 function propertyMatches(
   prop: {
     area: string;
+    governorate?: string | null;
+    district?: string | null;
+    landmark?: string | null;
     price: number;
     unit_type: string;
     title: string;
@@ -31,17 +36,24 @@ function propertyMatches(
   filters: SavedFiltersV1,
 ): boolean {
   const { parsed, activeFilter } = filters;
-  if (parsed.area) {
-    const hay = String(prop.area ?? "");
-    if (!hay.includes(parsed.area)) return false;
+  const dist = (parsed.district || "").replace(/\s+/g, " ").trim();
+  const gov = (parsed.governorate || "").replace(/\s+/g, " ").trim();
+  const locHay =
+    `${prop.governorate ?? ""} ${prop.district ?? ""} ${prop.area ?? ""}`.replace(/\s+/g, " ");
+
+  if (dist && !locHay.includes(dist)) return false;
+  if (gov && !locHay.includes(gov)) {
+    if (!(dist && locHay.includes(dist))) return false;
   }
+  if (!dist && !gov && parsed.area && !locHay.includes(parsed.area)) return false;
   if (parsed.maxPrice != null && Number(prop.price) > parsed.maxPrice) return false;
   const effectiveUnit =
     activeFilter && activeFilter !== "all" ? activeFilter : parsed.unitType || "";
   if (effectiveUnit && String(prop.unit_type) !== effectiveUnit) return false;
   const kw = (parsed.keywords || "").replace(/\s+/g, " ").trim();
   if (kw.length > 2) {
-    const hay = `${prop.title} ${prop.description} ${prop.address}`.toLowerCase();
+    const hay =
+      `${prop.title} ${prop.description} ${prop.address} ${prop.landmark ?? ""}`.toLowerCase();
     if (!hay.includes(kw.toLowerCase())) return false;
   }
   return true;
@@ -88,7 +100,9 @@ Deno.serve(async (req: Request) => {
 
   const { data: prop, error: propErr } = await admin
     .from("properties")
-    .select("id, area, price, unit_type, title, description, address, status, slug")
+    .select(
+      "id, area, governorate, district, landmark, price, unit_type, title, description, address, status, slug",
+    )
     .eq("id", propertyId)
     .maybeSingle();
 
@@ -108,6 +122,9 @@ Deno.serve(async (req: Request) => {
 
   const matchProp = {
     area: String(prop.area ?? ""),
+    governorate: prop.governorate != null ? String(prop.governorate) : null,
+    district: prop.district != null ? String(prop.district) : null,
+    landmark: prop.landmark != null ? String(prop.landmark) : null,
     price: Number(prop.price ?? 0),
     unit_type: String(prop.unit_type ?? ""),
     title: String(prop.title ?? ""),

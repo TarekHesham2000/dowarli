@@ -20,6 +20,9 @@ type Property = {
   description: string;
   price: number;
   area: string;
+  governorate?: string | null;
+  district?: string | null;
+  landmark?: string | null;
   address: string;
   unit_type: UnitType;
   images: string[];
@@ -30,6 +33,16 @@ type Property = {
   profiles: { name: string; phone: string };
 };
 
+function listingLocationLine(p: Pick<Property, "governorate" | "district" | "area">): string {
+  const parts = [p.governorate, p.district].map((x) => (x ?? "").trim()).filter(Boolean);
+  if (parts.length) return parts.join(" — ");
+  return (p.area ?? "").trim();
+}
+
+function listingDetailLine(p: Pick<Property, "landmark" | "address">): string {
+  return ((p.landmark ?? "").trim() || (p.address ?? "").trim()).trim();
+}
+
 function effectiveListingKind(p: Pick<Property, "listing_type" | "listing_purpose">): "rent" | "sale" {
   const raw = (p.listing_type ?? p.listing_purpose ?? "rent").toString().trim().toLowerCase();
   return raw === "sale" ? "sale" : "rent";
@@ -37,10 +50,10 @@ function effectiveListingKind(p: Pick<Property, "listing_type" | "listing_purpos
 
 /** أعمدة واضحة + active فقط في الاستعلام (لا نعتمد على select *) */
 const HOME_PROPERTY_SELECT =
-  "id, title, description, price, area, address, unit_type, images, slug, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
+  "id, title, description, price, area, governorate, district, landmark, address, unit_type, images, slug, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
 
 const HOME_PROPERTY_SELECT_FALLBACK =
-  "id, title, description, price, area, address, unit_type, images, slug, availability_status, created_at, profiles(name, phone, low_trust)";
+  "id, title, description, price, area, governorate, district, landmark, address, unit_type, images, slug, availability_status, created_at, profiles(name, phone, low_trust)";
 
 function filterHomeLowTrustRows(rows: unknown[]): Property[] {
   const filtered = rows.filter((row) => {
@@ -66,13 +79,21 @@ async function fetchActiveHomeProperties(
     : "";
 
   const applyFilters = (selectList: string) => {
+    // Market-wide home feed: no .eq("agency_id", …). Agency-scoped lists use agency_id on /agency/[slug] and broker /agency.
     let q = client.from("properties").select(selectList).eq("status", "active");
-    if (parsed.area) q = q.ilike("area", `%${parsed.area}%`);
+    const g = (parsed.governorate ?? "").trim();
+    const d = (parsed.district ?? "").trim();
+    const a = (parsed.area ?? "").trim();
+    if (d) q = q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
+    if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
+    if (!d && !g && a) {
+      q = q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,area.ilike.%${a}%`);
+    }
     if (parsed.maxPrice) q = q.lte("price", parsed.maxPrice);
     if (selectedType && selectedType !== "all") q = q.eq("unit_type", selectedType);
     if (cleanKeywords.length > 2) {
       q = q.or(
-        `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%`,
+        `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%,landmark.ilike.%${cleanKeywords}%`,
       );
     }
     return q;
@@ -206,7 +227,12 @@ export default function PublicPageClient() {
   const [searchQuery, setSearchQuery] = useState("");
   const [chatBootstrap, setChatBootstrap] = useState<string | null>(null);
   const [parsedFilters, setParsedFilters] = useState<ParsedFilters>({
-    area: "", maxPrice: null, unitType: "", keywords: ""
+    area: "",
+    district: "",
+    governorate: "",
+    maxPrice: null,
+    unitType: "",
+    keywords: "",
   });
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null);
   const [leadForm, setLeadForm]             = useState({ name: "", phone: "" });
@@ -248,6 +274,8 @@ export default function PublicPageClient() {
       const parsed = overrideFilters
         ? {
             area: overrideFilters.area ?? "",
+            district: overrideFilters.district ?? "",
+            governorate: overrideFilters.governorate ?? "",
             maxPrice: overrideFilters.maxPrice ?? null,
             unitType: overrideFilters.unitType ?? "",
             keywords: overrideFilters.keywords ?? "",
@@ -344,6 +372,8 @@ export default function PublicPageClient() {
         activeFilter,
         parsed: {
           area: parsed.area,
+          district: parsed.district,
+          governorate: parsed.governorate,
           maxPrice: parsed.maxPrice,
           unitType: parsed.unitType,
           keywords: parsed.keywords,
@@ -586,12 +616,21 @@ export default function PublicPageClient() {
                 <button
                   onClick={async () => {
                     setSearchQuery("");
-                    setParsedFilters({ area: "", maxPrice: null, unitType: "", keywords: "" });
+                    setParsedFilters({
+                      area: "",
+                      district: "",
+                      governorate: "",
+                      maxPrice: null,
+                      unitType: "",
+                      keywords: "",
+                    });
                     setActiveFilter("all");
                     setLoading(true);
                     try {
                       const rows = await fetchActiveHomeProperties(supabase, {
                         area: "",
+                        district: "",
+                        governorate: "",
                         maxPrice: null,
                         unitType: "",
                         keywords: "",
@@ -635,7 +674,11 @@ export default function PublicPageClient() {
             </div>
 
             {/* Parsed Filters Feedback — يوضح للمستخدم إيه اللي فهمه */}
-            {(parsedFilters.area || parsedFilters.maxPrice || parsedFilters.unitType) && (
+            {(parsedFilters.area ||
+              parsedFilters.district ||
+              parsedFilters.governorate ||
+              parsedFilters.maxPrice ||
+              parsedFilters.unitType) && (
               <motion.div
                 initial={{ opacity: 0, y: -6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -644,9 +687,12 @@ export default function PublicPageClient() {
                   marginTop: "0.75rem", justifyContent: "center",
                 }}
               >
-                {parsedFilters.area && (
+                {(parsedFilters.district || parsedFilters.governorate || parsedFilters.area) && (
                   <span style={{ background: "rgba(0,211,141,0.1)", border: "1px solid rgba(0,211,141,0.3)", borderRadius: 999, fontSize: 11, fontWeight: 700, color: "#00a86b", padding: "4px 12px" }}>
-                    📍 {parsedFilters.area}
+                    📍{" "}
+                    {parsedFilters.district ||
+                      parsedFilters.governorate ||
+                      parsedFilters.area}
                   </span>
                 )}
                 {parsedFilters.maxPrice && (
@@ -869,7 +915,7 @@ export default function PublicPageClient() {
                       {p.images?.[0] ? (
                         <Image
                           src={p.images[0]}
-                          alt={`صورة عقار: ${p.title} في ${p.area}`}
+                          alt={`صورة عقار: ${p.title} في ${listingLocationLine(p)}`}
                           fill
                           sizes="(max-width: 768px) 86vw, 33vw"
                           style={{ objectFit: "cover" }}
@@ -970,7 +1016,8 @@ export default function PublicPageClient() {
                           <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="var(--brand-500)"/>
                           <circle cx="12" cy="9" r="2.5" fill="#ffffff"/>
                         </svg>
-                        {p.area} — {p.address}
+                        {listingLocationLine(p)}
+                        {listingDetailLine(p) ? ` — ${listingDetailLine(p)}` : ""}
                       </p>
 
                       <div
@@ -1089,7 +1136,10 @@ export default function PublicPageClient() {
                         {selectedProperty.title}
                       </h2>
                       <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>
-                        📍 {selectedProperty.area} — {selectedProperty.address}
+                        📍 {listingLocationLine(selectedProperty)}
+                        {listingDetailLine(selectedProperty)
+                          ? ` — ${listingDetailLine(selectedProperty)}`
+                          : ""}
                       </p>
                     </div>
                     <button
@@ -1446,11 +1496,18 @@ export default function PublicPageClient() {
               : '';
 
             const overrideFilters = {
-              area:      filters.area     || '',
-              maxPrice:  filters.maxPrice ?? null,
-              unitType:  filters.unitType || '',
-              keywords:  keywordsCleaned, // ابعت الكلمات نظيفة
+              area:        filters.area        || '',
+              district:    filters.district    || '',
+              governorate: filters.governorate || '',
+              maxPrice:    filters.maxPrice ?? null,
+              unitType:    filters.unitType   || '',
+              keywords:    keywordsCleaned,
             };
+
+            setParsedFilters((prev) => ({
+              ...prev,
+              ...overrideFilters,
+            }));
 
             loadProperties(overrideFilters);  // ← بنبعت الداتا مباشرة = مفيش stale closure
           }}

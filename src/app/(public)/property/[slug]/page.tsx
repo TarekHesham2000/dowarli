@@ -11,11 +11,21 @@ type PropertyMetaRow = {
   description: string | null;
   images: string[] | null;
   area: string;
+  governorate?: string | null;
+  district?: string | null;
   price: number;
   status: string;
   availability_status: string | null;
   slug: string | null;
+  listing_purpose?: string | null;
+  listing_type?: string | null;
 };
+
+function metaLocationLine(row: PropertyMetaRow): string {
+  const parts = [row.district, row.governorate].map((x) => (x ?? "").trim()).filter(Boolean);
+  if (parts.length) return parts.join("، ");
+  return (row.area ?? "").trim();
+}
 
 function decodeSegment(raw: string): string {
   try {
@@ -35,14 +45,17 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     const numericId = Number(segment);
     const { data } = await supabase
       .from("properties")
-      .select("slug, title, description, images, area, price, status, availability_status")
+      .select(
+        "slug, title, description, images, area, governorate, district, price, status, availability_status, listing_purpose, listing_type",
+      )
       .eq("id", numericId)
       .maybeSingle();
     const row = data as (PropertyMetaRow & { slug: string | null }) | null;
     if (row?.slug) {
       const canonical = `${baseUrl}/property/${row.slug}`;
+      const loc = metaLocationLine(row);
       return {
-        title: `${row.title} — ${row.area} | دَورلي`,
+        title: loc ? `${row.title} — ${loc} | دَورلي` : `${row.title} | دَورلي`,
         alternates: { canonical },
         robots: { index: false, follow: true },
       };
@@ -52,7 +65,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   const { data } = await supabase
     .from("properties")
-    .select("title, description, images, area, price, status, availability_status, slug")
+    .select(
+      "title, description, images, area, governorate, district, price, status, availability_status, slug, listing_purpose, listing_type",
+    )
     .eq("slug", segment)
     .maybeSingle();
   const row = data as PropertyMetaRow | null;
@@ -64,11 +79,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     };
   }
 
-  const title = `${row.title} — ${row.area} | دَورلي`;
+  const loc = metaLocationLine(row);
+  const title = loc ? `${row.title} — ${loc} | دَورلي` : `${row.title} | دَورلي`;
   const plainDesc = row.description?.replace(/\s+/g, " ").trim() ?? "";
+  const purposeRaw = (row.listing_type ?? row.listing_purpose ?? "rent").toString().trim().toLowerCase();
+  const listingPhrase = purposeRaw === "sale" ? "للبيع" : "للإيجار";
   const description =
     plainDesc.slice(0, 160) ||
-    `إيجار في ${row.area} — ${row.price?.toLocaleString("ar-EG")} ج.م شهرياً على دَورلي`;
+    (loc
+      ? `عقار ${listingPhrase} في ${loc} — ${row.price?.toLocaleString("ar-EG")} ج.م على دَورلي`
+      : `عقار ${listingPhrase} — ${row.price?.toLocaleString("ar-EG")} ج.م على دَورلي`);
   const isActive = row.status === "active";
   const isListedAsAvailable = (row.availability_status ?? "available") === "available";
   const indexable = isActive && isListedAsAvailable;

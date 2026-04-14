@@ -12,6 +12,9 @@ type Property = {
   id: number
   title: string
   area: string
+  governorate?: string | null
+  district?: string | null
+  landmark?: string | null
   price: number
   status: string
   images: string[]
@@ -191,7 +194,7 @@ export default function AdminDashboard() {
     try {
       const [propsRes, transRes, verifiedRes, brokersRes, leadsRes, settingsRes] = await Promise.all([
         supabase.from('properties')
-          .select('id, title, area, price, status, images, description, address, slug, video_url, listing_type, listing_purpose, was_charged, profiles(name, phone, id, points)')
+          .select('id, title, area, governorate, district, landmark, price, status, images, description, address, slug, video_url, listing_type, listing_purpose, was_charged, profiles(name, phone, id, points)')
           .order('created_at', { ascending: false }),
         supabase.from('transactions')
           .select('id, amount, screenshot_url, status, broker_id, sender_phone, points_requested, package_name, profiles(name, phone)')
@@ -254,7 +257,8 @@ export default function AdminDashboard() {
         return {
           ...l,
           property_title: prop?.title ?? '—',
-          property_area: prop?.area ?? '—',
+          property_area:
+            [prop?.district, prop?.governorate].filter(Boolean).join(' — ') || prop?.area || '—',
           owner_name: prop?.profiles?.name ?? '—',
         }
       })
@@ -495,7 +499,11 @@ useEffect(() => {
     try {
       const { error } = await supabase
         .from('properties')
-        .update({ status: 'rejected', rejection_reason: rejectReason.trim() })
+        .update({
+          status: 'rejected',
+          rejection_reason: rejectReason.trim(),
+          is_approved: false,
+        })
         .eq('id', rejectId)
       if (error) {
         showToast(`فشل رفض الإعلان: ${error.message}`, 'error')
@@ -515,8 +523,33 @@ useEffect(() => {
     const id = t.id
     const brokerId = t.broker_id
     const pointsAdd = t.points_requested != null ? Number(t.points_requested) : 0
+    const isAgencyProPackage = t.package_name === 'agency_business_pro'
     if (approvingTransactionId !== null || rejectSubmitting) return
     setApprovingTransactionId(id)
+
+    if (isAgencyProPackage) {
+      const { error: rpcErr } = await supabase.rpc('activate_agency_pro_admin', {
+        p_broker_id: brokerId,
+        p_transaction_id: Number(id),
+      })
+      if (rpcErr) {
+        const msg = rpcErr.message ?? ''
+        if (msg.includes('Agency not found')) {
+          showToast('هذا المستخدم لم ينشئ وكالة بعد', 'error')
+        } else {
+          showToast(`فشل تفعيل باقة الوكالة: ${msg}`, 'error')
+        }
+        setApprovingTransactionId(null)
+        return
+      }
+      setTransactions((prev) => prev.filter((x) => x.id !== id))
+      setStats((prev) => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
+      setApprovingTransactionId(null)
+      showToast('تم تأكيد الطلب وتفعيل اشتراك Pro للوكالة', 'success')
+      await loadAll()
+      safeRouterRefresh(router)
+      return
+    }
 
     if (pointsAdd > 0) {
       const res = await fetch('/api/admin/add-points', {
@@ -552,7 +585,11 @@ useEffect(() => {
     }
 
     const { data: updatedRows, error: txError } = await supabase
-      .from('transactions').update({ status: 'verified' }).eq('id', id).eq('status', 'pending').select('id')
+      .from('transactions')
+      .update({ status: 'verified', is_verified: true })
+      .eq('id', id)
+      .eq('status', 'pending')
+      .select('id')
     if (txError) {
       showToast(`تمت إضافة الرصيد/النقاط لكن فشل تحديث حالة الطلب: ${txError.message}`, 'error')
       setApprovingTransactionId(null)
@@ -569,12 +606,9 @@ useEffect(() => {
     setTransactions((prev) => prev.filter((x) => x.id !== id))
     setStats((prev) => ({ ...prev, pendingTransactions: Math.max(0, prev.pendingTransactions - 1) }))
     setApprovingTransactionId(null)
-    showToast(
-      pointsAdd > 0
-        ? `تم تأكيد الطلب وإضافة ${pointsAdd} نقطة للمستخدم`
-        : 'تم تأكيد الطلب وإضافة المبلغ للمحفظة',
-      'success',
-    )
+    let approveSuccessMsg = 'تم تأكيد الطلب وإضافة المبلغ للمحفظة'
+    if (pointsAdd > 0) approveSuccessMsg = `تم تأكيد الطلب وإضافة ${pointsAdd} نقطة للمستخدم`
+    showToast(approveSuccessMsg, 'success')
     await loadAll()
     safeRouterRefresh(router)
   }
@@ -1339,7 +1373,12 @@ useEffect(() => {
             <div style={{ background: 'linear-gradient(135deg, #1e40af, #1d4ed8)', padding: '1.25rem', borderRadius: '20px 20px 0 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <h2 style={{ fontSize: 16, fontWeight: 900, color: 'white', margin: '0 0 4px' }}>{selectedProperty.title}</h2>
-                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', margin: 0 }}>📍 {selectedProperty.area} — {selectedProperty.address}</p>
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', margin: 0 }}>
+                  📍{' '}
+                  {[selectedProperty.district, selectedProperty.governorate].filter(Boolean).join(' — ') ||
+                    selectedProperty.area}{' '}
+                  — {selectedProperty.landmark?.trim() || selectedProperty.address}
+                </p>
               </div>
               <button onClick={() => setSelectedProperty(null)}
                 style={{ background: 'rgba(255,255,255,0.2)', border: 'none', color: 'white', width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', fontSize: 14 }}>✕</button>
@@ -1670,7 +1709,9 @@ useEffect(() => {
                       title="اعرض كل إعلانات هذا المالك">
                       {p.profiles?.name}
                     </span>
-                    {' · '}{p.area} · {p.price?.toLocaleString()} ج.م
+                    {' · '}
+                    {[p.district, p.governorate].filter(Boolean).join(' — ') || p.area} ·{' '}
+                    {p.price?.toLocaleString()} ج.م
                     {' · '}
                     <span title="رصيد النقاط — للمعلومة فقط">
                       💎 {typeof p.profiles?.points === 'number' ? p.profiles.points : '—'}
