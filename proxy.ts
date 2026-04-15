@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
+import { isAdminProfile } from "@/lib/isAdmin";
 
 /**
  * Next.js 16+: حماية على حافة الطلب (`proxy` بدل `middleware`).
@@ -54,7 +55,7 @@ export async function proxy(request: NextRequest) {
       .eq("id", authedUser.id)
       .maybeSingle();
 
-    if (profile?.role !== "admin") {
+    if (!isAdminProfile(profile)) {
       return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }

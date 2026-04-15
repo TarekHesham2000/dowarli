@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
+import { applySaleModeBonusToPointsDelta, normalizePlatformSettings } from "@/lib/platformSettings";
 
 /**
  * Adds points to a broker profile. Verifies the caller is admin using the
@@ -68,7 +69,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: false, error: "bad_request" }, { status: 400 });
   }
 
-  const p_delta = Math.trunc(p_deltaRaw);
+  let p_delta = Math.trunc(p_deltaRaw);
 
   let svc;
   try {
@@ -105,6 +106,12 @@ export async function POST(request: Request) {
   }
   if (!target) {
     return NextResponse.json({ ok: false, error: "user_not_found" }, { status: 404 });
+  }
+
+  if (p_delta > 0) {
+    const { data: plat } = await svc.from("platform_settings").select("*").eq("id", 1).maybeSingle();
+    const settings = normalizePlatformSettings(plat as Record<string, unknown> | null);
+    p_delta = applySaleModeBonusToPointsDelta(p_delta, settings);
   }
 
   const nextPts = Math.max(0, (target.points ?? 0) + p_delta);

@@ -11,11 +11,24 @@ const AGENCY_ID_CHUNK = 80;
 
 export default async function AgenciesDirectoryPage() {
   const supabase = createSupabaseAnonServer();
-  const { data, error } = await supabase
+  let q = supabase
     .from("agencies")
     .select("id, name, slug, logo_url, bio")
-    .eq("is_verified", true)
+    .eq("is_active", true)
     .order("name", { ascending: true });
+  let { data, error } = await q;
+  if (
+    error &&
+    (error.code === "42703" || String(error.message).toLowerCase().includes("is_active"))
+  ) {
+    const fallback = await supabase
+      .from("agencies")
+      .select("id, name, slug, logo_url, bio")
+      .eq("is_verified", true)
+      .order("name", { ascending: true });
+    data = fallback.data;
+    error = fallback.error;
+  }
 
   const rows = !error && data ? data : [];
   const ids = rows.map((r) => r.id).filter(Boolean);

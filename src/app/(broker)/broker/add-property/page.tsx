@@ -4,7 +4,13 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { getDeviceId } from '@/lib/fingerprint'
-import { AD_POST_COST_RENT, getAdPostPointsCost, type ListingPurpose } from '@/lib/pointsConfig'
+import { type ListingPurpose } from '@/lib/pointsConfig'
+import {
+  effectiveListingActivationPoints,
+  normalizePlatformSettings,
+  PLATFORM_SETTINGS_DEFAULTS,
+  type PlatformSettingsRow,
+} from '@/lib/platformSettings'
 import { safeRouterRefresh } from '@/lib/safeRouterRefresh'
 import {
   GOVERNORATE_OPTIONS,
@@ -89,6 +95,7 @@ export default function AddPropertyPage() {
 
   // ── Form State ─────────────────────────────────────────────
   const [listingPurpose, setListingPurpose] = useState<ListingPurpose>('rent')
+  const [platformSettings, setPlatformSettings] = useState<PlatformSettingsRow>(PLATFORM_SETTINGS_DEFAULTS)
 
   const [form, setForm] = useState({
     title:       '',
@@ -118,7 +125,18 @@ export default function AddPropertyPage() {
     [form.governorate],
   )
 
-  const activationPointsCost = useMemo(() => getAdPostPointsCost(listingPurpose), [listingPurpose])
+  const activationPointsCost = useMemo(
+    () => effectiveListingActivationPoints(listingPurpose, platformSettings),
+    [listingPurpose, platformSettings],
+  )
+  const costRentDisplay = useMemo(
+    () => effectiveListingActivationPoints('rent', platformSettings),
+    [platformSettings],
+  )
+  const costSaleDisplay = useMemo(
+    () => effectiveListingActivationPoints('sale', platformSettings),
+    [platformSettings],
+  )
   const insufficientPointsToPublish = userPoints < activationPointsCost
 
   // ── تحميل الإعدادات + فحص الـ Device + رصيد النقاط ─────────
@@ -132,6 +150,14 @@ export default function AddPropertyPage() {
       } = await supabase.auth.getUser()
 
       if (user) {
+        try {
+          const pr = await fetch('/api/platform-settings')
+          const pj = (await pr.json()) as { settings?: Record<string, unknown> }
+          if (pj?.settings) setPlatformSettings(normalizePlatformSettings(pj.settings))
+        } catch {
+          setPlatformSettings(PLATFORM_SETTINGS_DEFAULTS)
+        }
+
         const { data: profile } = await supabase.from('profiles').select('points').eq('id', user.id).single()
         const pts = profile?.points ?? 0
         setUserPoints(pts)
@@ -264,7 +290,15 @@ export default function AddPropertyPage() {
       const livePoints = profile.points ?? 0
       setUserPoints(livePoints)
 
-      const pointsCost = getAdPostPointsCost(listingPurpose)
+      let ps = platformSettings
+      try {
+        const pr = await fetch('/api/platform-settings')
+        const pj = (await pr.json()) as { settings?: Record<string, unknown> }
+        if (pj?.settings) ps = normalizePlatformSettings(pj.settings)
+      } catch {
+        /* keep state */
+      }
+      const pointsCost = effectiveListingActivationPoints(listingPurpose, ps)
 
       if (livePoints < pointsCost) {
         setError(
@@ -379,7 +413,8 @@ export default function AddPropertyPage() {
         <div style={{ marginBottom: '1.25rem' }}>
           <h1 style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', margin: '0 0 4px' }}>رفع عقار جديد 🏠</h1>
           <p style={{ fontSize: 13, color: '#64748b', margin: 0 }}>
-            تُخصم النقاط عند موافقة الإدارة: إيجار {AD_POST_COST_RENT} نقطة — بيع {getAdPostPointsCost('sale')} نقطة. حسابك يبدأ بـ 100 نقطة هدية.
+            تُخصم النقاط عند موافقة الإدارة: إيجار {costRentDisplay} نقطة — بيع {costSaleDisplay} نقطة
+            {platformSettings.sale_mode_enabled ? ' — وضع عروض نشط (خصم على التفعيل)' : ''}. حسابك يبدأ بـ 100 نقطة هدية.
           </p>
         </div>
 
@@ -511,8 +546,8 @@ export default function AddPropertyPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                 {(
                   [
-                    { v: 'rent' as const, label: 'إيجار', sub: `${AD_POST_COST_RENT} نقطة`, icon: '🔑' },
-                    { v: 'sale' as const, label: 'بيع', sub: `${getAdPostPointsCost('sale')} نقطة`, icon: '🏷️' },
+                    { v: 'rent' as const, label: 'إيجار', sub: `${costRentDisplay} نقطة`, icon: '🔑' },
+                    { v: 'sale' as const, label: 'بيع', sub: `${costSaleDisplay} نقطة`, icon: '🏷️' },
                   ] as const
                 ).map((opt) => (
                   <button

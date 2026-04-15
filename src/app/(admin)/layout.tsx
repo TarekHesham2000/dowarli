@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
+import { isAdminProfile } from "@/lib/isAdmin";
 
 export const metadata: Metadata = {
   robots: { index: false, follow: false },
@@ -48,14 +49,14 @@ export default async function AdminGroupLayout({
     .from("profiles")
     .select("role")
     .eq("id", user.id)
-    .single();
+    .maybeSingle();
 
   if (profileError) {
     console.error("[admin layout] profiles query:", profileError.message);
     redirect("/login");
   }
 
-  if (profile?.role !== "admin") {
+  if (!isAdminProfile(profile)) {
     redirect("/dashboard");
   }
 

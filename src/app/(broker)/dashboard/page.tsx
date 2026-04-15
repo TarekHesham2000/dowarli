@@ -37,6 +37,14 @@ type LeadRow = {
   properties: { title: string } | { title: string }[] | null;
 };
 
+type SystemNotificationRow = {
+  id: string;
+  title: string;
+  body: string;
+  read_at: string | null;
+  created_at: string;
+};
+
 function propertyTitle(p: LeadRow["properties"]): string {
   if (!p) return "—";
   if (Array.isArray(p)) return p[0]?.title ?? "—";
@@ -75,6 +83,7 @@ export default function BrokerDashboardHomePage() {
   const [lowTrustProfile, setLowTrustProfile] = useState(false);
   const [hasAgency, setHasAgency] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [systemNotifications, setSystemNotifications] = useState<SystemNotificationRow[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -145,6 +154,18 @@ export default function BrokerDashboardHomePage() {
       } else {
         setLeads([]);
       }
+
+      const { data: notifRows, error: notifErr } = await supabase
+        .from("user_system_notifications")
+        .select("id, title, body, read_at, created_at")
+        .eq("user_id", user.id)
+        .is("read_at", null)
+        .order("created_at", { ascending: false })
+        .limit(8);
+      if (notifErr && !String(notifErr.message ?? "").includes("does not exist")) {
+        console.error("Notifications:", notifErr);
+      }
+      setSystemNotifications((notifRows as SystemNotificationRow[]) ?? []);
     } catch (e) {
       console.error("Dashboard load:", e);
     } finally {
@@ -313,6 +334,18 @@ export default function BrokerDashboardHomePage() {
     }
   };
 
+  const dismissNotification = async (id: string) => {
+    const { error } = await supabase
+      .from("user_system_notifications")
+      .update({ read_at: new Date().toISOString() })
+      .eq("id", id);
+    if (error) {
+      console.error("dismissNotification", error);
+      return;
+    }
+    setSystemNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
+
   if (loading) {
     return (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: "50vh" }}>
@@ -466,6 +499,51 @@ export default function BrokerDashboardHomePage() {
   return (
     <>
       <WelcomePointsBanner />
+      {systemNotifications.length > 0 ? (
+        <div style={{ maxWidth: 960, margin: "0 auto", padding: "0.75rem 1rem 0" }}>
+          {systemNotifications.map((n) => (
+            <div
+              key={n.id}
+              style={{
+                marginBottom: 10,
+                borderRadius: 14,
+                border: "1px solid #bae6fd",
+                background: "linear-gradient(135deg, #eff6ff, #f0f9ff)",
+                padding: "12px 14px",
+                display: "flex",
+                gap: 12,
+                alignItems: "flex-start",
+              }}
+            >
+              <div style={{ fontSize: 22 }}>📣</div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ margin: 0, fontSize: 14, fontWeight: 900, color: "#0c4a6e" }}>{n.title}</p>
+                <p style={{ margin: "6px 0 0", fontSize: 13, color: "#334155", whiteSpace: "pre-wrap", lineHeight: 1.6 }}>
+                  {n.body}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void dismissNotification(n.id)}
+                style={{
+                  flexShrink: 0,
+                  border: "none",
+                  background: "#0ea5e9",
+                  color: "white",
+                  borderRadius: 10,
+                  padding: "6px 12px",
+                  fontSize: 12,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                }}
+              >
+                تم
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <AnimatePresence>
         {selectedProperty ? (
           <motion.div
