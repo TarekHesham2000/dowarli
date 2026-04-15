@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { POINTS_CHANGED_EVENT } from "@/lib/profilePointsSync";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
+import SiteBrandLogo from "@/components/brand/SiteBrandLogo";
 
 const BRAND = "#00d38d";
 const ADD_PROPERTY_BTN =
@@ -155,12 +156,7 @@ export default function Navbar() {
             className="flex min-w-0 shrink items-center py-0.5 no-underline transition-opacity hover:opacity-90"
             aria-label="دورلي – الصفحة الرئيسية"
           >
-            <span
-              className="text-lg font-extrabold tracking-tight sm:text-[1.35rem]"
-              style={{ color: BRAND, fontFamily: "var(--font-cairo), Cairo, sans-serif" }}
-            >
-              دورلي
-            </span>
+            <SiteBrandLogo layout="horizontal" />
           </Link>
           {showBrokerTools && !loading ? (
             <Link

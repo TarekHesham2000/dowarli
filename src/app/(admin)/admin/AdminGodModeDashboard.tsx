@@ -17,7 +17,6 @@ import {
   RefreshCw,
   Search,
   Settings,
-  Shield,
   Users,
   Vault,
   X,
@@ -34,6 +33,7 @@ import {
   type PlatformSettingsRow,
 } from "@/lib/platformSettings";
 import { PropertyImagesAdmin } from "./PropertyImagesAdmin";
+import SiteBrandLogo from "@/components/brand/SiteBrandLogo";
 import {
   activationCostLabelAr,
   getEmbedUrl,
@@ -1311,9 +1311,7 @@ export default function AdminGodModeDashboard() {
           }`}
         >
           <div className="flex items-center gap-2 border-b border-slate-800 px-4 py-4">
-            <div className="flex size-10 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
-              <Shield className="size-5" aria-hidden />
-            </div>
+            <SiteBrandLogo layout="icon" />
             <div>
               <div className="text-sm font-black text-white">دورلي</div>
               <div className="text-[11px] font-semibold text-slate-500">لوحة تحكم الإدارة</div>

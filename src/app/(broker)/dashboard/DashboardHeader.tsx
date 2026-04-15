@@ -4,8 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Menu, X } from "lucide-react";
-
-const BRAND = "#00d38d";
+import SiteBrandLogo from "@/components/brand/SiteBrandLogo";
 
 const ADD_PROPERTY_CLASS =
   "inline-flex items-center justify-center rounded-lg bg-[#00d38d] px-3 py-2 text-[12px] font-black text-white shadow-md shadow-emerald-600/25 no-underline transition hover:bg-[#00bf7f] sm:px-4 sm:text-[13px]";
@@ -44,10 +43,12 @@ export default function DashboardHeader() {
           >
             {open ? <X className="h-5 w-5" strokeWidth={2} /> : <Menu className="h-5 w-5" strokeWidth={2} />}
           </button>
-          <Link href="/" className="shrink-0 rounded-lg py-1 no-underline transition-opacity hover:opacity-90">
-            <span className="text-lg font-extrabold tracking-tight" style={{ color: BRAND }}>
-              دورلي
-            </span>
+          <Link
+            href="/"
+            className="shrink-0 rounded-lg py-1 no-underline transition-opacity hover:opacity-90"
+            aria-label="دورلي – الصفحة الرئيسية"
+          >
+            <SiteBrandLogo layout="horizontal" />
           </Link>
           <span className="hidden rounded-full border border-gray-200 bg-white/80 px-2.5 py-0.5 text-[10px] font-extrabold text-slate-600 sm:inline sm:text-[11px]">
             لوحة الوسيط
