@@ -2,6 +2,7 @@
 // Intentionally NO "use client" — Next.js resolves `metadata` on the server
 // before rendering. All interactive logic lives in ./PublicPageClient.tsx
 import type { Metadata } from "next";
+import { fetchHomeAgencyPartners } from "@/lib/fetchHomeAgencyPartners";
 import PublicPageClient from "./PublicPageClient";
 
 export const metadata: Metadata = {
@@ -17,6 +18,7 @@ export const metadata: Metadata = {
   },
 };
 
-export default function PublicPage() {
-  return <PublicPageClient />;
+export default async function PublicPage() {
+  const agencyPartners = await fetchHomeAgencyPartners();
+  return <PublicPageClient agencyPartners={agencyPartners} />;
 }

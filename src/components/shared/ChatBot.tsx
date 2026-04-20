@@ -506,7 +506,7 @@ export default function ChatBot({
           !isOpen ? 'chat-invite-pulse' : '',
         ].join(' ')}
         style={{
-          bottom: FLOATING_CHAT_FAB_BOTTOM,
+          bottom: '100px',
           right: 'max(20px, env(safe-area-inset-right, 0px))',
           left: 'auto',
           background: 'var(--brand-gradient-fab)',
@@ -563,7 +563,7 @@ export default function ChatBot({
               boxShadow: '0 40px 100px rgba(0,0,0,0.75), 0 0 0 1px var(--brand-a06)',
               ...(isMobile
                 ? {}
-                : { bottom: FLOATING_CHAT_PANEL_SM_BOTTOM }),
+                : { bottom: '110px' }),
             }}
           >
             <AnimatedBackground />

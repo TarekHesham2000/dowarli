@@ -10,6 +10,7 @@ import ChatBot from '@/components/shared/ChatBot'
 import Footer from '@/components/shared/Footer'
 import Navbar from '@/components/Navbar'
 import PartnerMarquee from '@/components/partners/PartnerMarquee'
+import type { HomeAgencyPartner } from "@/lib/fetchHomeAgencyPartners";
 import { type ParsedFilters, type UnitType, parseSearchQuery } from "@/lib/parseHomeSearchQuery";
 import type { SavedSearchFiltersV1 } from "@/lib/matchSavedSearch";
 import { propertyPathFromRecord } from "@/lib/propertySlug";
@@ -231,7 +232,7 @@ const modalVariants: Variants = {
   }
 };
 // ─── Component ────────────────────────────────────────────────────────────────
-export default function PublicPageClient() {
+export default function PublicPageClient({ agencyPartners = [] }: { agencyPartners?: HomeAgencyPartner[] }) {
   const router = useRouter();
   const [properties, setProperties]         = useState<Property[]>([]);
   const [loading, setLoading]               = useState(true);
@@ -777,7 +778,7 @@ export default function PublicPageClient() {
               })}
           </div>
 
-          <PartnerMarquee className="mt-8 rounded-2xl" />
+          <PartnerMarquee className="mt-8 rounded-2xl" partners={agencyPartners} />
 
           {/* Results count */}
           {!loading && properties.length > 0 && (

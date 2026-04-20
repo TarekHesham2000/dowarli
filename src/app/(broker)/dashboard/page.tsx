@@ -941,7 +941,7 @@ export default function BrokerDashboardHomePage() {
                 textDecoration: "none",
               }}
             >
-              + إضافة / تعديل عبر النموذج
+              + إضافة اعلان
             </Link>
           </div>
           <p style={{ fontSize: 13, color: "#64748b", margin: "0 0 1rem" }}>اضغط على إعلان للتفاصيل أو الحذف</p>
