@@ -12,6 +12,8 @@ function looksLikeEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
 }
 
+const OAUTH_USER_TYPE_COOKIE = "dowarli_oauth_user_type";
+
 function parseLoginIdentifier(raw: string):
   | { kind: "email"; email: string }
   | { kind: "phone"; e164: string }
@@ -50,6 +52,8 @@ export default function OwnerBrokerAuth({
   const [tab, setTab] = useState<OwnerAuthMode>(initialMode);
   const [loading, setLoading] = useState(false);
   const [oauthLoading, setOauthLoading] = useState<"" | "google">("");
+  /** Shown on «حساب جديد» — stored with Google OAuth for `user_metadata.user_type`. */
+  const [oauthAccountKind, setOauthAccountKind] = useState<"broker" | "owner">("broker");
   const [error, setError] = useState("");
 
   const [loginForm, setLoginForm] = useState({ identifier: "", password: "" });
@@ -84,6 +88,12 @@ export default function OwnerBrokerAuth({
     setLoginSmsMode(false);
   }, [tab]);
 
+  useEffect(() => {
+    if (tab !== "login" || typeof globalThis.document === "undefined") return;
+    const secure = globalThis.location?.protocol === "https:" ? ";Secure" : "";
+    globalThis.document.cookie = `${OAUTH_USER_TYPE_COOKIE}=;Path=/;Max-Age=0;SameSite=Lax${secure}`;
+  }, [tab]);
+
   const validatePhone = (phone: string): string => validateEgyptianPhone(phone) ?? "";
 
   const oauthRedirect = () => {
@@ -92,15 +102,33 @@ export default function OwnerBrokerAuth({
     const next =
       oauthNextPath ??
       (variant === "modal" ? `${w.location.pathname}${w.location.search}` : "/dashboard");
-    return `${w.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+    const base = `${w.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+    // Register flow: pass user_type for auth/callback (may survive redirect); cookie is the reliable fallback.
+    if (tab === "register") {
+      return `${base}&user_type=${encodeURIComponent(oauthAccountKind)}`;
+    }
+    return base;
   };
 
   const signInOAuthGoogle = async () => {
     setError("");
     setOauthLoading("google");
+    if (typeof globalThis.document !== "undefined") {
+      const secure = globalThis.location?.protocol === "https:" ? ";Secure" : "";
+      if (tab === "register") {
+        globalThis.document.cookie = `${OAUTH_USER_TYPE_COOKIE}=${encodeURIComponent(oauthAccountKind)};Path=/;Max-Age=600;SameSite=Lax${secure}`;
+      } else {
+        globalThis.document.cookie = `${OAUTH_USER_TYPE_COOKIE}=;Path=/;Max-Age=0;SameSite=Lax${secure}`;
+      }
+    }
     const { error: oErr } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: oauthRedirect() },
+      options: {
+        redirectTo: oauthRedirect(),
+        queryParams: {
+          prompt: "select_account",
+        },
+      },
     });
     if (oErr) {
       setError(oErr.message);
@@ -566,6 +594,53 @@ export default function OwnerBrokerAuth({
             <p style={{ fontSize: 12, color: "#64748b", margin: "0 0 1rem", textAlign: "center" }}>
               مخصص لملّاك العقارات والوسطاء فقط — الضيوف يتصفحون بدون حساب
             </p>
+
+            {tab === "register" ? (
+              <fieldset
+                style={{
+                  margin: "0 0 1rem",
+                  padding: 0,
+                  border: "none",
+                  display: "block",
+                }}
+              >
+                <legend style={{ fontSize: 12, color: "#94a3b8", margin: "0 0 8px", textAlign: "center", fontWeight: 600, padding: 0, width: "100%", float: "none" }}>
+                  عند التسجيل بـ Google: أنت
+                </legend>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+                  {(
+                    [
+                      { id: "owner" as const, label: "مالك عقار" },
+                      { id: "broker" as const, label: "وسيط / وكالة" },
+                    ] as const
+                  ).map(({ id, label }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      disabled={!!oauthLoading}
+                      onClick={() => setOauthAccountKind(id)}
+                      style={{
+                        padding: "10px 16px",
+                        borderRadius: 12,
+                        border:
+                          oauthAccountKind === id
+                            ? "1px solid rgba(52,211,153,0.65)"
+                            : "1px solid rgba(148,163,184,0.25)",
+                        background:
+                          oauthAccountKind === id ? "rgba(16,185,129,0.18)" : "rgba(15,23,42,0.55)",
+                        color: oauthAccountKind === id ? "#6ee7b7" : "#cbd5e1",
+                        fontSize: 13,
+                        fontWeight: 700,
+                        cursor: oauthLoading ? "wait" : "pointer",
+                        fontFamily: "inherit",
+                      }}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            ) : null}
 
             <div style={{ marginBottom: "1.25rem" }}>
               <motion.button
