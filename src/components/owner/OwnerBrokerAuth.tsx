@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { supabase } from "@/lib/supabase";
 import { WELCOME_POINTS_BONUS } from "@/lib/pointsConfig";
 import { EGYPTIAN_PHONE_REGEX, toE164Egypt, validateEgyptianPhone } from "@/lib/egyptianPhone";
+import { getOAuthCallbackOrigin } from "@/lib/site";
 
 function looksLikeEmail(s: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
@@ -106,7 +107,8 @@ export default function OwnerBrokerAuth({
     const next =
       oauthNextPath ??
       (variant === "modal" ? `${w.location.pathname}${w.location.search}` : "/dashboard");
-    const base = `${w.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+    const callbackOrigin = getOAuthCallbackOrigin();
+    const base = `${callbackOrigin}/auth/callback?next=${encodeURIComponent(next)}`;
     // Register flow: pass user_type for auth/callback (may survive redirect); cookie is the reliable fallback.
     if (tab === "register") {
       return `${base}&isSignup=true&user_type=${encodeURIComponent(oauthAccountKind)}`;
@@ -131,9 +133,6 @@ export default function OwnerBrokerAuth({
       provider: "google",
       options: {
         redirectTo: oauthRedirect(),
-        queryParams: {
-          prompt: "select_account",
-        },
       },
     });
     if (oErr) {

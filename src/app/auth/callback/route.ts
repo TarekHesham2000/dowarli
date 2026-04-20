@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import { ensureBrokerProfileForUser } from "@/lib/authProfile";
 import { syncAuthPhoneFromProfileForUserId } from "@/lib/syncAuthPhone";
@@ -74,14 +75,20 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+  const { data: exchangeData, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
   if (exchangeError) {
     return isSignupIntent ? signupFail("oauth_exchange") : redirectClearedOAuth(origin, "/login?error=oauth_exchange");
   }
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Prefer the session returned by the exchange — avoids an immediate `getUser()` round-trip to GoTrue
+  // (can show as 403 / network noise right after PKCE while cookies are only on the redirect response).
+  let user: User | null = exchangeData?.session?.user ?? null;
+  if (!user) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    user = session?.user ?? null;
+  }
   if (!user) {
     return isSignupIntent ? signupFail("no_user") : redirectClearedOAuth(origin, "/login?error=no_user");
   }
@@ -96,34 +103,31 @@ export async function GET(request: NextRequest) {
     await ensureBrokerProfileForUser(user);
   } catch (e) {
     console.error("[auth/callback] ensure profile:", e);
-    if (applySignupProvisioning) {
-      return signupFail("database_error");
-    }
   }
 
   if (applySignupProvisioning) {
-    let svc: ReturnType<typeof getSupabaseServerClient>;
+    let svc: ReturnType<typeof getSupabaseServerClient> | undefined;
     try {
       svc = getSupabaseServerClient();
     } catch (e) {
-      console.error("[auth/callback] service client:", e);
-      return signupFail("database_error");
+      console.error("[auth/callback] service client (skip agency bootstrap):", e);
     }
 
-    const { data: profCheck, error: profCheckErr } = await svc
-      .from("profiles")
-      .select("id")
-      .eq("id", user.id)
-      .maybeSingle();
-    if (profCheckErr || !profCheck?.id) {
-      return signupFail("database_error");
-    }
-
-    const effectiveType: OAuthSignupUserType = oauthUserType ?? "broker";
-    const provisioned = await provisionOAuthSignupAgencyIfBroker(svc, user, effectiveType);
-    if (!provisioned.ok) {
-      console.error("[auth/callback] signup provision:", provisioned.reason);
-      return signupFail("database_error");
+    if (svc) {
+      const { data: profCheck, error: profCheckErr } = await svc
+        .from("profiles")
+        .select("id")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (profCheckErr || !profCheck?.id) {
+        console.error("[auth/callback] signup profile check (non-fatal):", profCheckErr?.message ?? "missing row");
+      } else {
+        const effectiveType: OAuthSignupUserType = oauthUserType ?? "broker";
+        const provisioned = await provisionOAuthSignupAgencyIfBroker(svc, user, effectiveType);
+        if (!provisioned.ok) {
+          console.error("[auth/callback] signup provision (non-fatal):", provisioned.reason);
+        }
+      }
     }
   }
 

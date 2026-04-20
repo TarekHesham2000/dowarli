@@ -82,5 +82,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
+  // Intentionally excludes `/auth/callback`, `/login`, `/complete-profile` so OAuth PKCE + session cookies are not interrupted.
   matcher: ["/admin", "/admin/:path*", "/broker", "/broker/:path*", "/dashboard", "/dashboard/:path*"],
 };

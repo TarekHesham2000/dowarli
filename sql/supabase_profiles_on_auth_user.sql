@@ -11,6 +11,21 @@ ALTER TABLE public.profiles
 ALTER TABLE public.profiles
   ALTER COLUMN email DROP NOT NULL;
 
+-- Google / email OAuth often has no phone until /complete-profile; avoid NOT NULL violations on INSERT.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'profiles'
+      AND column_name = 'phone'
+      AND is_nullable = 'NO'
+  ) THEN
+    ALTER TABLE public.profiles ALTER COLUMN phone DROP NOT NULL;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger
 LANGUAGE plpgsql

@@ -8,6 +8,31 @@ function stripTrailingSlash(u: string): string {
  * Request-time site origin (links, redirects). Uses env / Vercel / localhost.
  * Sitemap, layout metadata, and robots use hardcoded https://dowarly.com.
  */
+/**
+ * Origin for Supabase `redirectTo` (must match Dashboard → Auth → Redirect URLs exactly).
+ * Uses `NEXT_PUBLIC_SITE_URL` when set; otherwise the browser’s current origin (local dev),
+ * then falls back to `getSiteUrl()` on the server.
+ */
+export function getOAuthCallbackOrigin(): string {
+  const raw = process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (raw) {
+    try {
+      const withProto = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+      return new URL(withProto).origin;
+    } catch {
+      /* fall through */
+    }
+  }
+  if (typeof globalThis !== "undefined" && globalThis.location?.origin) {
+    return globalThis.location.origin;
+  }
+  try {
+    return new URL(getSiteUrl()).origin;
+  } catch {
+    return "http://localhost:3000";
+  }
+}
+
 export function getSiteUrl(): string {
   const fromEnv = process.env.NEXT_PUBLIC_SITE_URL?.trim();
   if (fromEnv) {

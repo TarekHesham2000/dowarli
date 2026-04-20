@@ -39,8 +39,15 @@ export default function CompleteProfileForm() {
     let cancelled = false;
     (async () => {
       const {
-        data: { user },
-      } = await supabase.auth.getUser();
+        data: { session },
+      } = await supabase.auth.getSession();
+      let user = session?.user ?? null;
+      if (!user) {
+        const {
+          data: { user: u2 },
+        } = await supabase.auth.getUser();
+        user = u2;
+      }
       if (cancelled) return;
       if (!user) {
         router.replace(`/login?next=${encodeURIComponent("/complete-profile")}`);
