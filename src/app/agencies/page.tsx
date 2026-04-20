@@ -3,8 +3,8 @@ import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
 import AgenciesDirectoryClient, { type AgencyListRow } from "./AgenciesDirectoryClient";
 
 export const metadata: Metadata = {
-  title: "دليل الوكالات",
-  description: "تصفّح الوكالات العقارية المعتمدة على دَورلي.",
+  title: "شركاء دورلي | دليل الشركات العقارية الموثوقة",
+  description: "استكشف أفضل شركات وبراندات العقارات في مصر - شركاء دورلي الموثوقين",
 };
 
 const AGENCY_ID_CHUNK = 80;

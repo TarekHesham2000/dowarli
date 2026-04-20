@@ -338,7 +338,7 @@ export default function AdminGodModeDashboard() {
   const [bootstrapSubmitting, setBootstrapSubmitting] = useState(false);
 
   const [platformAgencyModalOpen, setPlatformAgencyModalOpen] = useState(false);
-  const [platformAgencyName, setPlatformAgencyName] = useState("دَورلي — وكالة المنصة الرسمية");
+  const [platformAgencyName, setPlatformAgencyName] = useState("دَورلي — الشركة الرسمية للمنصة");
   const [platformAgencySlug, setPlatformAgencySlug] = useState("");
   const [platformAgencyBusy, setPlatformAgencyBusy] = useState(false);
 
@@ -634,7 +634,7 @@ export default function AdminGodModeDashboard() {
     for (const l of leads) {
       const prop = properties.find((p) => p.id === l.property_id);
       const ag = prop?.agency_id ? agencyById.get(prop.agency_id) : undefined;
-      const label = ag?.name ?? "إعلانات بدون وكالة / مالك مباشر";
+      const label = ag?.name ?? "إعلانات بدون شركة / مالك مباشر";
       map.set(label, { name: label, count: (map.get(label)?.count ?? 0) + 1 });
     }
     return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 12);
@@ -746,7 +746,7 @@ export default function AdminGodModeDashboard() {
       .slice(0, 50)
       .map((r) => ({
         ...r,
-        sourceLabel: owners.has(r.broker_id) ? "وكالة" : "فرد / وسيط",
+        sourceLabel: owners.has(r.broker_id) ? "شركة" : "فرد / وسيط",
         paymentLabel:
           r.screenshot_url && r.screenshot_url.length > 4 ? "إيصال / لقطة شاشة" : "تحويل (دون إيصال)",
       }));
@@ -958,7 +958,7 @@ export default function AdminGodModeDashboard() {
         return;
       }
       setApprovingTransactionId(null);
-      showToast("تم تفعيل اشتراك الوكالة", "success");
+      showToast("تم تفعيل اشتراك الموقع العقاري", "success");
       await loadAll();
       safeRouterRefresh(router);
       return;
@@ -1108,10 +1108,10 @@ export default function AdminGodModeDashboard() {
         already?: boolean;
       };
       if (!res.ok) {
-        showToast(j.message || j.error || "تعذر إنشاء الوكالة", "error");
+        showToast(j.message || j.error || "تعذر إنشاء الموقع العقاري", "error");
         return;
       }
-      showToast(j.already ? "لديه وكالة بالفعل" : "تم إنشاء الوكالة — تظهر في دليل الوكالات فوراً", "success");
+      showToast(j.already ? "لديه موقع عقاري بالفعل" : "تم الإنشاء — يظهر في دليل الشركات فوراً", "success");
       setBootstrapModalUserId(null);
       setBootstrapAgencyName("");
       setBootstrapSlug("");
@@ -1141,10 +1141,10 @@ export default function AdminGodModeDashboard() {
       });
       const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
       if (!res.ok) {
-        showToast(j.message || j.error || "تعذر حفظ الوكالة", "error");
+        showToast(j.message || j.error || "تعذر حفظ الموقع العقاري", "error");
         return;
       }
-      showToast("تم تحديث الوكالة", "success");
+      showToast("تم تحديث الموقع العقاري", "success");
       await loadAll();
       safeRouterRefresh(router);
     } finally {
@@ -1207,10 +1207,10 @@ export default function AdminGodModeDashboard() {
         message?: string;
       };
       if (!res.ok) {
-        showToast(j.message || j.error || "تعذر إنشاء وكالة المنصة", "error");
+        showToast(j.message || j.error || "تعذر إنشاء شركة المنصة", "error");
         return;
       }
-      showToast("تم إنشاء وكالة المنصة الرسمية لحسابك", "success");
+      showToast("تم إنشاء الشركة الرسمية للمنصة لحسابك", "success");
       setPlatformAgencyModalOpen(false);
       await loadAll();
       safeRouterRefresh(router);
@@ -1295,7 +1295,7 @@ export default function AdminGodModeDashboard() {
         });
         const pj = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
         if (!res.ok) {
-          showToast(pj.message || pj.error || "تم حفظ العنوان والسعر لكن فشل ربط الوكالة", "error");
+          showToast(pj.message || pj.error || "تم حفظ العنوان والسعر لكن فشل ربط الشركة", "error");
           await loadAll();
           return;
         }
@@ -1539,7 +1539,7 @@ export default function AdminGodModeDashboard() {
                 type="search"
                 value={omniSearch}
                 onChange={(e) => setOmniSearch(e.target.value)}
-                placeholder="ابحث عن مستخدم، إعلان، وكالة…"
+                placeholder="ابحث عن مستخدم، إعلان، شركة…"
                 className="w-full rounded-xl border border-slate-700 bg-slate-900 py-2.5 pe-10 ps-3 text-sm font-semibold text-white placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
               {omniHits.length > 0 ? (
@@ -1991,7 +1991,7 @@ export default function AdminGodModeDashboard() {
                         <th className="px-4 py-3">النقاط</th>
                         <th className="px-4 py-3">تاريخ التسجيل</th>
                         <th className="px-4 py-3">الدور</th>
-                        <th className="px-4 py-3">وكالة</th>
+                        <th className="px-4 py-3">شركة</th>
                         <th className="px-4 py-3">إجراءات</th>
                       </tr>
                     </thead>
@@ -2060,12 +2060,12 @@ export default function AdminGodModeDashboard() {
                                     }
                                     onClick={() => {
                                       setBootstrapModalUserId(u.id);
-                                      setBootstrapAgencyName((u.name ?? "").trim() || "وكالة عقارية");
+                                      setBootstrapAgencyName((u.name ?? "").trim() || "شركة عقارية");
                                       setBootstrapSlug("");
                                     }}
                                     className="rounded-lg bg-emerald-900/50 px-2 py-1 text-[11px] font-bold text-emerald-200 disabled:opacity-40"
                                   >
-                                    وكالة
+                                    شركة
                                   </button>
                                 </div>
                                 <div className="flex flex-wrap items-center gap-1">
@@ -2117,12 +2117,12 @@ export default function AdminGodModeDashboard() {
                     type="button"
                     onClick={() => {
                       setPlatformAgencyModalOpen(true);
-                      setPlatformAgencyName("دَورلي — وكالة المنصة الرسمية");
+                      setPlatformAgencyName("دَورلي — الشركة الرسمية للمنصة");
                       setPlatformAgencySlug("");
                     }}
                     className="rounded-xl border border-emerald-600/50 bg-emerald-950/40 px-4 py-2 text-sm font-black text-emerald-200 hover:bg-emerald-900/40"
                   >
-                    وكالة منصة رسمية (حساب الإدارة)
+                    شركة المنصة الرسمية (حساب الإدارة)
                   </button>
                 </div>
                 <div className="overflow-x-auto p-4">
@@ -2667,16 +2667,16 @@ export default function AdminGodModeDashboard() {
             className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-black text-white">تحويل إلى وكالة</h3>
+            <h3 className="text-lg font-black text-white">تحويل إلى شركة عقارية</h3>
             <p className="mt-1 text-xs text-slate-500">
-              أدخل الاسم الرسمي للوكالة كما يظهر للجمهور. يُفعَّل الظهور في دليل الوكالات فوراً (موثّق + نشط).
+              أدخل الاسم الرسمي كما يظهر للجمهور. يُفعَّل الظهور في دليل الشركات فوراً (موثّق + نشط).
             </p>
-            <label className="mt-4 block text-xs font-bold text-slate-400">اسم الوكالة الرسمي *</label>
+            <label className="mt-4 block text-xs font-bold text-slate-400">الاسم الرسمي للشركة *</label>
             <input
               value={bootstrapAgencyName}
               onChange={(e) => setBootstrapAgencyName(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
-              placeholder="مثال: وكالة النخيل العقارية"
+              placeholder="مثال: النخيل للتسويق العقاري"
             />
             <label className="mt-3 block text-xs font-bold text-slate-400">
               slug (اختياري — يُشتق من الاسم إن تُرك فارغاً)
@@ -2694,7 +2694,7 @@ export default function AdminGodModeDashboard() {
                 onClick={() => void submitBootstrapAgencyModal()}
                 className="flex-1 rounded-xl bg-emerald-600 py-2 text-sm font-black text-white disabled:opacity-50"
               >
-                {bootstrapSubmitting ? <Loader2 className="mx-auto size-5 animate-spin" /> : "إنشاء الوكالة"}
+                {bootstrapSubmitting ? <Loader2 className="mx-auto size-5 animate-spin" /> : "إنشاء الموقع العقاري"}
               </button>
               <button
                 type="button"
@@ -2718,11 +2718,11 @@ export default function AdminGodModeDashboard() {
             className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-black text-white">وكالة المنصة الرسمية</h3>
+            <h3 className="text-lg font-black text-white">الشركة الرسمية للمنصة</h3>
             <p className="mt-1 text-xs text-slate-500">
-              تُنشأ وكالة مملوكة لحسابك (الإدارة) لتنشر إعلانات باسم المنصة. يُسمح بوكالة واحدة لكل مالك.
+              تُنشأ شركة مملوكة لحسابك (الإدارة) لتنشر إعلانات باسم المنصة. يُسمح بموقع واحد لكل مالك.
             </p>
-            <label className="mt-4 block text-xs font-bold text-slate-400">اسم الوكالة</label>
+            <label className="mt-4 block text-xs font-bold text-slate-400">اسم الشركة</label>
             <input
               value={platformAgencyName}
               onChange={(e) => setPlatformAgencyName(e.target.value)}
@@ -3089,13 +3089,13 @@ export default function AdminGodModeDashboard() {
               onChange={(e) => setEditPrice(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             />
-            <label className="mt-3 block text-xs font-bold text-slate-400">الوكالة (ربط الإعلان)</label>
+            <label className="mt-3 block text-xs font-bold text-slate-400">الشركة (ربط الإعلان)</label>
             <select
               value={editAgencyId}
               onChange={(e) => setEditAgencyId(e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
             >
-              <option value="">— بدون وكالة (مالك مباشر) —</option>
+              <option value="">— بدون شركة (مالك مباشر) —</option>
               {agencies.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} · {a.slug}

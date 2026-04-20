@@ -315,7 +315,7 @@ export function AgencyCRMTable({
         </div>
         <p className="m-0 text-base font-black text-white">لا طلبات في هذه الفترة</p>
         <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-slate-400">
-          عند وصول عملاء جدد سيظهرون هنا فوراً — شارك روابط إعلاناتك وفعّل إشعارات الوكالة للمتابعة.
+          عند وصول عملاء جدد سيظهرون هنا فوراً — شارك روابط إعلاناتك وفعّل الإشعارات للمتابعة.
         </p>
       </div>
     );

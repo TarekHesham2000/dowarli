@@ -12,7 +12,7 @@ const ADD_PROPERTY_CLASS =
 const NAV_CORE = [
   { href: "/dashboard", label: "الرئيسية", match: (p: string) => p === "/dashboard" },
   { href: "/dashboard/alerts", label: "تنبيهاتي", match: (p: string) => p.startsWith("/dashboard/alerts") },
-  { href: "/agency", label: "وكالتي", match: (p: string) => p === "/agency" },
+  { href: "/agency", label: "موقعي العقاري", match: (p: string) => p === "/agency" },
   { href: "/wallet", label: "المحفظة", match: () => false },
 ] as const;
 

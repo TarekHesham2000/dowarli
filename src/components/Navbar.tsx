@@ -200,7 +200,7 @@ export default function Navbar() {
                       href={hasAgency ? "/agency" : "/become-an-agency"}
                       className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-[13px] font-bold text-slate-700 no-underline transition hover:bg-gray-50"
                     >
-                      {hasAgency ? "وكالتي" : "أنشئ وكالة"}
+                      {hasAgency ? "موقعي العقاري" : "أنشئ موقعك العقاري"}
                     </Link>
                   )}
                   <Link href="/broker/add-property" className={`${ADD_PROPERTY_BTN} hidden md:inline-flex`}>
@@ -295,7 +295,7 @@ export default function Navbar() {
                 onClick={closeMobile}
                 className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
               >
-                دليل الوكالات
+                دليل الشركات
               </Link>
               <Link
                 href="/wallet"
@@ -332,7 +332,7 @@ export default function Navbar() {
                       onClick={closeMobile}
                       className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
                     >
-                      {hasAgency ? "وكالتي" : "أنشئ وكالة"}
+                      {hasAgency ? "موقعي العقاري" : "أنشئ موقعك العقاري"}
                     </Link>
                   )}
                   <Link href="/broker/add-property" onClick={closeMobile} className={`${ADD_PROPERTY_BTN} w-full py-3 text-sm`}>
@@ -355,7 +355,7 @@ export default function Navbar() {
                 onClick={closeMobile}
                 className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-center text-sm font-bold text-slate-800 no-underline"
               >
-                دليل الوكالات
+                دليل الشركات
               </Link>
               <Link
                 href="/register"

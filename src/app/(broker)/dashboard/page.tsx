@@ -899,10 +899,10 @@ export default function BrokerDashboardHomePage() {
           >
             <div style={{ flex: "1 1 220px", minWidth: 0 }}>
               <p style={{ margin: 0, fontSize: 17, fontWeight: 900, color: "#064e3b", lineHeight: 1.45 }}>
-                هل أنت مكتب تسويق؟ أنشئ وكالتك المعتمدة الآن
+                هل أنت مكتب تسويق؟ أنشئ موقعك العقاري المعتمد الآن
               </p>
               <p style={{ margin: "8px 0 0", fontSize: 13, color: "#047857", fontWeight: 600, lineHeight: 1.5 }}>
-                ملف وكالة رسمي، صفحة عامة، وربط إعلاناتك — يبدأ من هنا.
+                ملف شركة عقارية رسمي، صفحة عامة، وربط إعلاناتك — يبدأ من هنا.
               </p>
             </div>
             <Link
@@ -919,7 +919,7 @@ export default function BrokerDashboardHomePage() {
                 boxShadow: "0 4px 14px rgba(0, 211, 141, 0.45)",
               }}
             >
-              إنشاء وكالة معتمدة
+              إنشاء موقع عقاري معتمد
             </Link>
           </div>
         ) : null}

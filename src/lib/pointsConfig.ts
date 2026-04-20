@@ -39,7 +39,7 @@ export type AgencyBusinessProWalletPackage = {
 export const AGENCY_BUSINESS_PRO_WALLET: AgencyBusinessProWalletPackage = {
   id: "agency_business_pro",
   nameEn: "Business Pro Package",
-  nameAr: "باقة أعمال Pro (وكالة) — 1000 ج.م",
+  nameAr: "باقة أعمال Pro (شركة عقارية) — 1000 ج.م",
   points: 0,
   priceEGP: 1000,
 };

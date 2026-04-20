@@ -26,6 +26,7 @@ function propertyMatches(
     area: string;
     governorate?: string | null;
     district?: string | null;
+    sub_area?: string | null;
     landmark?: string | null;
     price: number;
     unit_type: string;
@@ -39,7 +40,10 @@ function propertyMatches(
   const dist = (parsed.district || "").replace(/\s+/g, " ").trim();
   const gov = (parsed.governorate || "").replace(/\s+/g, " ").trim();
   const locHay =
-    `${prop.governorate ?? ""} ${prop.district ?? ""} ${prop.area ?? ""}`.replace(/\s+/g, " ");
+    `${prop.governorate ?? ""} ${prop.district ?? ""} ${prop.sub_area ?? ""} ${prop.area ?? ""}`.replace(
+      /\s+/g,
+      " ",
+    );
 
   if (dist && !locHay.includes(dist)) return false;
   if (gov && !locHay.includes(gov)) {
@@ -53,7 +57,8 @@ function propertyMatches(
   const kw = (parsed.keywords || "").replace(/\s+/g, " ").trim();
   if (kw.length > 2) {
     const hay =
-      `${prop.title} ${prop.description} ${prop.address} ${prop.landmark ?? ""}`.toLowerCase();
+      `${prop.title} ${prop.description} ${prop.address} ${prop.landmark ?? ""} ${prop.district ?? ""} ${prop.sub_area ?? ""}`
+        .toLowerCase();
     if (!hay.includes(kw.toLowerCase())) return false;
   }
   return true;
@@ -101,7 +106,7 @@ Deno.serve(async (req: Request) => {
   const { data: prop, error: propErr } = await admin
     .from("properties")
     .select(
-      "id, area, governorate, district, landmark, price, unit_type, title, description, address, status, slug",
+      "id, area, governorate, district, sub_area, landmark, price, unit_type, title, description, address, status, slug",
     )
     .eq("id", propertyId)
     .maybeSingle();
@@ -124,6 +129,7 @@ Deno.serve(async (req: Request) => {
     area: String(prop.area ?? ""),
     governorate: prop.governorate != null ? String(prop.governorate) : null,
     district: prop.district != null ? String(prop.district) : null,
+    sub_area: prop.sub_area != null ? String(prop.sub_area) : null,
     landmark: prop.landmark != null ? String(prop.landmark) : null,
     price: Number(prop.price ?? 0),
     unit_type: String(prop.unit_type ?? ""),

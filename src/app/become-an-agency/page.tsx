@@ -75,11 +75,11 @@ export default function BecomeAgencyPage() {
     const s = slug.trim();
     const slugNorm = s.toLowerCase();
     if (!n) {
-      setError("أدخل اسم الوكالة.");
+      setError("أدخل اسم موقعك العقاري.");
       return;
     }
     if (!isValidAgencySlugAscii(slugNorm)) {
-      setError("رابط الوكالة غير صالح — استخدم حروفاً إنجليزية صغيرة وأرقاماً وشرطات فقط، بدون مسافات.");
+      setError("رابط صفحتك غير صالح — استخدم حروفاً إنجليزية صغيرة وأرقاماً وشرطات فقط، بدون مسافات.");
       return;
     }
 
@@ -95,7 +95,7 @@ export default function BecomeAgencyPage() {
 
       const { data: slugTaken } = await supabase.from("agencies").select("id").eq("slug", slugNorm).maybeSingle();
       if (slugTaken?.id) {
-        setError("هذا الرابط مستخدم بالفعل — اختر اسماً آخر (حروف إنجليزية وأرقام) لصفحة وكالتك.");
+        setError("هذا الرابط مستخدم بالفعل — اختر اسماً آخر (حروف إنجليزية وأرقام) لصفحتك العقارية.");
         return;
       }
 
@@ -115,16 +115,16 @@ export default function BecomeAgencyPage() {
 
       if (insErr) {
         if (insErr.code === "23505" || insErr.message.includes("unique")) {
-          setError("هذا الرابط مستخدم بالفعل — اختر اسماً آخر (حروف إنجليزية وأرقام) لصفحة وكالتك.");
+          setError("هذا الرابط مستخدم بالفعل — اختر اسماً آخر (حروف إنجليزية وأرقام) لصفحتك العقارية.");
         } else {
-          setError(insErr.message || "تعذّر إنشاء الوكالة.");
+          setError(insErr.message || "تعذّر إنشاء موقعك العقاري.");
         }
         return;
       }
 
       const agencyId = inserted?.id;
       if (!agencyId) {
-        setError("تعذّر إنشاء الوكالة.");
+        setError("تعذّر إنشاء موقعك العقاري.");
         return;
       }
 
@@ -146,7 +146,7 @@ export default function BecomeAgencyPage() {
           contentType: logoFile.type || undefined,
         });
         if (upErr) {
-          setError(`تم إنشاء الوكالة وربط العقارات، لكن فشل رفع الشعار: ${upErr.message}`);
+          setError(`تم إنشاء موقعك العقاري وربط العقارات، لكن فشل رفع الشعار: ${upErr.message}`);
           router.replace("/agency?created=1");
           router.refresh();
           return;
@@ -156,7 +156,7 @@ export default function BecomeAgencyPage() {
         if (logoUrl) {
           const { error: logoUpdErr } = await supabase.from("agencies").update({ logo_url: logoUrl }).eq("id", agencyId);
           if (logoUpdErr) {
-            setError(`تم إنشاء الوكالة لكن تعذّر حفظ رابط الشعار: ${logoUpdErr.message}`);
+            setError(`تم إنشاء موقعك العقاري لكن تعذّر حفظ رابط الشعار: ${logoUpdErr.message}`);
             router.replace("/agency?created=1");
             router.refresh();
             return;
@@ -184,13 +184,13 @@ export default function BecomeAgencyPage() {
       <Navbar />
       <main className="min-h-screen bg-[#f8fafc] px-4 py-10">
         <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h1 className="text-xl font-black text-slate-900">تسجيل وكالة</h1>
-          <p className="mt-1 text-sm text-slate-600">بعد المراجعة تظهر وكالتك في الدليل العام عند الاعتماد.</p>
+          <h1 className="text-xl font-black text-slate-900">تسجيل موقعك العقاري</h1>
+          <p className="mt-1 text-sm text-slate-600">بعد المراجعة يظهر موقعك العقاري في دليل الشركات عند الاعتماد.</p>
 
           <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="become-agency-name" className="mb-1 block text-xs font-bold text-slate-700">
-                اسم الوكالة
+                اسم موقعك العقاري
               </label>
               <input
                 id="become-agency-name"
@@ -204,7 +204,7 @@ export default function BecomeAgencyPage() {
             <div>
               <div className="mb-1 flex items-center justify-between gap-2">
                 <label htmlFor="become-agency-slug" className="text-xs font-bold text-slate-700">
-                  رابط الوكالة (Slug)
+                  رابط الصفحة (Slug)
                 </label>
                 <button type="button" className="text-[11px] font-bold text-emerald-700 hover:underline" onClick={applySuggestedSlug}>
                   اقتراح من الاسم
@@ -241,7 +241,7 @@ export default function BecomeAgencyPage() {
               />
             </div>
             <div>
-              <span className="mb-1 block text-xs font-bold text-slate-700">شعار الوكالة (اختياري)</span>
+              <span className="mb-1 block text-xs font-bold text-slate-700">شعار شركتك (اختياري)</span>
               <p className="mb-2 text-[11px] text-slate-500">صورة واضحة بصيغة JPG أو PNG أو WebP — تظهر في صفحتك العامة.</p>
               <input
                 id="become-agency-logo"
@@ -256,7 +256,7 @@ export default function BecomeAgencyPage() {
                   {/* eslint-disable-next-line @next/next/no-img-element -- blob: preview URL */}
                   <img
                     src={logoPreviewUrl}
-                    alt="معاينة شعار الوكالة"
+                    alt="معاينة الشعار"
                     className="mx-auto max-h-32 w-auto max-w-full object-contain"
                   />
                 </div>
@@ -268,17 +268,17 @@ export default function BecomeAgencyPage() {
               disabled={submitting}
               className="w-full rounded-xl bg-[#00d38d] py-3 text-sm font-black text-white shadow-md hover:bg-[#00bf7f] disabled:opacity-60"
             >
-              {submitting ? "جاري الحفظ…" : "إنشاء الوكالة"}
+              {submitting ? "جاري الحفظ…" : "إنشاء موقعك العقاري"}
             </button>
           </form>
 
           <p className="mt-4 text-center text-xs text-slate-500">
             <Link href="/agency" className="font-bold text-emerald-700 hover:underline">
-              لوحة الوكالة
+              لوحة موقعك العقاري
             </Link>
             {" · "}
             <Link href="/agencies" className="font-bold text-emerald-700 hover:underline">
-              دليل الوكالات
+              دليل الشركات
             </Link>
           </p>
         </div>

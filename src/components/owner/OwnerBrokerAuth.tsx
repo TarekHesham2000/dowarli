@@ -616,7 +616,7 @@ export default function OwnerBrokerAuth({
                   {(
                     [
                       { id: "owner" as const, label: "مالك عقار" },
-                      { id: "broker" as const, label: "وسيط / وكالة" },
+                      { id: "broker" as const, label: "وسيط / شركة عقارية" },
                     ] as const
                   ).map(({ id, label }) => (
                     <button

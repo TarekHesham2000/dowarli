@@ -22,6 +22,7 @@ type Property = {
   area: string;
   governorate?: string | null;
   district?: string | null;
+  sub_area?: string | null;
   landmark?: string | null;
   address: string;
   unit_type: UnitType;
@@ -33,8 +34,8 @@ type Property = {
   profiles: { name: string; phone: string };
 };
 
-function listingLocationLine(p: Pick<Property, "governorate" | "district" | "area">): string {
-  const parts = [p.governorate, p.district].map((x) => (x ?? "").trim()).filter(Boolean);
+function listingLocationLine(p: Pick<Property, "governorate" | "district" | "sub_area" | "area">): string {
+  const parts = [p.governorate, p.district, p.sub_area].map((x) => (x ?? "").trim()).filter(Boolean);
   if (parts.length) return parts.join(" — ");
   return (p.area ?? "").trim();
 }
@@ -50,7 +51,7 @@ function effectiveListingKind(p: Pick<Property, "listing_type" | "listing_purpos
 
 /** أعمدة واضحة + active فقط في الاستعلام (لا نعتمد على select *) */
 const HOME_PROPERTY_SELECT =
-  "id, title, description, price, area, governorate, district, landmark, address, unit_type, images, slug, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
+  "id, title, description, price, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
 
 const HOME_PROPERTY_SELECT_FALLBACK =
   "id, title, description, price, area, governorate, district, landmark, address, unit_type, images, slug, availability_status, created_at, profiles(name, phone, low_trust)";
@@ -78,37 +79,47 @@ async function fetchActiveHomeProperties(
     ? rawKw.replace(/[,،]/g, " ").replace(/\s+/g, " ").trim()
     : "";
 
-  const applyFilters = (selectList: string) => {
+  const applyFilters = (selectList: string, whereSubArea: boolean) => {
     // Market-wide home feed: no .eq("agency_id", …). Agency-scoped lists use agency_id on /agency/[slug] and broker /agency.
     let q = client.from("properties").select(selectList).eq("status", "active");
     const g = (parsed.governorate ?? "").trim();
     const d = (parsed.district ?? "").trim();
     const a = (parsed.area ?? "").trim();
-    if (d) q = q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
+    if (d) {
+      q = whereSubArea
+        ? q.or(`district.ilike.%${d}%,sub_area.ilike.%${d}%,area.ilike.%${d}%`)
+        : q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
+    }
     if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
     if (!d && !g && a) {
-      q = q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,area.ilike.%${a}%`);
+      q = whereSubArea
+        ? q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,sub_area.ilike.%${a}%,area.ilike.%${a}%`)
+        : q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,area.ilike.%${a}%`);
     }
     if (parsed.maxPrice) q = q.lte("price", parsed.maxPrice);
     if (selectedType && selectedType !== "all") q = q.eq("unit_type", selectedType);
     if (cleanKeywords.length > 2) {
-      q = q.or(
-        `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%,landmark.ilike.%${cleanKeywords}%`,
-      );
+      q = whereSubArea
+        ? q.or(
+            `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%,landmark.ilike.%${cleanKeywords}%,district.ilike.%${cleanKeywords}%,sub_area.ilike.%${cleanKeywords}%`,
+          )
+        : q.or(
+            `title.ilike.%${cleanKeywords}%,description.ilike.%${cleanKeywords}%,address.ilike.%${cleanKeywords}%,landmark.ilike.%${cleanKeywords}%,district.ilike.%${cleanKeywords}%`,
+          );
     }
     return q;
   };
 
-  const attempts: { sel: string; avail: boolean }[] = [
-    { sel: HOME_PROPERTY_SELECT, avail: true },
-    { sel: HOME_PROPERTY_SELECT, avail: false },
-    { sel: HOME_PROPERTY_SELECT_FALLBACK, avail: true },
-    { sel: HOME_PROPERTY_SELECT_FALLBACK, avail: false },
+  const attempts: { sel: string; avail: boolean; whereSubArea: boolean }[] = [
+    { sel: HOME_PROPERTY_SELECT, avail: true, whereSubArea: true },
+    { sel: HOME_PROPERTY_SELECT, avail: false, whereSubArea: true },
+    { sel: HOME_PROPERTY_SELECT_FALLBACK, avail: true, whereSubArea: false },
+    { sel: HOME_PROPERTY_SELECT_FALLBACK, avail: false, whereSubArea: false },
   ];
 
   let lastMsg = "";
   for (const a of attempts) {
-    let q = applyFilters(a.sel);
+    let q = applyFilters(a.sel, a.whereSubArea);
     if (a.avail) q = q.eq("availability_status", "available");
     const { data, error } = await q.order("created_at", { ascending: false });
     if (!error) {

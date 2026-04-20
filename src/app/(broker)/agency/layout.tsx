@@ -6,7 +6,7 @@ import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
 import DashboardHeader from "../dashboard/DashboardHeader";
 
 export const metadata: Metadata = {
-  title: "لوحة الوكالة",
+  title: "لوحة موقعك العقاري",
   robots: { index: false, follow: false },
 };
 

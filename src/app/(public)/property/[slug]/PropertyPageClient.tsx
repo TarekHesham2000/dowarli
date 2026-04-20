@@ -214,7 +214,7 @@ export default function PropertyPageClient() {
     void load()
   }, [slugParam, router])
 
-  // ── تتبع مشاهدة صفحة الإعلان (لوحة الوكالة — analytics) ──
+  // ── تتبع مشاهدة صفحة الإعلان (لوحة موقعك العقاري — analytics) ──
   useEffect(() => {
     if (!property || property.status !== 'active') return
     const sid = `plv:${property.id}`

@@ -215,7 +215,7 @@ function WalletPageContent() {
 
         <h2 className="mb-3 text-lg font-black text-slate-900">باقات الشحن</h2>
         <p className="mb-3 text-xs font-medium text-slate-500">
-          باقات النقاط للإعلانات. باقة الوكالة Pro تظهر فقط إذا كان لديك ملف وكالة مسجّل.
+          باقات النقاط للإعلانات. باقة أعمال Pro تظهر فقط إذا كان لديك ملف شركة عقارية مسجّل.
         </p>
         <div className="mb-8 grid w-full max-w-full grid-cols-1 gap-3">
           {POINTS_PACKAGES.map((pkg) => (
@@ -254,7 +254,7 @@ function WalletPageContent() {
 
         {hasRegisteredAgency ? (
           <>
-            <h2 className="mb-3 text-lg font-black text-slate-900">اشتراك الوكالة</h2>
+            <h2 className="mb-3 text-lg font-black text-slate-900">اشتراك موقعك العقاري</h2>
             <div className="mb-8 grid w-full max-w-full grid-cols-1 gap-3">
               <button
                 type="button"
@@ -270,14 +270,14 @@ function WalletPageContent() {
                 }`}
               >
                 <span className="absolute left-3 top-3 rounded-full bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white">
-                  وكالة
+                  شركة
                 </span>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <p className="text-lg font-black text-slate-900">{AGENCY_BUSINESS_PRO_WALLET.nameAr}</p>
                     <p className="text-xs text-slate-500">{AGENCY_BUSINESS_PRO_WALLET.nameEn}</p>
                     <p className="mt-1 text-[11px] leading-relaxed text-slate-500">
-                      دفع اشتراك إداري — تفعيل مزايا Pro للوكالة بعد مراجعة الإدارة (بدون نقاط إعلانات).
+                      دفع اشتراك إداري — تفعيل مزايا Pro لموقعك العقاري بعد مراجعة الإدارة (بدون نقاط إعلانات).
                     </p>
                   </div>
                   <div className="text-left">
@@ -294,7 +294,7 @@ function WalletPageContent() {
             <h3 className="mb-3 text-base font-black text-slate-900">إتمام الطلب — {selected.nameAr}</h3>
             {selected.id === AGENCY_BUSINESS_PRO_WALLET.id ? (
               <p className="mb-3 rounded-lg border border-emerald-100 bg-emerald-50/80 px-3 py-2 text-xs font-bold text-emerald-900">
-                اذكر في ملاحظة التحويل (إن أمكن) اسم الوكالة. سيُفعّل Pro بعد تأكيد الدفع يدوياً من الإدارة.
+                اذكر في ملاحظة التحويل (إن أمكن) اسم شركتك أو موقعك العقاري. سيُفعّل Pro بعد تأكيد الدفع يدوياً من الإدارة.
               </p>
             ) : null}
             <div className="mb-4 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 p-4">
@@ -410,7 +410,7 @@ function WalletPageContent() {
                     </p>
                     <p className="text-sm text-slate-500">
                       {t.package_name === "agency_business_pro"
-                        ? "باقة أعمال Pro (وكالة) · "
+                        ? "باقة أعمال Pro (شركة) · "
                         : t.package_name
                           ? `${t.package_name} · `
                           : ""}

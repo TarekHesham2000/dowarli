@@ -44,6 +44,7 @@ export type AgencyProperty = {
   area: string;
   governorate?: string | null;
   district?: string | null;
+  sub_area?: string | null;
   landmark?: string | null;
   address: string;
   unit_type: string;
@@ -70,8 +71,8 @@ const SURFACE = "#0b1220";
 const SURFACE_2 = "#111a2c";
 const BORDER = "rgba(200,169,106,0.22)";
 
-function listingLocationLine(p: Pick<AgencyProperty, "governorate" | "district" | "area">): string {
-  const parts = [p.governorate, p.district].map((x) => (x ?? "").trim()).filter(Boolean);
+function listingLocationLine(p: Pick<AgencyProperty, "governorate" | "district" | "sub_area" | "area">): string {
+  const parts = [p.governorate, p.district, p.sub_area].map((x) => (x ?? "").trim()).filter(Boolean);
   if (parts.length) return parts.join(" — ");
   return (p.area ?? "").trim();
 }
@@ -151,7 +152,7 @@ export default function AgencyPageClient({
 
   const openAgencyChat = () => {
     setContactPrompt(
-      `بدي أتواصل مع وكالة «${agency.name}» — عرّفني على العروض المتاحة والأسعار.`,
+      `بدي أتواصل مع «${agency.name}» — عرّفني على العروض المتاحة والأسعار.`,
     );
     setChatOpenSignal((n) => n + 1);
     setMobileMenuOpen(false);
@@ -213,6 +214,7 @@ export default function AgencyPageClient({
         p.title,
         p.governorate,
         p.district,
+        p.sub_area,
         p.area,
         p.landmark,
         p.address,
@@ -297,7 +299,7 @@ export default function AgencyPageClient({
 
           {/* Desktop nav — centered */}
           <nav
-            aria-label="قائمة الوكالة"
+            aria-label="قائمة الموقع العقاري"
             className="ms-4 hidden flex-1 items-center justify-center gap-1 md:flex"
           >
             <a href="#top" className="px-3 py-2 text-[13px] font-bold text-white/80 no-underline transition hover:text-white">
@@ -365,7 +367,7 @@ export default function AgencyPageClient({
         {mobileMenuOpen ? (
           <nav
             id="agency-mobile-menu"
-            aria-label="قائمة الوكالة (جوال)"
+            aria-label="قائمة الموقع العقاري (جوال)"
             className="border-t md:hidden"
             style={{ borderColor: BORDER, background: "rgba(8,13,24,0.95)" }}
           >
@@ -461,7 +463,7 @@ export default function AgencyPageClient({
                 >
                   {agency.bio?.trim()
                     ? agency.bio
-                    : `وكالة ${agency.name} — تصفّح أحدث عروضنا من الوحدات السكنية، وتواصل مباشرةً مع فريقنا للحصول على استشارة مخصّصة.`}
+                    : `${agency.name} — تصفّح أحدث عروضنا من الوحدات السكنية، وتواصل مباشرةً مع فريقنا للحصول على استشارة مخصّصة.`}
                 </p>
 
                 <div className="mt-7 flex flex-wrap items-center justify-center gap-3 md:justify-start">
@@ -502,7 +504,7 @@ export default function AgencyPageClient({
                       }}
                     >
                       <MessageCircle className="h-5 w-5" strokeWidth={2.3} aria-hidden />
-                      تواصل مع الوكالة
+                      تواصل مع الفريق
                     </button>
                   )}
                   <span className="text-xs font-bold text-white/60">
@@ -516,7 +518,7 @@ export default function AgencyPageClient({
 
         {/* ── Search / filter bar (scoped to this agency) ─────────── */}
         <section
-          aria-label="بحث داخل عروض الوكالة"
+          aria-label="بحث داخل العروض"
           className="relative z-10 mx-auto -mt-8 max-w-6xl px-4 sm:-mt-10"
         >
           <div
@@ -536,7 +538,7 @@ export default function AgencyPageClient({
                   id="agency-search"
                   type="search"
                   inputMode="search"
-                  placeholder="ابحث في عروض الوكالة (عنوان، منطقة، معلم)…"
+                  placeholder="ابحث في العروض (عنوان، منطقة، معلم)…"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                   className="w-full rounded-xl border bg-transparent py-3 pe-10 ps-10 text-[14px] font-semibold text-white placeholder:text-white/40 outline-none transition focus:ring-2"
@@ -643,7 +645,7 @@ export default function AgencyPageClient({
               className="rounded-2xl border border-dashed py-16 text-center"
               style={{ borderColor: BORDER, background: SURFACE_2 }}
             >
-              <p className="text-white/70">لا توجد عقارات نشطة لهذه الوكالة حالياً.</p>
+              <p className="text-white/70">لا توجد عقارات نشطة لهذا الموقع حالياً.</p>
             </div>
           ) : filteredProperties.length === 0 ? (
             <div
@@ -673,7 +675,7 @@ export default function AgencyPageClient({
                 visible: { transition: { staggerChildren: 0.05 } },
               }}
               className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3"
-              aria-label="عقارات الوكالة"
+              aria-label="العروض"
             >
               {filteredProperties.map((p) => {
                 const ut =
@@ -812,7 +814,7 @@ export default function AgencyPageClient({
                   className="mb-2 text-2xl font-black text-white sm:text-3xl"
                   style={{ fontFamily: "var(--font-cairo), sans-serif" }}
                 >
-                  شارك موقع الوكالة مع عميلك
+                  شارك الصفحة مع عميلك
                 </h2>
                 <p className="text-sm leading-relaxed text-white/70">
                   انسخ رابط صفحة «{agency.name}» بضغطة واحدة وأرسله لعملائك على واتساب أو
@@ -845,7 +847,7 @@ export default function AgencyPageClient({
                   ) : (
                     <>
                       <Copy className="h-5 w-5" strokeWidth={2.4} aria-hidden />
-                      نسخ رابط الوكالة
+                      نسخ رابط الصفحة
                     </>
                   )}
                 </button>
@@ -887,7 +889,7 @@ export default function AgencyPageClient({
                     style={{ borderColor: BORDER, color: GOLD }}
                   >
                     <MessageCircle className="h-4 w-4" strokeWidth={2.4} aria-hidden />
-                    افتح محادثة مع الوكالة
+                    افتح محادثة مع الفريق
                   </button>
                 )}
               </div>
@@ -944,7 +946,7 @@ export default function AgencyPageClient({
           }}
         >
           <Check className="h-4 w-4 shrink-0" strokeWidth={2.5} aria-hidden />
-          تم نسخ رابط الوكالة
+          تم نسخ رابط الصفحة
         </div>
       ) : null}
     </div>

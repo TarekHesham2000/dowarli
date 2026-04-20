@@ -65,7 +65,7 @@ export async function POST(request: Request) {
   const { data: existing } = await svc.from("agencies").select("id").eq("owner_id", user.id).maybeSingle();
   if (existing?.id) {
     return NextResponse.json(
-      { ok: false, error: "already_has_agency", agency_id: existing.id, message: "لديك وكالة مرتبطة بهذا الحساب بالفعل" },
+      { ok: false, error: "already_has_agency", agency_id: existing.id, message: "لديك موقع عقاري مرتبط بهذا الحساب بالفعل" },
       { status: 409 },
     );
   }
@@ -73,7 +73,7 @@ export async function POST(request: Request) {
   const displayName =
     typeof body.name === "string" && body.name.trim()
       ? body.name.trim()
-      : "دَورلي — وكالة المنصة الرسمية";
+      : "دَورلي — الشركة الرسمية للمنصة";
 
   let slug =
     typeof body.slug === "string" && body.slug.trim()

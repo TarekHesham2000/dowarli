@@ -110,7 +110,7 @@ function buildDefaultAssistantMessage(
   const name = agencyName?.trim()
   const content =
     id && name
-      ? `أهلاً بيك 👋 أنا مساعد دَورلي لعروض «${name}». قولّي الميزانية والمنطقة أو أي سؤال عن الوحدات — هنحافظ على سياق عروض الوكالة دي في الإجابات.`
+      ? `أهلاً بيك 👋 أنا مساعد دَورلي لعروض «${name}». قولّي الميزانية والمنطقة أو أي سؤال عن الوحدات — هنحافظ على سياق عروض هذه الصفحة في الإجابات.`
       : 'أهلاً بيك في دَورلي 👋\nأنا دليلك العقاري: قولّي الميزانية والمنطقة (أو اسألني أي حاجة) وهظبطلك البحث.'
   return { id: uid(), role: 'assistant', content, action: null, timestamp: new Date() }
 }
@@ -617,7 +617,7 @@ export default function ChatBot({
                       : agencyPaywalledUi
                         ? 'باقة مجانية — الترقية للوكلاء المعتمدين'
                         : agencyName?.trim()
-                          ? `وكالة: ${agencyName.trim()} · Dowarly`
+                          ? `${agencyName.trim()} · Dowarly`
                           : 'مستشار عقاري · Dowarly Guide'}
                   </p>
                 </div>
@@ -688,7 +688,7 @@ export default function ChatBot({
                     agencyPaywalledUi
                       ? AGENCY_CHAT_FREE_TIER_MESSAGE
                       : agencyId?.trim()
-                        ? 'اسأل عن عروض الوكالة…'
+                        ? 'اسأل عن العروض…'
                         : 'ميزانية، منطقة، نوع السكن…'
                   }
                   readOnly={agencyPaywalledUi}

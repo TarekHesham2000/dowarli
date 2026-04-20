@@ -33,8 +33,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     .maybeSingle();
 
   if (!data) {
-    return { title: "وكالة غير موجودة", robots: { index: false, follow: false } };
-  }
+    return { title: "صفحة عقارية غير موجودة", robots: { index: false, follow: false } };
+    }
 
   const row = data as { name: string; bio: string | null; logo_url: string | null; slug: string };
   const baseUrl = getCanonicalPublicSiteUrl();
@@ -42,7 +42,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const title = `${row.name} | دَورلي`;
   const plainBio = row.bio?.replace(/\s+/g, " ").trim() ?? "";
   const description =
-    plainBio.slice(0, 160) || `عروض وكالة ${row.name} — شقق ووحدات على دَورلي`;
+    plainBio.slice(0, 160) || `عروض ${row.name} — شقق ووحدات على دَورلي`;
 
   const logoAbsolute = row.logo_url ? toAbsolutePublicUrl(row.logo_url, baseUrl) : null;
 
@@ -134,7 +134,7 @@ export default async function AgencyLandingPage({ params }: Props) {
   const { data: propRows } = await supabase
     .from("properties")
     .select(
-      "id, title, price, area, governorate, district, landmark, address, unit_type, images, slug, listing_type, listing_purpose, is_featured, availability_status, created_at",
+      "id, title, price, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, listing_type, listing_purpose, is_featured, availability_status, created_at",
     )
     .eq("agency_id", agency.id)
     .eq("status", "active")

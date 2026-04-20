@@ -62,6 +62,7 @@ type PropertyResult = {
   area: string;
   governorate?: string | null;
   district?: string | null;
+  sub_area?: string | null;
   landmark?: string | null;
   address: string | null;
   unit_type: string;
@@ -210,7 +211,7 @@ function rowMatchesSelectedGovernorate(propArea: string, selectedRaw: string): b
 }
 
 function locationMatchBlob(row: PropertyResult): string {
-  return [row.governorate, row.district, row.area, row.landmark]
+  return [row.governorate, row.district, row.sub_area, row.area, row.landmark]
     .map((x) => (x ?? "").trim())
     .filter(Boolean)
     .join(" ");
@@ -501,8 +502,8 @@ function buildSystemPrompt(recentUserBlock: string, agency: AgencyChatScope | nu
   const agencyBlock = agency
     ? `
 
-## سياق الوكالة (إلزامي)
-المستخدم يتصفح صفحة الوكالة «${agency.name.replace(/\\/g, "/").replace(/\s+/g, " ").trim().slice(0, 160)}» (المعرّف: ${agency.id}). أي بحث أو عروض في الكروت يجب أن تُجلب **فقط** من إعلانات هذه الوكالة (\`agency_id\` = هذا المعرّف). لا تقترح عقارات من وكلاء آخرين أو من المنصة خارج هذه الوكالة. عند الإجابة عن الأسعار والمناطق، اعتمد على إعلانات الوكالة المعروضة في الصفحة فقط.
+## سياق الصفحة العقارية (إلزامي)
+المستخدم يتصفح الصفحة العقارية «${agency.name.replace(/\\/g, "/").replace(/\s+/g, " ").trim().slice(0, 160)}» (المعرّف: ${agency.id}). أي بحث أو عروض في الكروت يجب أن تُجلب **فقط** من إعلانات هذا الموقع (\`agency_id\` = هذا المعرّف). لا تقترح عقارات من شركات أخرى أو من المنصة خارج هذه الصفحة. عند الإجابة عن الأسعار والمناطق، اعتمد على الإعلانات المعروضة في الصفحة فقط.
 `
     : "";
 
@@ -535,7 +536,7 @@ ${agencyBlock}
 }
 
 const SELECT_ROW =
-  "id, title, price, listing_purpose, area, governorate, district, landmark, address, unit_type, images, slug, last_verified_at, report_count, owner_id, profiles(low_trust)";
+  "id, title, price, listing_purpose, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, last_verified_at, report_count, owner_id, profiles(low_trust)";
 
 async function queryTopProperties(
   filters: FilterAction,
@@ -554,10 +555,10 @@ async function queryTopProperties(
   const g = filters.governorate?.trim() ?? "";
   const d = filters.district?.trim() ?? "";
   const a = filters.area?.trim() ?? "";
-  if (d) q = q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
+  if (d) q = q.or(`district.ilike.%${d}%,sub_area.ilike.%${d}%,area.ilike.%${d}%`);
   if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
   if (!d && !g && a) {
-    q = q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,area.ilike.%${a}%`);
+    q = q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,sub_area.ilike.%${a}%,area.ilike.%${a}%`);
   }
   const lp = filters.listingPurpose?.trim().toLowerCase();
   if (lp === "rent" || lp === "sale") q = q.eq("listing_purpose", lp);
@@ -586,7 +587,7 @@ async function queryTopProperties(
   const safeKw = sanitizeSearchKeywords(filters.keywords?.trim() ?? "");
   if (safeKw.length >= 2) {
     q = q.or(
-      `title.ilike.%${safeKw}%,address.ilike.%${safeKw}%,landmark.ilike.%${safeKw}%`,
+      `title.ilike.%${safeKw}%,address.ilike.%${safeKw}%,landmark.ilike.%${safeKw}%,district.ilike.%${safeKw}%,sub_area.ilike.%${safeKw}%`,
     );
   }
 
@@ -1314,7 +1315,7 @@ export async function POST(req: NextRequest) {
           name:
             typeof data.name === "string" && data.name.trim()
               ? data.name.trim()
-              : "وكالة",
+              : "شركة عقارية",
         };
       }
     } catch {

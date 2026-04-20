@@ -5,7 +5,7 @@ import { createServerClient } from "@supabase/ssr";
 import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
 
 export const metadata: Metadata = {
-  title: "تسجيل وكالة",
+  title: "تسجيل موقعك العقاري",
   robots: { index: false, follow: false },
 };
 

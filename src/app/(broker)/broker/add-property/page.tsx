@@ -12,10 +12,8 @@ import {
   type PlatformSettingsRow,
 } from '@/lib/platformSettings'
 import { safeRouterRefresh } from '@/lib/safeRouterRefresh'
-import {
-  GOVERNORATE_OPTIONS,
-  districtsForGovernorate,
-} from '@/lib/locationHierarchy'
+import { GOVERNORATE_OPTIONS } from '@/lib/locationHierarchy'
+import { fallbackDistrictFromDetailedAddress, type ParsedPropertyAddress } from '@/lib/parsePropertyAddress'
 import {
   BLOCK_PHONE_IN_LISTING_MESSAGE,
   listingTextContainsPhoneSequence,
@@ -98,15 +96,14 @@ export default function AddPropertyPage() {
   const [platformSettings, setPlatformSettings] = useState<PlatformSettingsRow>(PLATFORM_SETTINGS_DEFAULTS)
 
   const [form, setForm] = useState({
-    title:       '',
-    description: '',
-    price:       '',
-    governorate: '',
-    district:    '',
-    landmark:    '',
-    unit_type:   '',
-    rental_unit: '' as 'bed' | 'room' | '',  // ✨ جديد
-    beds_count:  '' as string,                // ✨ جديد — string للـ input ثم نحوله number
+    title:             '',
+    description:       '',
+    price:             '',
+    governorate:       '',
+    detailed_address:  '',
+    unit_type:         '',
+    rental_unit:       '' as 'bed' | 'room' | '',  // ✨ جديد
+    beds_count:        '' as string,                // ✨ جديد — string للـ input ثم نحوله number
   })
 
   // ── هل نعرض الـ Sub-filter؟ (إيجار فقط — بيع لا يستخدم rental_unit في الـ DB enum)
@@ -119,11 +116,6 @@ export default function AddPropertyPage() {
       setForm((prev) => ({ ...prev, rental_unit: '', beds_count: '' }))
     }
   }, [listingPurpose])
-
-  const districtOptions = useMemo(
-    () => (form.governorate ? districtsForGovernorate(form.governorate) : []),
-    [form.governorate],
-  )
 
   const activationPointsCost = useMemo(
     () => effectiveListingActivationPoints(listingPurpose, platformSettings),
@@ -242,8 +234,23 @@ export default function AddPropertyPage() {
       return
     }
 
-    if (listingTextContainsPhoneSequence(form.title, form.description)) {
+    if (
+      listingTextContainsPhoneSequence(form.title, form.description) ||
+      listingTextContainsPhoneSequence(form.detailed_address, '')
+    ) {
       setError(BLOCK_PHONE_IN_LISTING_MESSAGE)
+      setLoading(false)
+      return
+    }
+
+    const detailedTrim = form.detailed_address.trim()
+    if (!form.governorate.trim()) {
+      setError('اختر المحافظة')
+      setLoading(false)
+      return
+    }
+    if (detailedTrim.length < 8) {
+      setError('اكتب العنوان التفصيلي بشكل أوضح (8 أحرف على الأقل) — الحي، الشارع، أو علامة قريبة')
       setLoading(false)
       return
     }
@@ -318,21 +325,48 @@ export default function AddPropertyPage() {
             ? Number(form.beds_count)
             : null
 
+      let parsed: ParsedPropertyAddress = { district: '', sub_area: '', landmark: '' }
+      try {
+        const pr = await fetch('/api/parse-property-address', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify({
+            governorate: form.governorate.trim(),
+            detailed_address: detailedTrim,
+          }),
+        })
+        const pj = (await pr.json()) as { ok?: boolean; parsed?: ParsedPropertyAddress }
+        if (pj?.parsed && typeof pj.parsed === 'object') {
+          parsed = {
+            district: typeof pj.parsed.district === 'string' ? pj.parsed.district : '',
+            sub_area: typeof pj.parsed.sub_area === 'string' ? pj.parsed.sub_area : '',
+            landmark: typeof pj.parsed.landmark === 'string' ? pj.parsed.landmark : '',
+          }
+        }
+      } catch {
+        /* AI optional — fallback below */
+      }
+
+      const districtForRpc =
+        parsed.district.trim() || fallbackDistrictFromDetailedAddress(detailedTrim, form.governorate.trim())
+      const landmarkForRpc = parsed.landmark.trim() || null
+
       const { data: newIdRaw, error: rpcError } = await supabase.rpc('handle_property_submission', {
         p_title: form.title.trim(),
         p_description: (form.description || '').trim(),
         p_price: Number(form.price),
         p_area: '',
         p_unit_type: form.unit_type.trim(),
-        p_address: '',
+        p_address: detailedTrim,
         p_device_id: deviceId || null,
         p_video_url: videoUrl.trim() || null,
         p_rental_unit: rentalUnitForRpc,
         p_beds_count: bedsForRpc,
         p_listing_purpose: listingPurpose,
         p_governorate: form.governorate.trim(),
-        p_district: form.district.trim(),
-        p_landmark: (form.landmark || '').trim() || null,
+        p_district: districtForRpc,
+        p_landmark: landmarkForRpc,
       })
 
       if (rpcError) {
@@ -358,6 +392,17 @@ export default function AddPropertyPage() {
       if (images.length > 0) {
         const imageUrls = await uploadImages(insertData.id)
         await supabase.from('properties').update({ images: imageUrls }).eq('id', insertData.id)
+      }
+
+      const subTrim = parsed.sub_area.trim()
+      if (subTrim) {
+        const { error: subErr } = await supabase
+          .from('properties')
+          .update({ sub_area: subTrim })
+          .eq('id', insertData.id)
+        if (subErr && !String(subErr.message ?? '').includes('does not exist')) {
+          console.warn('[add-property] sub_area update:', subErr.message)
+        }
       }
 
       setSuccessMessage(
@@ -504,9 +549,7 @@ export default function AddPropertyPage() {
                 <select
                   required
                   value={form.governorate}
-                  onChange={e =>
-                    setForm({ ...form, governorate: e.target.value, district: '' })
-                  }
+                  onChange={e => setForm({ ...form, governorate: e.target.value })}
                   style={{ ...inputStyle, cursor: 'pointer' }}
                   onFocus={e => { e.target.style.borderColor = '#16a34a'; e.target.style.background = '#fff' }}
                   onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }}>
@@ -516,26 +559,6 @@ export default function AddPropertyPage() {
                   ))}
                 </select>
               </div>
-            </div>
-
-            {/* DISTRICT */}
-            <div>
-              <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 8 }}>
-                المنطقة / الحي <span style={{ color: '#dc2626' }}>*</span>
-              </label>
-              <select
-                required
-                value={form.district}
-                onChange={e => setForm({ ...form, district: e.target.value })}
-                disabled={!form.governorate}
-                style={{ ...inputStyle, cursor: form.governorate ? 'pointer' : 'not-allowed', opacity: form.governorate ? 1 : 0.65 }}
-                onFocus={e => { e.target.style.borderColor = '#16a34a'; e.target.style.background = '#fff' }}
-                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }}>
-                <option value="">{form.governorate ? 'اختار المنطقة...' : 'اختر المحافظة أولاً'}</option>
-                {districtOptions.map((d) => (
-                  <option key={d} value={d}>{d}</option>
-                ))}
-              </select>
             </div>
 
             {/* إيجار vs بيع — يحدد تكلفة النقاط */}
@@ -585,15 +608,24 @@ export default function AddPropertyPage() {
               </div>
             </div>
 
-            {/* LANDMARK / DETAIL ADDRESS */}
+            {/* DETAILED ADDRESS — يُحلّل بالذكاء الاصطناعي إلى حي / منطقة فرعية / علامة */}
             <div>
               <label style={{ fontSize: 13, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 8 }}>
-                العنوان بالتفصيل / علامة مميزة
+                العنوان التفصيلي <span style={{ color: '#dc2626' }}>*</span>
               </label>
-              <input type="text" placeholder="مثال: شارع النصر، بجوار المسجد" value={form.landmark}
-                onChange={e => setForm({ ...form, landmark: e.target.value })} style={inputStyle}
+              <textarea
+                required
+                rows={4}
+                placeholder="مثال: مدينة نصر — الحي السابع — شارع مصطفى النحاس، أول الشارع بجوار بنك مصر، برج النخيل"
+                value={form.detailed_address}
+                onChange={e => setForm({ ...form, detailed_address: e.target.value })}
+                style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.75 }}
                 onFocus={e => { e.target.style.borderColor = '#16a34a'; e.target.style.background = '#fff' }}
-                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }} />
+                onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }}
+              />
+              <p style={{ fontSize: 11, color: '#64748b', margin: '6px 0 0', lineHeight: 1.6 }}>
+                بعد الحفظ نستخرج تلقائياً: الحي، المنطقة الدقيقة، وعلامة قريبة إن وُجدت — والنص الكامل يبقى للبحث.
+              </p>
             </div>
 
             {/* UNIT TYPE */}

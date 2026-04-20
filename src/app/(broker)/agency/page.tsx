@@ -34,6 +34,11 @@ import {
 import { buildAgencyPublicUrl } from "@/lib/site";
 import { supabase } from "@/lib/supabase";
 import type { AgencySubscriptionStatus } from "@/lib/agencySubscription";
+import {
+  expireAgencyProTrialIfNeeded,
+  isProTrialActive,
+  trialDaysRemainingUtc,
+} from "@/lib/agencyTrial";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
 import {
   DeviceMixMiniChart,
@@ -79,6 +84,8 @@ type AgencyRow = {
   bio: string | null;
   subscription_status: AgencySubscriptionStatus;
   theme_color: string;
+  trial_expires_at: string | null;
+  plan_type: string | null;
 };
 
 type DashboardTab = "overview" | "analytics" | "crm" | "settings";
@@ -107,6 +114,8 @@ function agencyFromRow(row: Record<string, unknown>): AgencyRow | null {
     theme_color: normalizeAgencyThemeColor(
       typeof row.theme_color === "string" ? row.theme_color : null,
     ),
+    trial_expires_at: typeof row.trial_expires_at === "string" ? row.trial_expires_at : null,
+    plan_type: typeof row.plan_type === "string" ? row.plan_type : null,
   };
 }
 
@@ -320,7 +329,7 @@ function AgencyDashboardContent() {
       } else if (typeof user.email === "string" && user.email.trim()) {
         setOwnerDisplayName(user.email.split("@")[0]?.trim() || user.email.trim());
       } else {
-        setOwnerDisplayName("مالك الوكالة");
+        setOwnerDisplayName("مالك موقعك العقاري");
       }
 
       const { data: row, error: aErr } = await supabase.from("agencies").select("*").eq("owner_id", user.id).single();
@@ -340,7 +349,22 @@ function AgencyDashboardContent() {
         return;
       }
 
-      const a = agencyFromRow(row as Record<string, unknown>);
+      let workRow = row as Record<string, unknown>;
+      const rowId = typeof workRow.id === "string" ? workRow.id : "";
+      if (rowId) {
+        const expired = await expireAgencyProTrialIfNeeded(supabase, rowId, {
+          subscription_status: typeof workRow.subscription_status === "string" ? workRow.subscription_status : null,
+          trial_expires_at: typeof workRow.trial_expires_at === "string" ? workRow.trial_expires_at : null,
+        });
+        if (expired) {
+          const { data: refreshed } = await supabase.from("agencies").select("*").eq("owner_id", user.id).single();
+          if (refreshed && typeof refreshed === "object") {
+            workRow = refreshed as Record<string, unknown>;
+          }
+        }
+      }
+
+      const a = agencyFromRow(workRow);
       if (!a) {
         setAgency(null);
         return;
@@ -366,7 +390,7 @@ function AgencyDashboardContent() {
       if (!hasProfileChanges) return;
       const n = editName.trim();
       if (!n) {
-        setProfileSaveError("أدخل اسم الوكالة.");
+        setProfileSaveError("أدخل اسم موقعك العقاري.");
         return;
       }
       setProfileSaveLoading(true);
@@ -403,7 +427,7 @@ function AgencyDashboardContent() {
           setProfileSaveError(upRowErr.message);
           return;
         }
-        setProfileSaveOk("تم حفظ بيانات الوكالة بنجاح.");
+        setProfileSaveOk("تم حفظ بيانات موقعك العقاري بنجاح.");
         setEditLogoFile(null);
         setPendingLogoRemoval(false);
         if (logoFileInputRef.current) logoFileInputRef.current.value = "";
@@ -455,7 +479,7 @@ function AgencyDashboardContent() {
           setThemeSaveError(error.message);
           return;
         }
-        setThemeSaveOk("تم حفظ ألوان صفحة الوكالة العامة.");
+        setThemeSaveOk("تم حفظ ألوان صفحتك العقارية العامة.");
         setAgency((prev) => (prev ? { ...prev, theme_color: next } : prev));
         await load();
         safeRouterRefresh(router);
@@ -701,7 +725,7 @@ function AgencyDashboardContent() {
       <div className="flex min-h-[40vh] items-center justify-center bg-slate-950 bg-[radial-gradient(ellipse_at_top,_#312e81_0%,_#020617_55%)]">
         <div className={`${GLASS_STAT} px-10 py-8 text-center`}>
           <p className="m-0 text-sm font-black text-indigo-100">جاري التحميل…</p>
-          <p className="mt-2 text-xs font-medium text-slate-400">نُجهّز لوحة وكالتك وبياناتك</p>
+          <p className="mt-2 text-xs font-medium text-slate-400">نُجهّز لوحة موقعك العقاري وبياناتك</p>
         </div>
       </div>
     );
@@ -714,20 +738,26 @@ function AgencyDashboardContent() {
           <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl border border-indigo-500/25 bg-indigo-500/10 text-3xl" aria-hidden>
             🏢
           </div>
-          <h1 className="text-xl font-black text-white">لا توجد وكالة مرتبطة بحسابك</h1>
+          <h1 className="text-xl font-black text-white">لا يوجد موقع عقاري مرتبط بحسابك</h1>
           <p className="mt-2 text-sm leading-relaxed text-slate-400">
-            سجّل وكالتك لتظهر صفحة عامة احترافية وربط كل إعلاناتك بها — خطوة واحدة تفصلك عن ظهور أقوى في السوق.
+            سجّل موقعك العقاري لتظهر صفحة عامة احترافية وربط كل إعلاناتك بها — خطوة واحدة تفصلك عن ظهور أقوى في السوق.
           </p>
           <Link
             href="/become-an-agency"
             className="mt-6 inline-flex rounded-xl bg-emerald-500 px-6 py-3 text-sm font-black text-slate-950 no-underline shadow-lg shadow-emerald-900/40 hover:bg-emerald-400"
           >
-            تسجيل وكالة
+            تسجيل موقعك العقاري
           </Link>
         </div>
       </div>
     );
   }
+
+  const trialDaysLeft = trialDaysRemainingUtc(agency.trial_expires_at);
+  const showProTrialBanner =
+    isProTrialActive(agency.subscription_status, agency.trial_expires_at) &&
+    trialDaysLeft !== null &&
+    trialDaysLeft > 0;
 
   return (
     <div className="min-h-screen bg-slate-950 bg-[radial-gradient(ellipse_120%_80%_at_50%_-20%,rgba(79,70,229,0.12),transparent_50%),radial-gradient(ellipse_80%_50%_at_100%_50%,rgba(16,185,129,0.06),transparent_45%)] pb-16 text-slate-100">
@@ -744,9 +774,20 @@ function AgencyDashboardContent() {
         </div>
       ) : null}
       <div className="mx-auto max-w-6xl px-4 py-8">
+        {showProTrialBanner && trialDaysLeft !== null ? (
+          <div
+            className="mb-4 rounded-2xl border border-violet-500/25 bg-gradient-to-l from-zinc-950 via-zinc-900 to-violet-950/80 px-4 py-3.5 shadow-lg shadow-black/40 ring-1 ring-white/5"
+            role="status"
+          >
+            <p className="m-0 text-right text-sm font-black leading-relaxed text-zinc-100">
+              إنت حالياً في الفترة التجريبية (برو) ⚡.. متبقي لك {trialDaysLeft.toLocaleString("ar-EG")} يوم على
+              الاستمتاع بكل المميزات مجاناً!
+            </p>
+          </div>
+        ) : null}
         {showCreatedWelcome ? (
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-emerald-500/30 bg-emerald-950/40 px-4 py-3 text-sm font-bold text-emerald-100 shadow-lg shadow-emerald-900/20">
-            <p className="m-0 flex-1 leading-relaxed">تم إنشاء وكالتك بنجاح — يمكنك الآن إدارة الطلبات والتحليلات من لوحة التحكم.</p>
+            <p className="m-0 flex-1 leading-relaxed">تم إنشاء موقعك العقاري بنجاح — يمكنك الآن إدارة الطلبات والتحليلات من لوحة التحكم.</p>
             <button
               type="button"
               className="shrink-0 rounded-lg border border-emerald-500/40 bg-slate-900 px-3 py-1.5 text-xs font-black text-emerald-200 hover:bg-slate-800"
@@ -763,7 +804,7 @@ function AgencyDashboardContent() {
         {/* Header */}
         <div className={`mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between ${GLASS_HEADER}`}>
           <div>
-            <p className="text-xs font-bold uppercase tracking-wide text-emerald-400/90">لوحة الوكالة</p>
+            <p className="text-xs font-bold uppercase tracking-wide text-emerald-400/90">لوحة موقعك العقاري</p>
             <h1 className="mt-1 text-2xl font-black text-white">{agency.name}</h1>
             <div className="mt-1 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:flex-wrap sm:items-center">
               <span className="flex flex-wrap items-center gap-2">
@@ -927,7 +968,7 @@ function AgencyDashboardContent() {
                   <Home className="h-5 w-5 text-emerald-400/80" aria-hidden />
                 </div>
                 <p className="mt-3 text-3xl font-black tabular-nums text-white">{animActive}</p>
-                <p className="mt-1 text-[11px] text-slate-500">من أصل {propCount} مرتبطة بالوكالة</p>
+                <p className="mt-1 text-[11px] text-slate-500">من أصل {propCount} مرتبطة بموقعك العقاري</p>
               </motion.div>
             </div>
 
@@ -935,7 +976,7 @@ function AgencyDashboardContent() {
               <DashboardAnalyticsEmpty
                 title="المشاهدات مقابل الطلبات"
                 message="ابدأ بنشر عقاراتك لمشاهدة التحليلات هنا"
-                hint="اربط إعلاناتك بوكالتك من لوحة الوسيط، أو أضف إعلاناً جديداً — ستظهر المشاهدات والطلبات حسب الفترة التي تختارها أعلاه."
+                hint="اربط إعلاناتك بموقعك العقاري من لوحة الوسيط، أو أضف إعلاناً جديداً — ستظهر المشاهدات والطلبات حسب الفترة التي تختارها أعلاه."
               />
             ) : noSignalsInRange ? (
               <DashboardAnalyticsEmpty
@@ -1137,7 +1178,7 @@ function AgencyDashboardContent() {
               <DashboardAnalyticsEmpty
                 title="لا طلبات بعد"
                 message="ابدأ بنشر عقاراتك لمشاهدة التحليلات هنا"
-                hint="عند ربط إعلانات نشطة بالوكالة سيصل الطلبات إلى هذا الجدول تلقائياً."
+                hint="عند ربط إعلانات نشطة بموقعك العقاري سيصل الطلبات إلى هذا الجدول تلقائياً."
               />
             ) : (
               <>
@@ -1193,7 +1234,7 @@ function AgencyDashboardContent() {
                   <h2 className="text-lg font-black text-white">الهوية والألوان</h2>
                 </div>
                 <p className="mb-5 max-w-2xl text-sm leading-relaxed text-slate-400">
-                  اختر لوناً أساسياً يظهر في صفحة وكالتك العامة على دَورلي (أزرار التواصل، الشارات، والتدرجات).
+                  اختر لوناً أساسياً يظهر في صفحتك العقارية العامة على دَورلي (أزرار التواصل، الشارات، والتدرجات).
                   يمكنك المعاينة قبل الحفظ.
                 </p>
 
@@ -1309,7 +1350,7 @@ function AgencyDashboardContent() {
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 shadow-xl">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-lg font-black text-white">بيانات الوكالة</h2>
+                <h2 className="text-lg font-black text-white">بيانات موقعك العقاري</h2>
                 <button
                   type="button"
                   onClick={() => (profileEditOpen ? closeProfileEditor() : openProfileEditor())}
@@ -1326,7 +1367,7 @@ function AgencyDashboardContent() {
             {profileEditOpen ? (
               <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-6 shadow-xl">
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-lg font-black text-white">تعديل بيانات الوكالة</h2>
+                  <h2 className="text-lg font-black text-white">تعديل بيانات موقعك العقاري</h2>
                   <button
                     type="button"
                     className="rounded-lg px-3 py-1.5 text-xs font-bold text-slate-400 hover:bg-slate-800"
@@ -1338,7 +1379,7 @@ function AgencyDashboardContent() {
                 <form className="space-y-4" onSubmit={saveAgencyProfile}>
                   <div>
                     <label htmlFor="agency-edit-name" className="mb-1 block text-xs font-bold text-slate-400">
-                      اسم الوكالة
+                      اسم موقعك العقاري
                     </label>
                     <input
                       id="agency-edit-name"
@@ -1367,7 +1408,7 @@ function AgencyDashboardContent() {
                   </div>
                   <div>
                     <label htmlFor="agency-edit-bio" className="mb-1 block text-xs font-bold text-slate-400">
-                      نبذة عن الوكالة
+                      نبذة عن شركتك
                     </label>
                     <textarea
                       id="agency-edit-bio"
@@ -1378,7 +1419,7 @@ function AgencyDashboardContent() {
                     />
                   </div>
                   <div className="border-t border-slate-800 pt-6">
-                    <h3 className="text-center text-base font-black tracking-tight text-white">شعار الوكالة</h3>
+                    <h3 className="text-center text-base font-black tracking-tight text-white">شعار شركتك</h3>
                     <p className="mx-auto mt-1 max-w-md text-center text-[11px] leading-relaxed text-slate-500">
                       PNG, JPG, WEBP — يُفضّل 512×512.
                     </p>
@@ -1506,7 +1547,7 @@ export default function AgencyDashboardPage() {
         <div className="flex min-h-[40vh] items-center justify-center bg-slate-950 bg-[radial-gradient(ellipse_at_top,_#312e81_0%,_#020617_55%)]">
           <div className={`${GLASS_STAT} px-10 py-8 text-center`}>
             <p className="m-0 text-sm font-black text-indigo-100">جاري التحميل…</p>
-            <p className="mt-2 text-xs text-slate-400">لوحة الوكالة</p>
+            <p className="mt-2 text-xs text-slate-400">لوحة موقعك العقاري</p>
           </div>
         </div>
       }

@@ -19,6 +19,7 @@ export type PropertyMatchFields = {
   area: string;
   governorate?: string | null;
   district?: string | null;
+  sub_area?: string | null;
   landmark?: string | null;
   price: number;
   unit_type: string;
@@ -35,7 +36,10 @@ export function propertyMatchesSavedSearch(
   const dist = (parsed.district || "").replace(/\s+/g, " ").trim();
   const gov = (parsed.governorate || "").replace(/\s+/g, " ").trim();
   const locHay =
-    `${prop.governorate ?? ""} ${prop.district ?? ""} ${prop.area ?? ""}`.replace(/\s+/g, " ");
+    `${prop.governorate ?? ""} ${prop.district ?? ""} ${prop.sub_area ?? ""} ${prop.area ?? ""}`.replace(
+      /\s+/g,
+      " ",
+    );
 
   if (dist && !locHay.includes(dist)) return false;
   if (gov && !locHay.includes(gov)) {
@@ -51,7 +55,8 @@ export function propertyMatchesSavedSearch(
   const kw = (parsed.keywords || "").replace(/\s+/g, " ").trim();
   if (kw.length > 2) {
     const hay =
-      `${prop.title} ${prop.description} ${prop.address} ${prop.landmark ?? ""}`.toLowerCase();
+      `${prop.title} ${prop.description} ${prop.address} ${prop.landmark ?? ""} ${prop.district ?? ""} ${prop.sub_area ?? ""}`
+        .toLowerCase();
     const blob = kw.toLowerCase();
     if (!hay.includes(blob)) return false;
   }
