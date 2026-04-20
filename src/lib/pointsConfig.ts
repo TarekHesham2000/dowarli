@@ -63,10 +63,13 @@ export function getPackageById(id: PointsPackageId): PointsPackage | undefined {
   return POINTS_PACKAGES.find((p) => p.id === id);
 }
 
-/** Wallet number shown for manual transfer (Vodafone Cash / Instapay). */
+/**
+ * Fallback wallet display when `system_settings` / `/api/payment-settings` is not used.
+ * الإصدار الافتراضي في واجهة المحفظة يأتي من قاعدة البيانات.
+ */
 export function getWalletDisplayNumber(): string {
   return (
     process.env.NEXT_PUBLIC_DOWARLI_WALLET_PHONE?.trim() ||
-    "01000000000 — عيّن NEXT_PUBLIC_DOWARLI_WALLET_PHONE"
+    "01000000000 — عيّن NEXT_PUBLIC_DOWARLI_WALLET_PHONE أو system_settings.wallet_phone"
   );
 }

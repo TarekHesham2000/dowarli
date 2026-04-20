@@ -14,6 +14,7 @@ import type { HomeAgencyPartner } from "@/lib/fetchHomeAgencyPartners";
 import { type ParsedFilters, type UnitType, parseSearchQuery } from "@/lib/parseHomeSearchQuery";
 import type { SavedSearchFiltersV1 } from "@/lib/matchSavedSearch";
 import { propertyPathFromRecord } from "@/lib/propertySlug";
+import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Property = {
   id: number;
@@ -82,7 +83,11 @@ async function fetchActiveHomeProperties(
 
   const applyFilters = (selectList: string, whereSubArea: boolean) => {
     // Market-wide home feed: no .eq("agency_id", …). Agency-scoped lists use agency_id on /agency/[slug] and broker /agency.
-    let q = client.from("properties").select(selectList).eq("status", "active");
+    let q = client
+      .from("properties")
+      .select(selectList)
+      .eq("status", "active")
+      .or(orPublicListingNotExpired());
     const g = (parsed.governorate ?? "").trim();
     const d = (parsed.district ?? "").trim();
     const a = (parsed.area ?? "").trim();

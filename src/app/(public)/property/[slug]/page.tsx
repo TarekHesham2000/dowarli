@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { getSiteUrl } from "@/lib/site";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
+import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
 import PropertyPageClient from "./PropertyPageClient";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -49,6 +50,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
         "slug, title, description, images, area, governorate, district, price, status, availability_status, listing_purpose, listing_type",
       )
       .eq("id", numericId)
+      .or(orPublicListingNotExpired())
       .maybeSingle();
     const row = data as (PropertyMetaRow & { slug: string | null }) | null;
     if (row?.slug) {
@@ -69,6 +71,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       "title, description, images, area, governorate, district, price, status, availability_status, slug, listing_purpose, listing_type",
     )
     .eq("slug", segment)
+    .or(orPublicListingNotExpired())
     .maybeSingle();
   const row = data as PropertyMetaRow | null;
 
@@ -126,7 +129,12 @@ export default async function PropertyPage({ params }: Props) {
   const supabase = createSupabaseAnonServer();
 
   if (/^\d+$/.test(segment)) {
-    const { data } = await supabase.from("properties").select("slug").eq("id", Number(segment)).maybeSingle();
+    const { data } = await supabase
+      .from("properties")
+      .select("slug")
+      .eq("id", Number(segment))
+      .or(orPublicListingNotExpired())
+      .maybeSingle();
     const s = (data as { slug: string | null } | null)?.slug;
     if (s) {
       permanentRedirect(`/property/${s}`);
@@ -134,7 +142,12 @@ export default async function PropertyPage({ params }: Props) {
     notFound();
   }
 
-  const { data } = await supabase.from("properties").select("id").eq("slug", segment).maybeSingle();
+  const { data } = await supabase
+    .from("properties")
+    .select("id")
+    .eq("slug", segment)
+    .or(orPublicListingNotExpired())
+    .maybeSingle();
   if (!data) {
     notFound();
   }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
+import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
 import {
   governorateForDistrict,
   matchDistrictInText,
@@ -71,11 +72,16 @@ type PropertyResult = {
   /** ISO — تأكيد التوافر من الوسيط */
   last_verified_at?: string;
   report_count?: number;
+  /** ترتيب الدردشة: موثّق من الدليل أولاً */
+  agency_is_verified?: boolean;
+  /** ترتيب الدردشة: الأحدث أولاً */
+  created_at?: string | null;
 };
 
 type PropertyQueryRow = PropertyResult & {
   profiles?: { low_trust?: boolean | null } | { low_trust?: boolean | null }[] | null;
   owner_id?: string;
+  agencies?: { is_verified?: boolean | null } | { is_verified?: boolean | null }[] | null;
 };
 
 type ChatResponse = {
@@ -290,7 +296,22 @@ function profileLowTrust(row: PropertyQueryRow): boolean {
 function rowsToMappedResults(rows: PropertyQueryRow[]): PropertyResult[] {
   return rows
     .filter((r) => !profileLowTrust(r))
-    .map(({ profiles: _pr, owner_id: _o, ...rest }) => rest);
+    .map((row) => {
+      const ag = row.agencies;
+      const ao = ag && (Array.isArray(ag) ? ag[0] : ag);
+      const agency_is_verified = ao?.is_verified === true;
+      const { profiles: _pr, owner_id: _o, agencies: _a, ...rest } = row;
+      return {
+        ...rest,
+        agency_is_verified,
+        created_at: typeof row.created_at === "string" ? row.created_at : null,
+      };
+    });
+}
+
+function createdAtMs(r: PropertyResult): number {
+  const t = r.created_at ? Date.parse(r.created_at) : NaN;
+  return Number.isFinite(t) ? t : 0;
 }
 
 /** إعلانات بسعر منخفض جداً مقارنة بميزانية إيجار في منطقة راقية — غالباً ضوضاء/تجربة */
@@ -319,12 +340,22 @@ function isSuspiciouslyLowVsBudget(r: PropertyResult, filters: FilterAction): bo
   return true;
 }
 
-/** صلة بالميزانية أولاً، ثم السعر، ثم حداثة التأكيد */
+/**
+ * بعد الفلترة: شكوك منخفضة الميزانية → وكالات موثّقة في الدليل → الأحدث في النشر → صلة السعر → حداثة التأكيد.
+ */
 function rankChatPropertyRows(rows: PropertyResult[], filters: FilterAction): PropertyResult[] {
   return [...rows].sort((a, b) => {
     const sa = isSuspiciouslyLowVsBudget(a, filters) ? 1 : 0;
     const sb = isSuspiciouslyLowVsBudget(b, filters) ? 1 : 0;
     if (sa !== sb) return sa - sb;
+
+    const agA = a.agency_is_verified === true ? 0 : 1;
+    const agB = b.agency_is_verified === true ? 0 : 1;
+    if (agA !== agB) return agA - agB;
+
+    const ca = createdAtMs(a);
+    const cb = createdAtMs(b);
+    if (ca !== cb) return cb - ca;
 
     if (filters.priceSearchMode === "higher") {
       if (a.price !== b.price) return a.price - b.price;
@@ -338,9 +369,9 @@ function rankChatPropertyRows(rows: PropertyResult[], filters: FilterAction): Pr
       if (a.price !== b.price) return a.price - b.price;
     }
 
-    const va = isVerificationStale(a.last_verified_at) ? 1 : 0;
-    const vb = isVerificationStale(b.last_verified_at) ? 1 : 0;
-    return va - vb;
+    const vsa = isVerificationStale(a.last_verified_at) ? 1 : 0;
+    const vsb = isVerificationStale(b.last_verified_at) ? 1 : 0;
+    return vsa - vsb;
   });
 }
 
@@ -536,7 +567,7 @@ ${agencyBlock}
 }
 
 const SELECT_ROW =
-  "id, title, price, listing_purpose, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, last_verified_at, report_count, owner_id, profiles(low_trust)";
+  "id, title, price, listing_purpose, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, last_verified_at, report_count, owner_id, created_at, agencies(is_verified), profiles(low_trust)";
 
 async function queryTopProperties(
   filters: FilterAction,
@@ -549,7 +580,8 @@ async function queryTopProperties(
     .from("properties")
     .select(SELECT_ROW)
     .eq("status", "active")
-    .eq("availability_status", "available");
+    .eq("availability_status", "available")
+    .or(orPublicListingNotExpired());
   if (agencyId) q = q.eq("agency_id", agencyId);
 
   const g = filters.governorate?.trim() ?? "";
@@ -568,20 +600,10 @@ async function queryTopProperties(
     const lo = typeof filters.minPrice === "number" ? filters.minPrice : 0;
     if (lo > 0) q = q.gte("price", lo);
     q = q.lte("price", CHAT_PRICE_CEILING);
-    q = q
-      .order("price", { ascending: true })
-      .order("last_verified_at", { ascending: false });
   } else if (typeof filters.maxPrice === "number" && filters.maxPrice > 0) {
     const hi = Math.round(filters.maxPrice * 1.25);
     const lo = Math.max(0, Math.floor(filters.maxPrice * 0.8));
     q = q.gte("price", lo).lte("price", hi);
-    q = q
-      .order("last_verified_at", { ascending: false })
-      .order("created_at", { ascending: false });
-  } else {
-    q = q
-      .order("last_verified_at", { ascending: false })
-      .order("created_at", { ascending: false });
   }
 
   const safeKw = sanitizeSearchKeywords(filters.keywords?.trim() ?? "");
@@ -591,7 +613,10 @@ async function queryTopProperties(
     );
   }
 
-  const fetchCap = Math.max(limit * 6, 24);
+  // فلترة كاملة أولاً؛ ترتيب أولي بالحداثة لملء العيّنة ثم rankChatPropertyRows (موثّق → جديد → سعر…)
+  q = q.order("created_at", { ascending: false });
+
+  const fetchCap = Math.min(200, Math.max(limit * 8, 64));
   const { data, error } = await q.limit(fetchCap);
   if (error) throw error;
   const mapped = rowsToMappedResults((data as PropertyQueryRow[]) ?? []);
@@ -611,7 +636,7 @@ async function queryFallback(
           ? Math.max(500, Math.floor(filters.minPrice * 0.92))
           : filters.minPrice,
     };
-    return queryTopProperties(relaxed, 5, agencyId);
+    return queryTopProperties(relaxed, 8, agencyId);
   }
   const relaxed: FilterAction = {
     ...filters,
@@ -621,7 +646,7 @@ async function queryFallback(
         ? Math.round(filters.maxPrice * 1.25)
         : null,
   };
-  return queryTopProperties(relaxed, 5, agencyId);
+  return queryTopProperties(relaxed, 8, agencyId);
 }
 
 /** تحليل سوقي خفيف يُشغَّل بالتوازي مع البحث (analyze_market_trends مبسّط على بيانات المنصة) */
@@ -635,7 +660,8 @@ async function analyzeMarketTrends(
       .from("properties")
       .select("price")
       .eq("status", "active")
-      .eq("availability_status", "available");
+      .eq("availability_status", "available")
+      .or(orPublicListingNotExpired());
     if (agencyId) q = q.eq("agency_id", agencyId);
     const g = filters.governorate?.trim() ?? "";
     const d = filters.district?.trim() ?? "";
@@ -692,7 +718,7 @@ type PivotKind =
   | "explore"
   | "higher_prices";
 
-const SLIDER_LIMIT = 3;
+const SLIDER_LIMIT = 8;
 const takeSlider = (rows: PropertyResult[]) => rows.slice(0, SLIDER_LIMIT);
 
 /** بحث بدون التزام محافظة: السلوك السابق (جيران، سقف أوسع، استكشاف). */
@@ -707,7 +733,7 @@ async function searchPropertiesWithFallbackLegacy(
   marketNote: string | null;
 }> {
   const [primary, marketNote] = await Promise.all([
-    queryTopProperties(filters, 6, agencyId),
+    queryTopProperties(filters, 8, agencyId),
     analyzeMarketTrends(filters, agencyId),
   ]);
 
@@ -730,7 +756,7 @@ async function searchPropertiesWithFallbackLegacy(
         ...filters,
         maxPrice: Math.round(filters.maxPrice * 1.1),
       },
-      6,
+      8,
       agencyId,
     );
     if (wider10.length > 0) {
@@ -759,7 +785,7 @@ async function searchPropertiesWithFallbackLegacy(
         governorate: gNb ? normalizeArea(gNb) : "",
         area: gNb ? "" : nb,
       },
-      6,
+      8,
       agencyId,
     );
     if (alt.length > 0) {
@@ -1150,7 +1176,8 @@ async function queryExploratorySuggestions(
     .from("properties")
     .select(SELECT_ROW)
     .eq("status", "active")
-    .eq("availability_status", "available");
+    .eq("availability_status", "available")
+    .or(orPublicListingNotExpired());
   if (agencyId) q = q.eq("agency_id", agencyId);
 
   const g = filters.governorate?.trim() ?? "";
@@ -1172,9 +1199,6 @@ async function queryExploratorySuggestions(
     filters.minPrice > 0
   ) {
     q = q.gte("price", filters.minPrice).lte("price", CHAT_PRICE_CEILING);
-    q = q
-      .order("price", { ascending: true })
-      .order("last_verified_at", { ascending: false });
   } else if (typeof maxP === "number" && maxP < 2200) {
     q = q.lte("price", Math.max(maxP * 2, 2800));
     if (!explicitUnitType) {
@@ -1182,24 +1206,16 @@ async function queryExploratorySuggestions(
     } else {
       q = q.eq("unit_type", explicitUnitType);
     }
-    q = q
-      .order("last_verified_at", { ascending: false })
-      .order("price", { ascending: true });
   } else if (typeof maxP === "number") {
     q = q.lte("price", Math.round(maxP * 1.6));
-    q = q
-      .order("last_verified_at", { ascending: false })
-      .order("price", { ascending: true });
-  } else {
-    q = q
-      .order("last_verified_at", { ascending: false })
-      .order("price", { ascending: true });
   }
 
-  const { data, error } = await q.limit(24);
+  q = q.order("created_at", { ascending: false });
+
+  const { data, error } = await q.limit(64);
   if (error) throw error;
   const mapped = rowsToMappedResults((data as PropertyQueryRow[]) ?? []);
-  return rankChatPropertyRows(mapped, filters).slice(0, 5);
+  return rankChatPropertyRows(mapped, filters).slice(0, 8);
 }
 
 function encouragingCopy(

@@ -1,6 +1,7 @@
 'use client'
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
+import { orPublicListingNotExpired } from '@/lib/publicListingExpiry'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -202,6 +203,8 @@ export default function PropertyPageClient() {
       } else {
         q = q.eq('slug', segment)
       }
+
+      q = q.or(orPublicListingNotExpired())
 
       const { data } = await q.maybeSingle()
       const row = data as unknown as Property | null

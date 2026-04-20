@@ -56,6 +56,26 @@ import {
   listingPurposeFromProperty,
 } from "./adminShared";
 
+function isPublicListingActiveByExpiry(expiresAt: string | null | undefined): boolean {
+  if (expiresAt == null || String(expiresAt).trim() === "") return true;
+  const t = new Date(expiresAt);
+  return !Number.isNaN(t.getTime()) && t.getTime() > Date.now();
+}
+
+function toDatetimeLocalValue(iso: string | null | undefined): string {
+  if (iso == null || String(iso).trim() === "") return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function defaultFutureDatetimeLocal(daysAhead: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + daysAhead);
+  return toDatetimeLocalValue(d.toISOString());
+}
+
 type ProfileMini = { name: string; phone: string; id: string; points?: number | null; email?: string | null };
 
 type Property = {
@@ -80,12 +100,14 @@ type Property = {
   rejection_reason?: string | null;
   created_at?: string | null;
   unit_type?: string | null;
+  /** null = no expiry (public API treats as always visible) */
+  expires_at?: string | null;
   profiles: ProfileMini;
 };
 
 /** Must stay aligned with normalizeAdminProperty — used in loadAll and admin preview fetch. */
 const ADMIN_PROPERTIES_SELECT =
-  "id, title, area, governorate, district, landmark, price, status, images, description, address, slug, video_url, listing_type, listing_purpose, was_charged, agency_id, owner_id, rejection_reason, created_at, unit_type, profiles(name, phone, id, points, email)";
+  "id, title, area, governorate, district, landmark, price, status, images, description, address, slug, video_url, listing_type, listing_purpose, was_charged, agency_id, owner_id, rejection_reason, created_at, unit_type, expires_at, profiles(name, phone, id, points, email)";
 
 function normalizeAdminProperty(raw: unknown): Property {
   const p = raw as Record<string, unknown>;
@@ -115,6 +137,7 @@ function normalizeAdminProperty(raw: unknown): Property {
     rejection_reason: p.rejection_reason != null ? String(p.rejection_reason) : null,
     created_at: p.created_at != null ? String(p.created_at) : undefined,
     unit_type: p.unit_type != null ? String(p.unit_type) : null,
+    expires_at: p.expires_at != null ? String(p.expires_at) : null,
     profiles: {
       name: String(po?.name ?? ""),
       phone: String(po?.phone ?? ""),
@@ -308,6 +331,13 @@ export default function AdminGodModeDashboard() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [platformSettings, setPlatformSettings] = useState<PlatformSettingsRow>(PLATFORM_SETTINGS_DEFAULTS);
   const [savingPlatformSettings, setSavingPlatformSettings] = useState(false);
+  const [paymentWalletDraft, setPaymentWalletDraft] = useState("");
+  const [paymentInstapayDraft, setPaymentInstapayDraft] = useState("");
+  const [adDurationDaysDraft, setAdDurationDaysDraft] = useState("30");
+  const [savingPaymentSettings, setSavingPaymentSettings] = useState(false);
+  const [extendExpiresProperty, setExtendExpiresProperty] = useState<Property | null>(null);
+  const [extendExpiresInput, setExtendExpiresInput] = useState("");
+  const [savingPropertyExpiresAt, setSavingPropertyExpiresAt] = useState(false);
   const [editNewImageUrl, setEditNewImageUrl] = useState("");
 
   const [notifyUserId, setNotifyUserId] = useState<string | null>(null);
@@ -519,6 +549,25 @@ export default function AdminGodModeDashboard() {
         if (pj?.settings) setPlatformSettings(normalizePlatformSettings(pj.settings));
       } catch {
         setPlatformSettings(PLATFORM_SETTINGS_DEFAULTS);
+      }
+
+      try {
+        const pay = await fetch("/api/payment-settings", { cache: "no-store" });
+        if (pay.ok) {
+          const pj = (await pay.json()) as {
+            wallet_phone?: string;
+            instapay_id?: string;
+            ad_duration_days?: number;
+          };
+          if (typeof pj.wallet_phone === "string") setPaymentWalletDraft(pj.wallet_phone);
+          if (typeof pj.instapay_id === "string") setPaymentInstapayDraft(pj.instapay_id);
+          if (typeof pj.ad_duration_days === "number" && Number.isFinite(pj.ad_duration_days)) {
+            const n = Math.min(3650, Math.max(1, Math.round(pj.ad_duration_days)));
+            setAdDurationDaysDraft(String(n));
+          }
+        }
+      } catch {
+        /* ignore */
       }
 
       setStats({
@@ -1357,6 +1406,82 @@ export default function AdminGodModeDashboard() {
     [platformSettings],
   );
 
+  const savePaymentSettings = async () => {
+    setSavingPaymentSettings(true);
+    try {
+      const parsedDays = parseInt(String(adDurationDaysDraft).replace(/\D/g, ""), 10);
+      const res = await fetch("/api/admin/payment-settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          wallet_phone: paymentWalletDraft,
+          instapay_id: paymentInstapayDraft,
+          ...(Number.isFinite(parsedDays) && parsedDays >= 1 && parsedDays <= 3650
+            ? { ad_duration_days: parsedDays }
+            : {}),
+        }),
+      });
+      const j = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        wallet_phone?: string;
+        instapay_id?: string;
+        ad_duration_days?: number;
+      };
+      if (!res.ok) {
+        showToast(j.error || "تعذر حفظ إعدادات النظام", "error");
+        return;
+      }
+      if (typeof j.wallet_phone === "string") setPaymentWalletDraft(j.wallet_phone);
+      if (typeof j.instapay_id === "string") setPaymentInstapayDraft(j.instapay_id);
+      if (typeof j.ad_duration_days === "number" && Number.isFinite(j.ad_duration_days)) {
+        setAdDurationDaysDraft(String(Math.min(3650, Math.max(1, Math.round(j.ad_duration_days)))));
+      }
+      showToast("تم حفظ إعدادات النظام", "success");
+    } finally {
+      setSavingPaymentSettings(false);
+    }
+  };
+
+  const openExtendExpiresModal = useCallback((p: Property) => {
+    setExtendExpiresProperty(p);
+    setExtendExpiresInput(
+      toDatetimeLocalValue(p.expires_at ?? undefined) || defaultFutureDatetimeLocal(30),
+    );
+  }, []);
+
+  const savePropertyExpiresAt = async () => {
+    if (!extendExpiresProperty) return;
+    setSavingPropertyExpiresAt(true);
+    try {
+      let next: string | null;
+      if (!extendExpiresInput.trim()) {
+        next = null;
+      } else {
+        const d = new Date(extendExpiresInput);
+        if (Number.isNaN(d.getTime())) {
+          showToast("تاريخ غير صالح", "error");
+          return;
+        }
+        next = d.toISOString();
+      }
+      const { error } = await supabase
+        .from("properties")
+        .update({ expires_at: next })
+        .eq("id", extendExpiresProperty.id);
+      if (error) {
+        showToast(error.message, "error");
+        return;
+      }
+      showToast("تم تحديث تاريخ انتهاء الإعلان", "success");
+      setExtendExpiresProperty(null);
+      await loadAll();
+    } finally {
+      setSavingPropertyExpiresAt(false);
+    }
+  };
+
   const savePlatformSettings = async () => {
     setSavingPlatformSettings(true);
     try {
@@ -1909,7 +2034,18 @@ export default function AdminGodModeDashboard() {
                         className="min-w-0 flex-1 text-start"
                         onClick={() => openEditProperty(p)}
                       >
-                        <div className="font-bold text-white">{p.title}</div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-white">{p.title}</span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-black ring-1 ${
+                              isPublicListingActiveByExpiry(p.expires_at)
+                                ? "bg-emerald-500/15 text-emerald-200 ring-emerald-500/40"
+                                : "bg-amber-500/15 text-amber-200 ring-amber-500/40"
+                            }`}
+                          >
+                            {isPublicListingActiveByExpiry(p.expires_at) ? "نشط" : "منتهي"}
+                          </span>
+                        </div>
                         <div className="text-xs text-slate-400">
                           <span
                             className="text-emerald-400 underline"
@@ -1922,6 +2058,17 @@ export default function AdminGodModeDashboard() {
                           </span>
                           {" · "}
                           {p.price?.toLocaleString()} ج.م · {p.status}
+                          {p.expires_at ? (
+                            <span>
+                              {" · ينتهي: "}
+                              {new Date(p.expires_at).toLocaleString("ar-EG", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })}
+                            </span>
+                          ) : (
+                            " · بدون تاريخ انتهاء"
+                          )}
                         </div>
                       </button>
                       <div className="flex flex-wrap gap-2">
@@ -1940,6 +2087,16 @@ export default function AdminGodModeDashboard() {
                           onClick={() => openEditProperty(p)}
                         >
                           تعديل إداري
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-lg border border-violet-600/50 px-3 py-1.5 text-xs font-bold text-violet-200"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openExtendExpiresModal(p);
+                          }}
+                        >
+                          انتهاء الإعلان
                         </button>
                         <button
                           type="button"
@@ -2498,6 +2655,62 @@ export default function AdminGodModeDashboard() {
 
             {tab === "settings" && (
               <div className="mx-auto max-w-2xl space-y-4">
+                <div className="rounded-2xl border border-cyan-500/25 bg-slate-900/50 p-5">
+                  <h3 className="mb-1 text-base font-black text-cyan-100">إعدادات النظام</h3>
+                  <p className="mb-3 text-xs text-slate-400">
+                    تُحفظ في <span className="font-mono text-cyan-200/90">system_settings</span> (المفاتيح{" "}
+                    <span className="font-mono">wallet_phone</span>،<span className="font-mono"> instapay_id</span>،
+                    <span className="font-mono"> ad_duration_days</span>) — أرقام الدفع تظهر عند شحن المحفظة، ومدة
+                    الإعلان تُستخدم عند إنشاء عقار جديد لحساب <span className="font-mono">expires_at</span>.
+                  </p>
+                  <div className="space-y-3">
+                    <label className="block text-xs font-bold text-slate-300">
+                      رقم المحفظة / فودافون كاش (wallet_phone)
+                      <input
+                        type="text"
+                        dir="ltr"
+                        value={paymentWalletDraft}
+                        onChange={(e) => setPaymentWalletDraft(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+                        placeholder="مثال: 01012345678"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label className="block text-xs font-bold text-slate-300">
+                      InstaPay (instapay_id)
+                      <input
+                        type="text"
+                        dir="ltr"
+                        value={paymentInstapayDraft}
+                        onChange={(e) => setPaymentInstapayDraft(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+                        placeholder="رقم، بريد، أو معرّف InstaPay"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <label className="block text-xs font-bold text-slate-300">
+                      مدة الإعلان بالأيام (ad_duration_days)
+                      <input
+                        type="number"
+                        min={1}
+                        max={3650}
+                        value={adDurationDaysDraft}
+                        onChange={(e) => setAdDurationDaysDraft(e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+                        autoComplete="off"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => void savePaymentSettings()}
+                      disabled={savingPaymentSettings}
+                      className="w-full rounded-xl bg-cyan-700 py-2.5 text-sm font-black text-white hover:bg-cyan-600 disabled:opacity-50"
+                    >
+                      {savingPaymentSettings ? "جاري الحفظ…" : "حفظ إعدادات النظام"}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
                   <h3 className="mb-1 text-base font-black text-white">جدول platform_settings (صف واحد id=1)</h3>
                   <p className="mb-3 text-xs text-slate-500">
@@ -3217,6 +3430,56 @@ export default function AdminGodModeDashboard() {
                 type="button"
                 onClick={() => setDeletePropertyId(null)}
                 className="flex-1 rounded-xl border border-slate-600 py-2 text-sm font-bold"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {extendExpiresProperty ? (
+        <div
+          className="fixed inset-0 z-[350] flex items-center justify-center bg-black/70 p-4"
+          onClick={() => setExtendExpiresProperty(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-violet-500/40 bg-slate-900 p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-black text-violet-100">
+              تاريخ انتهاء الإعلان #{extendExpiresProperty.id}
+            </h3>
+            <p className="mt-2 text-xs text-slate-400">
+              اترك الحقل فارغاً ثم احفظ لإزالة تاريخ الانتهاء (يُعامل كإعلان مفتوح في العرض العام). استخدم تاريخاً
+              مستقبلياً لتمديد الظهور.
+            </p>
+            <label className="mt-4 block text-xs font-bold text-slate-300">
+              ينتهي في
+              <input
+                type="datetime-local"
+                value={extendExpiresInput}
+                onChange={(e) => setExtendExpiresInput(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm"
+              />
+            </label>
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                disabled={savingPropertyExpiresAt}
+                onClick={() => void savePropertyExpiresAt()}
+                className="flex-1 rounded-xl bg-violet-600 py-2 text-sm font-black text-white hover:bg-violet-500 disabled:opacity-50"
+              >
+                {savingPropertyExpiresAt ? "جاري الحفظ…" : "حفظ"}
+              </button>
+              <button
+                type="button"
+                disabled={savingPropertyExpiresAt}
+                onClick={() => {
+                  setExtendExpiresProperty(null);
+                  setExtendExpiresInput("");
+                }}
+                className="flex-1 rounded-xl border border-slate-600 py-2 text-sm font-bold text-slate-200"
               >
                 إلغاء
               </button>

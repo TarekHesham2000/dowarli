@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
+import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
 
 /** Canonical production origin for sitemap URLs (Search Console / indexing). */
 const SITE_BASE = "https://dowarly.com";
@@ -42,6 +43,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       .from("properties")
       .select("id, slug, created_at")
       .eq("status", "active")
+      .or(orPublicListingNotExpired())
       .order("id", { ascending: true })
       .limit(20_000);
 

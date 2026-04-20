@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
+import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
 import AgenciesDirectoryClient, { type AgencyListRow } from "./AgenciesDirectoryClient";
 
 export const metadata: Metadata = {
@@ -41,7 +42,8 @@ export default async function AgenciesDirectoryPage() {
       .from("properties")
       .select("agency_id")
       .in("agency_id", slice)
-      .eq("status", "active");
+      .eq("status", "active")
+      .or(orPublicListingNotExpired());
     if (pErr) {
       console.error("Agencies directory listing counts:", pErr);
       continue;

@@ -4,6 +4,7 @@ import { buildAgencyPublicUrl, getCanonicalPublicSiteUrl, toAbsolutePublicUrl } 
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { normalizeAgencyThemeColor } from "@/lib/agencyTheme";
+import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
 import AgencyPageClient, { type AgencyProperty, type AgencyPublic } from "./AgencyPageClient";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -138,6 +139,7 @@ export default async function AgencyLandingPage({ params }: Props) {
     )
     .eq("agency_id", agency.id)
     .eq("status", "active")
+    .or(orPublicListingNotExpired())
     .order("is_featured", { ascending: false })
     .order("created_at", { ascending: false });
 

@@ -9,7 +9,6 @@ import {
   AD_POST_COST_RENT,
   AD_POST_COST_SALE,
   AGENCY_BUSINESS_PRO_WALLET,
-  getWalletDisplayNumber,
   POINTS_PACKAGES,
   type WalletSelectablePackage,
 } from "@/lib/pointsConfig";
@@ -42,12 +41,23 @@ function WalletPageContent() {
   const [success, setSuccess] = useState("");
   const [error, setError] = useState("");
   const [copyHint, setCopyHint] = useState("");
-  const walletNo = getWalletDisplayNumber();
+  const [paymentWallet, setPaymentWallet] = useState("");
+  const [paymentInstapay, setPaymentInstapay] = useState("");
+  const [paymentDetailsLoading, setPaymentDetailsLoading] = useState(true);
 
-  const copyWithHint = (text: string, hint: string) => {
-    void navigator.clipboard.writeText(text.replace(/\s/g, ""));
+  const copyWithHint = (clipText: string, hint: string) => {
+    void navigator.clipboard.writeText(clipText);
     setCopyHint(hint);
     setTimeout(() => setCopyHint(""), 2200);
+  };
+
+  /** Digits (and optional leading +) for Vodafone Cash / wallet copy. */
+  const clipPhoneLike = (display: string) => {
+    const t = display.trim().replace(/\s/g, "");
+    if (t.startsWith("+")) {
+      return `+${t.slice(1).replace(/\D/g, "")}`;
+    }
+    return t.replace(/\D/g, "");
   };
 
   const load = useCallback(async () => {
@@ -59,18 +69,36 @@ function WalletPageContent() {
       return;
     }
     setUserId(user.id);
-    const [{ data: profile }, { data: agencyRow }] = await Promise.all([
+    const [{ data: profile }, { data: agencyRow }, { data: trans }, payRes] = await Promise.all([
       supabase.from("profiles").select("points").eq("id", user.id).maybeSingle(),
       supabase.from("agencies").select("id").eq("owner_id", user.id).maybeSingle(),
+      supabase
+        .from("transactions")
+        .select("id, amount, status, created_at, rejection_reason, package_name, points_requested")
+        .eq("broker_id", user.id)
+        .order("created_at", { ascending: false }),
+      fetch("/api/payment-settings", { cache: "no-store" }),
     ]);
     setPoints(profile?.points ?? 0);
     setHasRegisteredAgency(Boolean(agencyRow?.id));
-    const { data: trans } = await supabase
-      .from("transactions")
-      .select("id, amount, status, created_at, rejection_reason, package_name, points_requested")
-      .eq("broker_id", user.id)
-      .order("created_at", { ascending: false });
     setTransactions((trans as TxRow[]) ?? []);
+
+    try {
+      if (payRes.ok) {
+        const pj = (await payRes.json()) as { wallet_phone?: string; instapay_id?: string };
+        if (typeof pj.wallet_phone === "string") {
+          setPaymentWallet(pj.wallet_phone);
+        }
+        if (typeof pj.instapay_id === "string") {
+          setPaymentInstapay(pj.instapay_id);
+        }
+      }
+    } catch {
+      /* keep empty */
+    } finally {
+      setPaymentDetailsLoading(false);
+    }
+
     setLoading(false);
   }, [router]);
 
@@ -297,21 +325,51 @@ function WalletPageContent() {
                 اذكر في ملاحظة التحويل (إن أمكن) اسم شركتك أو موقعك العقاري. سيُفعّل Pro بعد تأكيد الدفع يدوياً من الإدارة.
               </p>
             ) : null}
-            <div className="mb-4 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 p-4">
-              <p className="mb-2 text-sm font-bold text-slate-600">حوّل المبلغ إلى:</p>
-              <div className="flex flex-wrap items-center gap-3">
-                <span dir="ltr" className="min-w-0 flex-1 font-mono text-base font-bold text-slate-900">
-                  {walletNo}
-                </span>
-                <button
-                  type="button"
-                  title="نسخ إلى الحافظة"
-                  aria-label="نسخ رقم المحفظة"
-                  onClick={() => copyWithHint(walletNo.replace(/[^\d+]/g, "") || walletNo, "تم نسخ رقم المحفظة")}
-                  className="inline-flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700"
-                >
-                  <Copy className="h-5 w-5" strokeWidth={2.25} />
-                </button>
+            <div className="mb-4 space-y-3">
+              <div className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50/50 p-4">
+                <p className="mb-2 text-sm font-bold text-slate-600">رقم المحفظة (فودافون كاش / محفظة)</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span dir="ltr" className="min-w-0 flex-1 font-mono text-base font-bold text-slate-900">
+                    {paymentDetailsLoading ? "…" : paymentWallet || "—"}
+                  </span>
+                  <button
+                    type="button"
+                    title="نسخ رقم المحفظة"
+                    aria-label="نسخ رقم المحفظة"
+                    disabled={paymentDetailsLoading || !paymentWallet.trim()}
+                    onClick={() =>
+                      copyWithHint(
+                        clipPhoneLike(paymentWallet) || paymentWallet.trim().replace(/\s/g, ""),
+                        "تم نسخ رقم المحفظة",
+                      )
+                    }
+                    className="inline-flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Copy className="h-5 w-5" strokeWidth={2.25} />
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-xl border border-dashed border-amber-200/80 bg-amber-50/40 p-4">
+                <p className="mb-2 text-sm font-bold text-slate-600">InstaPay</p>
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    dir="ltr"
+                    className="min-w-0 flex-1 break-all font-mono text-base font-bold text-slate-900"
+                  >
+                    {paymentDetailsLoading ? "…" : paymentInstapay.trim() ? paymentInstapay : "—"}
+                  </span>
+                  <button
+                    type="button"
+                    title="نسخ معرف InstaPay"
+                    aria-label="نسخ معرف InstaPay"
+                    disabled={paymentDetailsLoading || !paymentInstapay.trim()}
+                    onClick={() => copyWithHint(paymentInstapay.trim(), "تم نسخ بيانات InstaPay")}
+                    className="inline-flex min-h-[48px] min-w-[48px] shrink-0 items-center justify-center rounded-xl bg-amber-600 text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <Copy className="h-5 w-5" strokeWidth={2.25} />
+                  </button>
+                </div>
+                <p className="mt-2 text-[11px] text-slate-500">حوّل المبلغ أعلاه باستخدام الرقم أو معرّف InstaPay حسب تعليمات الإدارة.</p>
               </div>
             </div>
 
@@ -340,7 +398,12 @@ function WalletPageContent() {
                     title="نسخ الرقم المدخل"
                     aria-label="نسخ رقم المحوّل"
                     disabled={!senderPhone.trim()}
-                    onClick={() => copyWithHint(senderPhone, "تم نسخ رقم المحوّل")}
+                    onClick={() =>
+                      copyWithHint(
+                        clipPhoneLike(senderPhone) || senderPhone.trim().replace(/\s/g, ""),
+                        "تم نسخ رقم المحوّل",
+                      )
+                    }
                     className="inline-flex min-h-[52px] min-w-[52px] shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-700 disabled:opacity-40"
                   >
                     <Copy className="h-5 w-5" />
