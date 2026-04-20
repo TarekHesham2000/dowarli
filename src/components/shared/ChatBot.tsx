@@ -9,6 +9,7 @@ import {
   isAgencyChatPaywalled,
   type AgencySubscriptionStatus,
 } from '@/lib/agencySubscription'
+import { FLOATING_CHAT_FAB_BOTTOM, FLOATING_CHAT_PANEL_SM_BOTTOM } from '@/lib/floatingFabLayout'
 
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 
@@ -113,7 +114,6 @@ function buildDefaultAssistantMessage(
       : 'أهلاً بيك في دَورلي 👋\nأنا دليلك العقاري: قولّي الميزانية والمنطقة (أو اسألني أي حاجة) وهظبطلك البحث.'
   return { id: uid(), role: 'assistant', content, action: null, timestamp: new Date() }
 }
-const CHAT_FAB_BOTTOM_PX = 100
 const MOBILE_MAX_PX = 768
 
 function chatLocationLine(r: Pick<PropertyResult, 'governorate' | 'district' | 'area'>): string {
@@ -505,7 +505,13 @@ export default function ChatBot({
           isMobile && isOpen ? 'hidden' : '',
           !isOpen ? 'chat-invite-pulse' : '',
         ].join(' ')}
-        style={{ bottom: CHAT_FAB_BOTTOM_PX, right: '20px', left: 'auto', background: 'var(--brand-gradient-fab)', boxShadow: 'var(--brand-shadow-fab)' }}
+        style={{
+          bottom: FLOATING_CHAT_FAB_BOTTOM,
+          right: 'max(20px, env(safe-area-inset-right, 0px))',
+          left: 'auto',
+          background: 'var(--brand-gradient-fab)',
+          boxShadow: 'var(--brand-shadow-fab)',
+        }}
       >
         <motion.div
           animate={isOpen ? { rotate: 90, scale: 0.88 } : { rotate: 0, scale: 1 }}
@@ -544,9 +550,21 @@ export default function ChatBot({
               'fixed z-[9998] flex flex-col overflow-hidden',
               isMobile
                 ? 'inset-x-0 bottom-0 h-[90dvh] max-h-[90vh] w-full rounded-t-[1.75rem]'
-                : ['max-h-[min(88dvh,640px)] inset-x-0 bottom-0 rounded-t-sm sm:inset-x-auto sm:bottom-[168px] sm:right-5 sm:left-auto sm:w-[min(100vw-2rem,420px)] sm:rounded-3xl', expanded ? 'sm:max-h-[min(92dvh,720px)]' : ''].join(' '),
+                : [
+                    'max-h-[min(88dvh,640px)] inset-x-0 bottom-0 rounded-t-sm sm:inset-x-auto sm:right-5 sm:left-auto sm:w-[min(100vw-2rem,420px)] sm:rounded-3xl',
+                    expanded ? 'sm:max-h-[min(92dvh,720px)]' : '',
+                  ].join(' '),
             ].join(' ')}
-            style={{ background: 'rgba(4,12,22,0.97)', border: '1px solid rgba(255,255,255,0.07)', backdropFilter: 'blur(40px)', WebkitBackdropFilter: 'blur(40px)', boxShadow: '0 40px 100px rgba(0,0,0,0.75), 0 0 0 1px var(--brand-a06)' }}
+            style={{
+              background: 'rgba(4,12,22,0.97)',
+              border: '1px solid rgba(255,255,255,0.07)',
+              backdropFilter: 'blur(40px)',
+              WebkitBackdropFilter: 'blur(40px)',
+              boxShadow: '0 40px 100px rgba(0,0,0,0.75), 0 0 0 1px var(--brand-a06)',
+              ...(isMobile
+                ? {}
+                : { bottom: FLOATING_CHAT_PANEL_SM_BOTTOM }),
+            }}
           >
             <AnimatedBackground />
 

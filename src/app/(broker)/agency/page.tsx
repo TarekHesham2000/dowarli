@@ -15,6 +15,7 @@ import {
   Home,
   LayoutDashboard,
   MousePointerClick,
+  Palette,
   Percent,
   Plus,
   Settings,
@@ -22,6 +23,12 @@ import {
   Users,
   X,
 } from "lucide-react";
+import {
+  AGENCY_THEME_PRESETS,
+  type AgencyThemePreset,
+  agencyLandingThemeStyle,
+  normalizeAgencyThemeColor,
+} from "@/lib/agencyTheme";
 import { supabase } from "@/lib/supabase";
 import type { AgencySubscriptionStatus } from "@/lib/agencySubscription";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
@@ -68,6 +75,7 @@ type AgencyRow = {
   logo_url: string | null;
   bio: string | null;
   subscription_status: AgencySubscriptionStatus;
+  theme_color: string;
 };
 
 type DashboardTab = "overview" | "analytics" | "crm" | "settings";
@@ -93,6 +101,9 @@ function agencyFromRow(row: Record<string, unknown>): AgencyRow | null {
     logo_url: typeof row.logo_url === "string" ? row.logo_url : null,
     bio: typeof row.bio === "string" ? row.bio : null,
     subscription_status: parseSubscriptionStatus(row.subscription_status),
+    theme_color: normalizeAgencyThemeColor(
+      typeof row.theme_color === "string" ? row.theme_color : null,
+    ),
   };
 }
 
@@ -188,6 +199,10 @@ function AgencyDashboardContent() {
   const [profileSaveLoading, setProfileSaveLoading] = useState(false);
   const [profileSaveError, setProfileSaveError] = useState("");
   const [profileSaveOk, setProfileSaveOk] = useState("");
+  const [themeDraftColor, setThemeDraftColor] = useState(() => normalizeAgencyThemeColor(null));
+  const [themeSaveLoading, setThemeSaveLoading] = useState(false);
+  const [themeSaveError, setThemeSaveError] = useState("");
+  const [themeSaveOk, setThemeSaveOk] = useState("");
 
   useEffect(() => {
     if (searchParams.get("created") !== "1") return;
@@ -200,6 +215,17 @@ function AgencyDashboardContent() {
     const t = globalThis.setTimeout(() => setProfileSaveOk(""), 5000);
     return () => globalThis.clearTimeout(t);
   }, [profileSaveOk]);
+
+  useEffect(() => {
+    if (!themeSaveOk) return;
+    const t = globalThis.setTimeout(() => setThemeSaveOk(""), 5000);
+    return () => globalThis.clearTimeout(t);
+  }, [themeSaveOk]);
+
+  useEffect(() => {
+    if (!agency) return;
+    setThemeDraftColor(normalizeAgencyThemeColor(agency.theme_color));
+  }, [agency?.id, agency?.theme_color]);
 
   useEffect(() => {
     if (!editLogoFile) {
@@ -245,6 +271,13 @@ function AgencyDashboardContent() {
     const logoDirty = editLogoFile !== null || pendingLogoRemoval;
     return nameDirty || bioDirty || logoDirty;
   }, [agency, editName, editBio, editLogoFile, pendingLogoRemoval]);
+
+  const hasThemeChanges = useMemo(() => {
+    if (!agency) return false;
+    return (
+      normalizeAgencyThemeColor(themeDraftColor) !== normalizeAgencyThemeColor(agency.theme_color)
+    );
+  }, [agency, themeDraftColor]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -362,6 +395,32 @@ function AgencyDashboardContent() {
       }
     },
     [agency, editName, editBio, editLogoFile, pendingLogoRemoval, hasProfileChanges, load, router],
+  );
+
+  const saveAgencyTheme = useCallback(
+    async (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      if (!agency) return;
+      if (!hasThemeChanges) return;
+      const next = normalizeAgencyThemeColor(themeDraftColor);
+      setThemeSaveLoading(true);
+      setThemeSaveError("");
+      setThemeSaveOk("");
+      try {
+        const { error } = await supabase.from("agencies").update({ theme_color: next }).eq("id", agency.id);
+        if (error) {
+          setThemeSaveError(error.message);
+          return;
+        }
+        setThemeSaveOk("تم حفظ ألوان صفحة الوكالة العامة.");
+        setAgency((prev) => (prev ? { ...prev, theme_color: next } : prev));
+        await load();
+        safeRouterRefresh(router);
+      } finally {
+        setThemeSaveLoading(false);
+      }
+    },
+    [agency, themeDraftColor, hasThemeChanges, load, router],
   );
 
   useEffect(() => {
@@ -1055,6 +1114,127 @@ function AgencyDashboardContent() {
                   ترقية إلى Pro
                 </Link>
               </div>
+            ) : null}
+
+            {agency ? (
+              <section className={`${GLASS_SECTION} p-6`}>
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <Palette className="h-5 w-5 shrink-0 text-emerald-400" aria-hidden />
+                  <h2 className="text-lg font-black text-white">الهوية والألوان</h2>
+                </div>
+                <p className="mb-5 max-w-2xl text-sm leading-relaxed text-slate-400">
+                  اختر لوناً أساسياً يظهر في صفحة وكالتك العامة على دَورلي (أزرار التواصل، الشارات، والتدرجات).
+                  يمكنك المعاينة قبل الحفظ.
+                </p>
+
+                <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(200px,240px)] lg:items-start">
+                  <div>
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">لوحات جاهزة</p>
+                    <div className="flex flex-wrap gap-2">
+                      {AGENCY_THEME_PRESETS.map((p: AgencyThemePreset) => {
+                        const active = normalizeAgencyThemeColor(themeDraftColor) === p.color;
+                        return (
+                          <button
+                            key={p.key}
+                            type="button"
+                            onClick={() => setThemeDraftColor(p.color)}
+                            className={`min-w-[8.5rem] rounded-xl border-2 px-3 py-2.5 text-start transition ${
+                              active ? "bg-white/[0.08]" : "border-slate-700 bg-slate-950/40 hover:bg-slate-900/60"
+                            }`}
+                            style={{
+                              borderColor: p.color,
+                              ...(active ? { outline: `2px solid ${p.color}`, outlineOffset: "3px" } : {}),
+                            }}
+                            aria-pressed={active}
+                          >
+                            <span className="block text-[13px] font-black text-white">{p.labelAr}</span>
+                            <span className="mt-0.5 block text-[10px] font-semibold text-slate-500">{p.labelEn}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <form className="mt-6 flex flex-wrap items-center gap-3" onSubmit={saveAgencyTheme}>
+                      {themeSaveError ? <p className="w-full text-sm font-bold text-red-400">{themeSaveError}</p> : null}
+                      {themeSaveOk ? <p className="w-full text-sm font-bold text-emerald-300">{themeSaveOk}</p> : null}
+                      <button
+                        type="submit"
+                        disabled={themeSaveLoading || !hasThemeChanges}
+                        className="rounded-xl bg-emerald-500 px-6 py-2.5 text-sm font-black text-slate-950 shadow-lg shadow-emerald-900/30 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-45"
+                      >
+                        {themeSaveLoading ? "جاري الحفظ…" : "حفظ اللون"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!hasThemeChanges || themeSaveLoading}
+                        className="rounded-xl border border-slate-600 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+                        onClick={() => setThemeDraftColor(normalizeAgencyThemeColor(agency.theme_color))}
+                      >
+                        إعادة التعيين
+                      </button>
+                    </form>
+                  </div>
+
+                  <div>
+                    <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-500">معاينة حية</p>
+                    <div
+                      className="overflow-hidden rounded-2xl border border-slate-700 shadow-2xl shadow-black/50"
+                      style={agencyLandingThemeStyle(themeDraftColor)}
+                    >
+                      <div className="relative h-[5.5rem] bg-[#0a111e]">
+                        <div
+                          className="pointer-events-none absolute inset-0 opacity-90"
+                          style={{
+                            background:
+                              "linear-gradient(to top, rgba(5,10,20,0.88) 0%, rgba(5,10,20,0.15) 50%, transparent 100%)",
+                          }}
+                          aria-hidden
+                        />
+                        <span
+                          className="absolute bottom-2 right-2 rounded-lg border px-2 py-1 text-[11px] font-black"
+                          style={{
+                            background: "rgba(10,17,30,0.92)",
+                            color: "var(--agency-primary)",
+                            borderColor: "var(--agency-primary-a35)",
+                          }}
+                        >
+                          12,500 ج.م/شهر
+                        </span>
+                      </div>
+                      <div className="border-t border-white/10 bg-[#111a2c] p-3">
+                        <div className="mb-2 flex flex-wrap gap-1.5">
+                          <span
+                            className="rounded-full border px-2 py-0.5 text-[10px] font-bold"
+                            style={{
+                              background: "var(--agency-primary-a10)",
+                              color: "var(--agency-primary)",
+                              borderColor: "var(--agency-primary-a35)",
+                            }}
+                          >
+                            🔑 إيجار
+                          </span>
+                          <span className="rounded-full border border-amber-500/35 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-100">
+                            سكن عائلي
+                          </span>
+                        </div>
+                        <p className="line-clamp-2 text-[12px] font-extrabold leading-snug text-white">
+                          شقة مفروشة — معاينة كيف يظهر عنوان العقار
+                        </p>
+                        <button
+                          type="button"
+                          className="mt-3 w-full rounded-lg py-2 text-[11px] font-black"
+                          style={{
+                            background: "var(--agency-primary)",
+                            color: "var(--agency-on-primary)",
+                          }}
+                        >
+                          تواصل عبر واتساب
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </section>
             ) : null}
 
             <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 shadow-xl">

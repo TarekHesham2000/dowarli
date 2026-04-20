@@ -1,20 +1,37 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+import {
+  FLOATING_WHATSAPP_FAB_BOTTOM,
+  Z_INDEX_FLOATING_WHATSAPP,
+} from "@/lib/floatingFabLayout";
+
 const WA_URL =
   "https://wa.me/201098599892?text=" +
   encodeURIComponent("أهلاً دورلي، محتاج مساعدة بخصوص ");
 
+/** Routes that render their own branded contact button — hide the platform
+ *  support floater there to avoid two stacked WhatsApp bubbles. */
+function shouldHideOnRoute(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return pathname.startsWith("/agency/");
+}
+
 export default function FloatingWhatsAppSupport() {
+  const pathname = usePathname();
+  if (shouldHideOnRoute(pathname)) return null;
+
   return (
     <a
       href={WA_URL}
       target="_blank"
       rel="noopener noreferrer"
-      className="chat-invite-pulse fixed z-[9980] flex h-14 w-14 items-center justify-center rounded-full shadow-md md:h-[3.25rem] md:w-[3.25rem]"
+      className="chat-invite-pulse fixed flex h-14 w-14 items-center justify-center rounded-full shadow-md md:h-[3.25rem] md:w-[3.25rem]"
       style={{
-        bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px))",
+        bottom: FLOATING_WHATSAPP_FAB_BOTTOM,
         left: "max(1rem, env(safe-area-inset-left, 0px))",
         right: "auto",
+        zIndex: Z_INDEX_FLOATING_WHATSAPP,
         background: "#25D366",
         boxShadow: "0 4px 20px rgba(37, 211, 102, 0.35)",
       }}

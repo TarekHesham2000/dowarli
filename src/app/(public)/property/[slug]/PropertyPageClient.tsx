@@ -552,6 +552,10 @@ export default function PropertyPageClient() {
           .grid-layout { grid-template-columns: 1fr !important; }
           .sticky-col  { position: static !important; }
           .hero-img    { height: 260px !important; }
+          /* Extra space so fixed AI + WhatsApp FABs don't cover the lead / WhatsApp CTA */
+          .property-page-scroll {
+            padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px)) !important;
+          }
         }
       `}</style>
 
@@ -588,7 +592,10 @@ export default function PropertyPageClient() {
         </nav>
 
         {/* ══ CONTENT ══ */}
-        <div style={{ maxWidth: 1100, margin: '0 auto', padding: '2.5rem 1.5rem 6rem', position: 'relative', zIndex: 1 }}>
+        <div
+          className="property-page-scroll"
+          style={{ maxWidth: 1100, margin: '0 auto', padding: '2.5rem 1.5rem 6rem', position: 'relative', zIndex: 1 }}
+        >
 
           {/* Breadcrumb */}
           <div className="fade-up" style={{ marginBottom: '1.75rem', display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>

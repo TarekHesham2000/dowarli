@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getSiteUrl } from "@/lib/site";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
+import { getSupabaseServerClient } from "@/lib/supabaseServer";
+import { normalizeAgencyThemeColor } from "@/lib/agencyTheme";
 import AgencyPageClient, { type AgencyProperty, type AgencyPublic } from "./AgencyPageClient";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -69,7 +71,7 @@ export default async function AgencyLandingPage({ params }: Props) {
 
   const { data: agencyRow, error: agencyError } = await supabase
     .from("agencies")
-    .select("id, name, slug, logo_url, bio, subscription_status")
+    .select("id, name, slug, logo_url, bio, subscription_status, owner_id, theme_color")
     .ilike("slug", escapeIlike(segment))
     .maybeSingle();
 
@@ -77,7 +79,41 @@ export default async function AgencyLandingPage({ params }: Props) {
     notFound();
   }
 
-  const agency = agencyRow as AgencyPublic;
+  type AgencyRowLoaded = Omit<AgencyPublic, "theme_color"> & {
+    owner_id: string | null;
+    theme_color?: string | null;
+  };
+  const agencyFull = agencyRow as AgencyRowLoaded;
+
+  // Contact phone: owner's profile phone (profiles is RLS-locked, so use the
+  // service-role client — only used to surface the click-to-call link).
+  let contactPhone: string | null = null;
+  if (agencyFull.owner_id) {
+    try {
+      const svc = getSupabaseServerClient();
+      const { data: ownerProfile } = await svc
+        .from("profiles")
+        .select("phone")
+        .eq("id", agencyFull.owner_id)
+        .maybeSingle();
+      const raw = typeof ownerProfile?.phone === "string" ? ownerProfile.phone.trim() : "";
+      contactPhone = raw.length > 0 ? raw : null;
+    } catch {
+      contactPhone = null;
+    }
+  }
+
+  const agency: AgencyPublic = {
+    id: agencyFull.id,
+    name: agencyFull.name,
+    slug: agencyFull.slug,
+    logo_url: agencyFull.logo_url,
+    bio: agencyFull.bio,
+    subscription_status: agencyFull.subscription_status,
+    theme_color: normalizeAgencyThemeColor(
+      typeof agencyFull.theme_color === "string" ? agencyFull.theme_color : null,
+    ),
+  };
 
   const { data: propRows } = await supabase
     .from("properties")
@@ -94,5 +130,5 @@ export default async function AgencyLandingPage({ params }: Props) {
     (r) => (r.availability_status ?? "available") === "available",
   );
 
-  return <AgencyPageClient agency={agency} properties={properties} />;
+  return <AgencyPageClient agency={agency} properties={properties} contactPhone={contactPhone} />;
 }
