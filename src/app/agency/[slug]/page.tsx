@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { getSiteUrl } from "@/lib/site";
+import { buildAgencyPublicUrl, getCanonicalPublicSiteUrl, toAbsolutePublicUrl } from "@/lib/site";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
 import { normalizeAgencyThemeColor } from "@/lib/agencyTheme";
@@ -37,29 +37,45 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   }
 
   const row = data as { name: string; bio: string | null; logo_url: string | null; slug: string };
-  const baseUrl = getSiteUrl();
+  const baseUrl = getCanonicalPublicSiteUrl();
+  const pageUrl = buildAgencyPublicUrl(row.slug);
   const title = `${row.name} | دَورلي`;
   const plainBio = row.bio?.replace(/\s+/g, " ").trim() ?? "";
   const description =
     plainBio.slice(0, 160) || `عروض وكالة ${row.name} — شقق ووحدات على دَورلي`;
 
+  const logoAbsolute = row.logo_url ? toAbsolutePublicUrl(row.logo_url, baseUrl) : null;
+
   return {
+    metadataBase: new URL(baseUrl),
     title,
     description,
-    alternates: { canonical: `${baseUrl}/agency/${row.slug}` },
+    alternates: { canonical: pageUrl },
     openGraph: {
       title,
       description,
       type: "website",
       locale: "ar_EG",
-      url: `${baseUrl}/agency/${row.slug}`,
+      url: pageUrl,
       siteName: "دَورلي",
-      ...(row.logo_url ? { images: [{ url: row.logo_url, alt: row.name }] } : {}),
+      ...(logoAbsolute
+        ? {
+            images: [
+              {
+                url: logoAbsolute,
+                width: 1200,
+                height: 630,
+                alt: row.name,
+              },
+            ],
+          }
+        : {}),
     },
     twitter: {
-      card: row.logo_url ? "summary_large_image" : "summary",
+      card: logoAbsolute ? "summary_large_image" : "summary",
       title,
       description,
+      ...(logoAbsolute ? { images: [logoAbsolute] } : {}),
     },
   };
 }
@@ -130,5 +146,14 @@ export default async function AgencyLandingPage({ params }: Props) {
     (r) => (r.availability_status ?? "available") === "available",
   );
 
-  return <AgencyPageClient agency={agency} properties={properties} contactPhone={contactPhone} />;
+  const publicShareUrl = buildAgencyPublicUrl(agency.slug);
+
+  return (
+    <AgencyPageClient
+      agency={agency}
+      properties={properties}
+      contactPhone={contactPhone}
+      publicShareUrl={publicShareUrl}
+    />
+  );
 }

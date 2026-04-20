@@ -16,6 +16,8 @@ export default function BecomeAgencyPage() {
   const [ready, setReady] = useState(false);
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
+  /** Once the broker edits the slug field, stop overwriting it from the name. */
+  const [slugUserEdited, setSlugUserEdited] = useState(false);
   const [bio, setBio] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string | null>(null);
@@ -51,7 +53,18 @@ export default function BecomeAgencyPage() {
     return () => URL.revokeObjectURL(url);
   }, [logoFile]);
 
+  useEffect(() => {
+    if (slugUserEdited) return;
+    const n = name.trim();
+    if (!n) {
+      setSlug("");
+      return;
+    }
+    setSlug(suggestedAgencySlugAsciiFromName(name));
+  }, [name, slugUserEdited]);
+
   const applySuggestedSlug = () => {
+    setSlugUserEdited(false);
     setSlug(suggestedAgencySlugAsciiFromName(name));
   };
 
@@ -201,14 +214,18 @@ export default function BecomeAgencyPage() {
                 id="become-agency-slug"
                 className={inputClass}
                 value={slug}
-                onChange={(e) => setSlug(e.target.value)}
+                onChange={(e) => {
+                  setSlugUserEdited(true);
+                  setSlug(e.target.value);
+                }}
                 required
                 maxLength={120}
                 dir="ltr"
                 autoComplete="off"
               />
               <p className="mt-1.5 text-[11px] font-medium leading-relaxed text-slate-500">
-                هذا الرابط سيستخدم لزيارة صفحة شركتك مباشرة، استخدم حروفاً إنجليزية وأرقاماً فقط.
+                يُولَّد تلقائياً من الاسم (ترجمة الحروف العربية إلى إنجليزية). يمكنك تعديله يدوياً أو
+                استخدام «اقتراح من الاسم» بعد التعديل.
               </p>
             </div>
             <div>

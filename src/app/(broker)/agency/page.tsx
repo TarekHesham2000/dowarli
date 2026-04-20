@@ -9,6 +9,8 @@ import {
   BarChart3,
   Building2,
   Camera,
+  Check,
+  Copy,
   Download,
   Eye,
   FileText,
@@ -29,6 +31,7 @@ import {
   agencyLandingThemeStyle,
   normalizeAgencyThemeColor,
 } from "@/lib/agencyTheme";
+import { buildAgencyPublicUrl } from "@/lib/site";
 import { supabase } from "@/lib/supabase";
 import type { AgencySubscriptionStatus } from "@/lib/agencySubscription";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
@@ -203,6 +206,23 @@ function AgencyDashboardContent() {
   const [themeSaveLoading, setThemeSaveLoading] = useState(false);
   const [themeSaveError, setThemeSaveError] = useState("");
   const [themeSaveOk, setThemeSaveOk] = useState("");
+  const [publicAgencyLinkCopied, setPublicAgencyLinkCopied] = useState(false);
+
+  const publicAgencyUrlFull = useMemo(
+    () => (agency ? buildAgencyPublicUrl(agency.slug) : ""),
+    [agency?.slug, agency?.id],
+  );
+
+  const publicAgencyUrlShort = useMemo(() => {
+    if (!publicAgencyUrlFull) return "";
+    try {
+      const u = new URL(publicAgencyUrlFull);
+      const p = u.pathname.length > 28 ? `${u.pathname.slice(0, 26)}…` : u.pathname;
+      return `${u.host.replace(/^www\./, "")}${p}`;
+    } catch {
+      return publicAgencyUrlFull;
+    }
+  }, [publicAgencyUrlFull]);
 
   useEffect(() => {
     if (searchParams.get("created") !== "1") return;
@@ -396,6 +416,29 @@ function AgencyDashboardContent() {
     },
     [agency, editName, editBio, editLogoFile, pendingLogoRemoval, hasProfileChanges, load, router],
   );
+
+  const copyPublicAgencyLink = useCallback(async () => {
+    if (!agency) return;
+    const url = buildAgencyPublicUrl(agency.slug);
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = url;
+        ta.style.position = "fixed";
+        ta.style.left = "-9999px";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+      }
+      setPublicAgencyLinkCopied(true);
+      globalThis.setTimeout(() => setPublicAgencyLinkCopied(false), 2800);
+    } catch {
+      /* ignore */
+    }
+  }, [agency]);
 
   const saveAgencyTheme = useCallback(
     async (e: React.FormEvent<HTMLFormElement>) => {
@@ -722,12 +765,39 @@ function AgencyDashboardContent() {
           <div>
             <p className="text-xs font-bold uppercase tracking-wide text-emerald-400/90">لوحة الوكالة</p>
             <h1 className="mt-1 text-2xl font-black text-white">{agency.name}</h1>
-            <p className="mt-1 text-sm text-slate-400">
-              الصفحة العامة:{" "}
-              <Link href={`/agency/${agency.slug}`} className="font-bold text-emerald-400 underline-offset-2 hover:underline">
-                /agency/{agency.slug}
-              </Link>
-            </p>
+            <div className="mt-1 flex flex-col gap-2 text-sm text-slate-400 sm:flex-row sm:flex-wrap sm:items-center">
+              <span className="flex flex-wrap items-center gap-2">
+                <span>معاينة داخل الموقع:</span>
+                <Link
+                  href={`/agency/${agency.slug}`}
+                  className="font-bold text-emerald-400 underline-offset-2 hover:underline"
+                >
+                  /agency/{agency.slug}
+                </Link>
+              </span>
+              <span className="hidden sm:inline text-slate-600" aria-hidden>
+                |
+              </span>
+              <button
+                type="button"
+                onClick={() => void copyPublicAgencyLink()}
+                className="inline-flex max-w-full items-center gap-2 rounded-lg border border-slate-600 bg-slate-900/80 px-3 py-1.5 text-xs font-black text-slate-200 transition hover:border-emerald-500/40 hover:bg-slate-800"
+              >
+                {publicAgencyLinkCopied ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-400" aria-hidden />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" aria-hidden />
+                )}
+                {publicAgencyLinkCopied ? "تم نسخ الرابط" : "نسخ رابط دَورلي (للواتساب)"}
+              </button>
+              <span
+                className="truncate font-mono text-[11px] text-slate-500 sm:max-w-[min(100%,280px)]"
+                dir="ltr"
+                title={publicAgencyUrlFull}
+              >
+                {publicAgencyUrlShort}
+              </span>
+            </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <span className="inline-flex rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-bold text-slate-300">
                 {subscriptionPillLabel(agency.subscription_status)}

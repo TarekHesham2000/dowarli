@@ -13,7 +13,6 @@ import {
   MessageCircle,
   Phone,
   Search,
-  Share2,
   X,
 } from "lucide-react";
 import Footer from "@/components/shared/Footer";
@@ -105,14 +104,28 @@ const cardVariants = {
   },
 };
 
+function formatShareLinkDisplay(url: string): string {
+  try {
+    const u = new URL(url);
+    const host = u.host.replace(/^www\./, "");
+    const path = u.pathname.length > 36 ? `${u.pathname.slice(0, 34)}…` : u.pathname;
+    return `${host}${path}`;
+  } catch {
+    return url.length > 42 ? `${url.slice(0, 40)}…` : url;
+  }
+}
+
 export default function AgencyPageClient({
   agency,
   properties,
   contactPhone,
+  publicShareUrl,
 }: {
   agency: AgencyPublic;
   properties: AgencyProperty[];
   contactPhone: string | null;
+  /** Canonical public URL (production dowarly.com) for copy / WhatsApp — never preview host. */
+  publicShareUrl: string;
 }) {
   const router = useRouter();
   const [chatOpenSignal, setChatOpenSignal] = useState(0);
@@ -122,15 +135,14 @@ export default function AgencyPageClient({
   const [kindFilter, setKindFilter] = useState<"all" | "rent" | "sale">("all");
   const [typeFilter, setTypeFilter] = useState<"all" | UnitType>("all");
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">("idle");
-  const [shareUrl, setShareUrl] = useState<string>("");
+  const [shareToastVisible, setShareToastVisible] = useState(false);
   const shareResetRef = useRef<number | null>(null);
+  const shareToastRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      setShareUrl(window.location.href);
-    }
     return () => {
       if (shareResetRef.current) window.clearTimeout(shareResetRef.current);
+      if (shareToastRef.current) window.clearTimeout(shareToastRef.current);
     };
   }, []);
 
@@ -146,12 +158,16 @@ export default function AgencyPageClient({
   };
 
   const handleShare = async () => {
-    const url =
-      typeof window !== "undefined" ? window.location.href : shareUrl;
+    if (shareResetRef.current) window.clearTimeout(shareResetRef.current);
+    if (shareToastRef.current) window.clearTimeout(shareToastRef.current);
+    const url = publicShareUrl;
+    const shareTitle = `${agency.name} | دَورلي`;
+    const shareText = `${agency.name}\n${url}`;
     try {
       if (typeof navigator !== "undefined" && typeof navigator.share === "function") {
-        await navigator.share({ title: agency.name, url });
+        await navigator.share({ title: shareTitle, text: shareText, url });
         setShareStatus("copied");
+        setShareToastVisible(true);
       } else if (
         typeof navigator !== "undefined" &&
         navigator.clipboard &&
@@ -159,6 +175,7 @@ export default function AgencyPageClient({
       ) {
         await navigator.clipboard.writeText(url);
         setShareStatus("copied");
+        setShareToastVisible(true);
       } else {
         // Legacy fallback.
         const ta = document.createElement("textarea");
@@ -171,13 +188,18 @@ export default function AgencyPageClient({
         document.execCommand("copy");
         document.body.removeChild(ta);
         setShareStatus("copied");
+        setShareToastVisible(true);
       }
     } catch {
       setShareStatus("error");
     }
     if (shareResetRef.current) window.clearTimeout(shareResetRef.current);
-    shareResetRef.current = window.setTimeout(() => setShareStatus("idle"), 2400);
+    shareResetRef.current = window.setTimeout(() => setShareStatus("idle"), 3200);
+    if (shareToastRef.current) window.clearTimeout(shareToastRef.current);
+    shareToastRef.current = window.setTimeout(() => setShareToastVisible(false), 3200);
   };
+
+  const shareLinkDisplay = useMemo(() => formatShareLinkDisplay(publicShareUrl), [publicShareUrl]);
 
   const themeVars = useMemo(() => agencyLandingThemeStyle(agency.theme_color), [agency.theme_color]);
 
@@ -802,7 +824,7 @@ export default function AgencyPageClient({
                 <button
                   type="button"
                   onClick={() => void handleShare()}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-extrabold transition hover:brightness-110"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl px-5 py-3.5 text-sm font-extrabold transition hover:brightness-110"
                   style={{
                     background: GOLD,
                     color: "#1a1407",
@@ -813,30 +835,28 @@ export default function AgencyPageClient({
                   {shareStatus === "copied" ? (
                     <>
                       <Check className="h-5 w-5" strokeWidth={2.4} aria-hidden />
-                      تم نسخ الرابط
+                      تم النسخ — جاهز للإرسال
                     </>
                   ) : shareStatus === "error" ? (
                     <>
                       <Copy className="h-5 w-5" strokeWidth={2.4} aria-hidden />
-                      حدث خطأ — انسخ يدوياً
+                      حدث خطأ — حاول مرة أخرى
                     </>
                   ) : (
                     <>
-                      <Share2 className="h-5 w-5" strokeWidth={2.4} aria-hidden />
-                      شارك هذا الموقع
+                      <Copy className="h-5 w-5" strokeWidth={2.4} aria-hidden />
+                      نسخ رابط الوكالة
                     </>
                   )}
                 </button>
 
-                {shareUrl ? (
-                  <div
-                    className="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-semibold"
-                    style={{ background: SURFACE, borderColor: BORDER, color: "rgba(255,255,255,0.7)" }}
-                    dir="ltr"
-                  >
-                    <span className="truncate">{shareUrl}</span>
-                  </div>
-                ) : null}
+                <p
+                  className="text-center text-[11px] font-semibold tracking-tight text-white/45"
+                  dir="ltr"
+                  title={publicShareUrl}
+                >
+                  {shareLinkDisplay}
+                </p>
 
                 {phone ? (
                   <div className="grid grid-cols-2 gap-2">
@@ -911,6 +931,22 @@ export default function AgencyPageClient({
         pendingPrompt={contactPrompt}
         onPendingPromptConsumed={onConsumePrompt}
       />
+
+      {shareToastVisible ? (
+        <div
+          role="status"
+          className="pointer-events-none fixed bottom-28 left-1/2 z-[10002] flex -translate-x-1/2 items-center gap-2 rounded-2xl border px-4 py-2.5 text-sm font-black shadow-2xl backdrop-blur-md"
+          style={{
+            background: "rgba(17,26,44,0.92)",
+            borderColor: BORDER,
+            color: GOLD,
+            boxShadow: "0 20px 50px -20px rgba(0,0,0,0.85)",
+          }}
+        >
+          <Check className="h-4 w-4 shrink-0" strokeWidth={2.5} aria-hidden />
+          تم نسخ رابط الوكالة
+        </div>
+      ) : null}
     </div>
   );
 }
