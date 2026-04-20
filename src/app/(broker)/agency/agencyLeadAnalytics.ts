@@ -108,7 +108,72 @@ export function leadMatchesGeoBar(properties: unknown, bar: GeoHotBarRow): boole
   return label === bar.name;
 }
 
-export type ViewEventRow = { created_at: string; client_device_hint?: string | null };
+export type ViewEventRow = {
+  created_at: string;
+  /** Present when `property_listing_view_events.property_id` is selected */
+  property_id?: number | null;
+  client_device_hint?: string | null;
+};
+
+export type NeighborhoodHeatCell = {
+  key: string;
+  label: string;
+  views: number;
+  /** 0–1 for heat styling */
+  intensity: number;
+};
+
+export type PropertyGeoForViews = {
+  governorate: string | null;
+  district: string | null;
+};
+
+/** Same human label as lead geography bars: «محافظة — حي» or governorate only */
+export function neighborhoodLabelFromGeo(p: PropertyGeoForViews): string {
+  const gov = (p.governorate ?? "").trim() || "غير محدد";
+  const dist = (p.district ?? "").trim();
+  return dist ? `${gov} — ${dist}` : gov;
+}
+
+/** View counts rolled up by neighborhood (from listing view events × property location). */
+export function aggregateViewNeighborhoodHeat(
+  events: ViewEventRow[],
+  propertyById: ReadonlyMap<number, PropertyGeoForViews>,
+  maxCells = 12,
+): NeighborhoodHeatCell[] {
+  const counts = new Map<string, number>();
+  for (const e of events) {
+    const raw = e.property_id;
+    if (raw === undefined || raw === null) continue;
+    const pid = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isFinite(pid)) continue;
+    const prop = propertyById.get(pid);
+    if (!prop) continue;
+    const label = neighborhoodLabelFromGeo(prop);
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, maxCells);
+  const max = Math.max(...sorted.map(([, v]) => v), 1);
+  return sorted.map(([label, views]) => ({
+    key: label,
+    label,
+    views,
+    intensity: views / max,
+  }));
+}
+
+/** Property id → total listing views in the current event set */
+export function aggregateViewsByPropertyId(events: ViewEventRow[]): Map<number, number> {
+  const m = new Map<number, number>();
+  for (const e of events) {
+    const raw = e.property_id;
+    if (raw === undefined || raw === null) continue;
+    const pid = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isFinite(pid)) continue;
+    m.set(pid, (m.get(pid) ?? 0) + 1);
+  }
+  return m;
+}
 
 export function aggregateDeviceMix(events: ViewEventRow[]): { name: string; value: number }[] {
   let m = 0;

@@ -29,6 +29,8 @@ import {
   DeviceMixMiniChart,
   GeographyHotBarChart,
   LeadIntelligencePieChart,
+  NeighborhoodHeatmapGrid,
+  PropertyViewsTrendChart,
   ViewsLeadsLineChart,
 } from "./AgencyDashboardCharts";
 import { AgencyCRMTable, type AgencyLeadRow } from "./AgencyCRMTable";
@@ -36,6 +38,8 @@ import {
   aggregateDeviceMix,
   aggregateGeographyHotBar,
   aggregateLeadIntelligencePie,
+  aggregateViewNeighborhoodHeat,
+  aggregateViewsByPropertyId,
   hasDeviceHints,
   leadMatchesGeoBar,
   leadMatchesPieSegment,
@@ -43,8 +47,14 @@ import {
   type ViewEventRow,
   parseLeadPropertyAnalytics,
 } from "./agencyLeadAnalytics";
-import { aggregateSeries, type DateRangeKey, DATE_RANGE_OPTIONS } from "./agencyDashboardUtils";
-import { fetchAgencyDashboardData } from "./fetchAgencyDashboardData";
+import {
+  aggregateSeries,
+  firstPropertyImageUrl,
+  type DateRangeKey,
+  DATE_RANGE_OPTIONS,
+} from "./agencyDashboardUtils";
+import { fetchAgencyDashboardData, type AgencyPropertySummary } from "./fetchAgencyDashboardData";
+import { propertyPathFromRecord } from "@/lib/propertySlug";
 import { downloadLeadsCsv } from "./agencyCrmExport";
 import { buildPlatformInsight, type PlatformInsightVariant } from "./agencyPlatformInsights";
 import { useCountUp } from "./useCountUp";
@@ -163,6 +173,7 @@ function AgencyDashboardContent() {
   const [activeListingsCount, setActiveListingsCount] = useState(0);
   const [agencyLeads, setAgencyLeads] = useState<AgencyLeadRow[]>([]);
   const [viewEvents, setViewEvents] = useState<ViewEventRow[]>([]);
+  const [propertySummaries, setPropertySummaries] = useState<AgencyPropertySummary[]>([]);
   const [viewsTableAvailable, setViewsTableAvailable] = useState(true);
   const [crmFilter, setCrmFilter] = useState<CrmChartFilter>({ kind: "none" });
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
@@ -289,6 +300,7 @@ function AgencyDashboardContent() {
       setAgencyLeads(dash.leads);
       setViewEvents(dash.viewEvents);
       setViewsTableAvailable(dash.viewsTableAvailable);
+      setPropertySummaries(dash.propertySummaries);
     } finally {
       setLoading(false);
     }
@@ -421,6 +433,44 @@ function AgencyDashboardContent() {
   const pieData = useMemo(() => aggregateLeadIntelligencePie(leadAnalyticsRows), [leadAnalyticsRows]);
   const barData = useMemo(() => aggregateGeographyHotBar(leadAnalyticsRows, 10), [leadAnalyticsRows]);
   const deviceMixData = useMemo(() => aggregateDeviceMix(viewEvents), [viewEvents]);
+
+  const propertyGeoById = useMemo(() => {
+    const m = new Map<number, { governorate: string | null; district: string | null }>();
+    for (const p of propertySummaries) {
+      m.set(p.id, { governorate: p.governorate, district: p.district });
+    }
+    return m;
+  }, [propertySummaries]);
+
+  const neighborhoodHeatCells = useMemo(
+    () => aggregateViewNeighborhoodHeat(viewEvents, propertyGeoById, 12),
+    [viewEvents, propertyGeoById],
+  );
+
+  /** Leads from explicit contact taps: WhatsApp + phone call */
+  const clickLeadsCount = useMemo(
+    () => agencyLeads.filter((l) => l.lead_source === "whatsapp" || l.lead_source === "call").length,
+    [agencyLeads],
+  );
+
+  const clickConversionPct =
+    totalViewsInRange > 0 ? Math.min(100, Math.round((clickLeadsCount / totalViewsInRange) * 10000) / 100) : null;
+
+  const topViewedListing = useMemo(() => {
+    const counts = aggregateViewsByPropertyId(viewEvents);
+    let bestId: number | null = null;
+    let best = 0;
+    for (const [pid, n] of counts) {
+      if (n > best) {
+        best = n;
+        bestId = pid;
+      }
+    }
+    if (bestId === null || best === 0) return null;
+    const meta = propertySummaries.find((p) => p.id === bestId);
+    if (!meta) return null;
+    return { views: best, thumbUrl: firstPropertyImageUrl(meta.images), ...meta };
+  }, [viewEvents, propertySummaries]);
 
   const filteredLeads = useMemo(() => {
     if (crmFilter.kind === "pie") {
@@ -777,9 +827,9 @@ function AgencyDashboardContent() {
         )}
 
         {activeTab === "analytics" && (
-          <div className="grid gap-8 lg:grid-cols-2">
+          <div className="space-y-8">
             {noListings ? (
-              <>
+              <div className="grid gap-8 lg:grid-cols-2">
                 <DashboardAnalyticsEmpty
                   title="ذكاء الطلبات (فئات × نوع المعاملة)"
                   message="ابدأ بنشر عقاراتك لمشاهدة التحليلات هنا"
@@ -790,40 +840,135 @@ function AgencyDashboardContent() {
                   message="ابدأ بنشر عقاراتك لمشاهدة التحليلات هنا"
                   hint="محافظة + حي لكل طلب — انقر على شريط لتصفية العملاء."
                 />
-              </>
-            ) : totalLeadsInRange === 0 ? (
-              <>
-                <DashboardAnalyticsEmpty
-                  title="ذكاء الطلبات (فئات × نوع المعاملة)"
-                  message="لا طلبات في الفترة الحالية"
-                  hint="وسّع نطاق التاريخ أو راقب تبويب «نظرة عامة» للمشاهدات."
-                />
-                <DashboardAnalyticsEmpty
-                  title="المناطق الأكثر طلباً"
-                  message="لا طلبات في الفترة الحالية"
-                  hint="يُحسب الطلب حسب محافظة وحي العقار المرتبط."
-                />
-              </>
+              </div>
             ) : (
-              <div className="space-y-8">
-                <div className="grid gap-8 lg:grid-cols-2">
-                  <section className={`${GLASS_SECTION} p-6`}>
-                    <h2 className="text-lg font-black text-white">ذكاء الطلبات</h2>
-                    <p className="mt-1 text-xs text-slate-500">
-                      فئة العقار (سكني / تجاري / أراضي) × نوع المعاملة (بيع / إيجار) — انقر على شريحة لفتح «العملاء» مصفّاة.
+              <>
+                <div className="grid gap-4 lg:grid-cols-3">
+                  <motion.section
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35 }}
+                    className={`${GLASS_SECTION} relative overflow-hidden p-5 ring-1 ring-teal-500/15 before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-teal-500/[0.12] before:via-transparent before:to-violet-600/[0.06]`}
+                  >
+                    <p className="relative text-[11px] font-black uppercase tracking-wide text-teal-300/90">إجمالي الطلبات</p>
+                    <p className="relative mt-1 text-3xl font-black tabular-nums text-white">{clickLeadsCount}</p>
+                    <p className="relative mt-2 text-xs leading-relaxed text-slate-400">
+                      واتساب + مكالمة هاتفية (حسب حقل مصدر الطلب في النموذج).
                     </p>
-                    <div className="mt-4">
-                      <LeadIntelligencePieChart data={pieData} animKey={chartAnimKey} onSliceClick={onPieSliceForCrm} />
-                    </div>
-                  </section>
-                  <section className={`${GLASS_SECTION} p-6`}>
-                    <h2 className="text-lg font-black text-white">المناطق الأكثر طلباً</h2>
-                    <p className="mt-1 text-xs text-slate-500">محافظة — حي من جدول الطلبات — انقر على شريط لتصفية العملاء.</p>
-                    <div className="mt-4">
-                      <GeographyHotBarChart data={barData} animKey={chartAnimKey} onBarClick={onGeoBarForCrm} />
-                    </div>
-                  </section>
+                    {totalLeadsInRange > 0 && clickLeadsCount === 0 ? (
+                      <p className="relative mt-2 text-[11px] font-bold text-amber-200/90">
+                        يوجد {totalLeadsInRange} طلباً بدون تصنيف المصدر — حدّث النموذج ليُسجَّل واتساب/اتصال بوضوح.
+                      </p>
+                    ) : null}
+                  </motion.section>
+                  <motion.section
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, delay: 0.05 }}
+                    className={`${GLASS_SECTION} relative overflow-hidden p-5 ring-1 ring-violet-500/20 before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-violet-500/[0.1] before:via-transparent before:to-amber-500/[0.05]`}
+                  >
+                    <p className="relative text-[11px] font-black uppercase tracking-wide text-violet-200/90">معدل التحويل</p>
+                    <p className="relative mt-1 text-3xl font-black tabular-nums text-white">
+                      {clickConversionPct !== null ? `${clickConversionPct}٪` : "—"}
+                    </p>
+                    <p className="relative mt-2 text-xs leading-relaxed text-slate-400">
+                      (واتساب + اتصال) ÷ إجمالي مشاهدات الإعلانات في الفترة.
+                    </p>
+                  </motion.section>
+                  <motion.section
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, delay: 0.1 }}
+                    className={`${GLASS_SECTION} relative overflow-hidden p-5 ring-1 ring-amber-400/20 before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-br before:from-amber-500/[0.08] before:via-transparent before:to-teal-500/[0.06]`}
+                  >
+                    <p className="relative text-[11px] font-black uppercase tracking-wide text-amber-200/90">الإعلان الأكثر مشاهدة</p>
+                    {topViewedListing ? (
+                      <Link
+                        href={propertyPathFromRecord(topViewedListing)}
+                        className="relative mt-3 flex gap-3 rounded-xl border border-white/10 bg-slate-950/35 p-2 no-underline transition hover:border-teal-400/35 hover:bg-slate-900/50"
+                      >
+                        <div className="relative h-16 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-800 ring-1 ring-white/10">
+                          {topViewedListing.thumbUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element -- remote Supabase URL
+                            <img src={topViewedListing.thumbUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-lg text-slate-500" aria-hidden>
+                              🏠
+                            </div>
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1 text-start">
+                          <p className="line-clamp-2 text-sm font-black leading-snug text-white">{topViewedListing.title}</p>
+                          <p className="mt-1 text-xs font-bold text-teal-300/90 tabular-nums">{topViewedListing.views} مشاهدة</p>
+                        </div>
+                      </Link>
+                    ) : (
+                      <p className="relative mt-3 text-sm font-bold text-slate-500">لا مشاهدات في الفترة بعد</p>
+                    )}
+                  </motion.section>
                 </div>
+
+                {viewsTableAvailable && totalViewsInRange > 0 ? (
+                  <section
+                    className={`${GLASS_SECTION} relative overflow-hidden p-6 ring-1 ring-teal-500/10 before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-tr before:from-teal-500/[0.05] before:via-transparent before:to-violet-600/[0.06]`}
+                  >
+                    <h2 className="relative text-lg font-black text-white">مشاهدات الإعلانات عبر الزمن</h2>
+                    <p className="relative mt-1 text-xs text-slate-500">منحنى النمو حسب الفترة المختارة أعلاه — كل نقطة يوم أو فترة زمنية حسب «الفترة الزمنية».</p>
+                    <div className="relative mt-5">
+                      <PropertyViewsTrendChart data={lineSeries} animKey={chartAnimKey} />
+                    </div>
+                  </section>
+                ) : (
+                  <DashboardAnalyticsEmpty
+                    title="مشاهدات الإعلانات عبر الزمن"
+                    message={viewsTableAvailable ? "لا مشاهدات في الفترة الحالية" : "جدول المشاهدات غير متاح"}
+                    hint={
+                      viewsTableAvailable
+                        ? "جرّب توسيع نطاق التاريخ، أو شارك روابط إعلاناتك."
+                        : "تحقق من نشر sql/agency_analytics_and_crm.sql في Supabase."
+                    }
+                  />
+                )}
+
+                <section
+                  className={`${GLASS_SECTION} relative overflow-hidden p-6 ring-1 ring-violet-500/10 before:pointer-events-none before:absolute before:inset-0 before:bg-gradient-to-bl before:from-violet-600/[0.06] before:via-transparent before:to-amber-500/[0.04]`}
+                >
+                  <h2 className="relative text-lg font-black text-white">خريطة حرارية جغرافية</h2>
+                  <p className="relative mt-1 max-w-3xl text-xs leading-relaxed text-slate-500">
+                    شدة اللون تعكس حجم المشاهدات لكل حي/محافظة مرتبطة بإعلاناتك — أمثلة شائعة في السوق: الشيخ زايد، القاهرة الجديدة، مدينة نصر، حسب بيانات العقار.
+                  </p>
+                  <div className="relative mt-5">
+                    <NeighborhoodHeatmapGrid cells={neighborhoodHeatCells} animKey={chartAnimKey} />
+                  </div>
+                </section>
+
+                {totalLeadsInRange > 0 ? (
+                  <div className="grid gap-8 lg:grid-cols-2">
+                    <section className={`${GLASS_SECTION} p-6`}>
+                      <h2 className="text-lg font-black text-white">ذكاء الطلبات</h2>
+                      <p className="mt-1 text-xs text-slate-500">
+                        فئة العقار (سكني / تجاري / أراضي) × نوع المعاملة (بيع / إيجار) — انقر على شريحة لفتح «العملاء» مصفّاة.
+                      </p>
+                      <div className="mt-4">
+                        <LeadIntelligencePieChart data={pieData} animKey={chartAnimKey} onSliceClick={onPieSliceForCrm} />
+                      </div>
+                    </section>
+                    <section className={`${GLASS_SECTION} p-6`}>
+                      <h2 className="text-lg font-black text-white">المناطق الأكثر طلباً</h2>
+                      <p className="mt-1 text-xs text-slate-500">محافظة — حي من جدول الطلبات — انقر على شريط لتصفية العملاء.</p>
+                      <div className="mt-4">
+                        <GeographyHotBarChart data={barData} animKey={chartAnimKey} onBarClick={onGeoBarForCrm} />
+                      </div>
+                    </section>
+                  </div>
+                ) : (
+                  <DashboardAnalyticsEmpty
+                    title="ذكاء الطلبات والمناطق (من الطلبات)"
+                    message="لا طلبات في الفترة الحالية"
+                    hint="ما زال بإمكانك مراجعة مشاهدات الإعلانات والخريطة الحرارية أعلاه. وسّع نطاق التاريخ لرؤية الطلبات."
+                  />
+                )}
+
                 <section className={`${GLASS_SECTION} p-6`}>
                   <h2 className="text-lg font-black text-white">أجهزة المستخدمين (مشاهدات الإعلان)</h2>
                   <p className="mt-1 text-xs text-slate-500">جوال مقابل سطح مكتب — بيانات اختيارية من تتبع المشاهدات</p>
@@ -836,7 +981,7 @@ function AgencyDashboardContent() {
                     <DeviceMixMiniChart data={deviceMixData} animKey={chartAnimKey} />
                   </div>
                 </section>
-              </div>
+              </>
             )}
           </div>
         )}

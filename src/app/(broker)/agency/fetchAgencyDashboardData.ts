@@ -4,6 +4,15 @@ import type { DateRangeKey } from "./agencyDashboardUtils";
 import { rangeStartMs } from "./agencyDashboardUtils";
 import type { ViewEventRow } from "./agencyLeadAnalytics";
 
+export type AgencyPropertySummary = {
+  id: number;
+  governorate: string | null;
+  district: string | null;
+  title: string;
+  slug: string | null;
+  images: unknown;
+};
+
 const IN_CHUNK = 120;
 
 const PROPS_CORE = "title, unit_type, governorate, district, area";
@@ -37,9 +46,11 @@ export type FetchAgencyDashboardDataResult = {
   activeListingsCount: number;
   numericPropIds: number[];
   leads: AgencyLeadRow[];
-  /** View events in range (for line chart + device mix) */
+  /** View events in range (for line chart + device mix + geo heatmap) */
   viewEvents: ViewEventRow[];
   viewsTableAvailable: boolean;
+  /** Agency listings metadata for view-based geography + top ad preview */
+  propertySummaries: AgencyPropertySummary[];
 };
 
 /**
@@ -61,12 +72,28 @@ export async function fetchAgencyDashboardData(
       .select("id", { count: "exact", head: true })
       .eq("agency_id", agencyId)
       .eq("status", "active"),
-    client.from("properties").select("id").eq("agency_id", agencyId),
+    client.from("properties").select("id, governorate, district, title, slug, images").eq("agency_id", agencyId),
   ]);
 
-  const numericPropIds = (agencyPropRows ?? [])
-    .map((p) => Number((p as { id?: unknown }).id))
-    .filter((n) => Number.isFinite(n));
+  const propertySummaries: AgencyPropertySummary[] = (agencyPropRows ?? [])
+    .map((raw) => {
+      if (!raw || typeof raw !== "object") return null;
+      const p = raw as Record<string, unknown>;
+      const id = Number(p.id);
+      if (!Number.isFinite(id)) return null;
+      const str = (k: string) => (typeof p[k] === "string" ? (p[k] as string) : null);
+      return {
+        id,
+        governorate: str("governorate"),
+        district: str("district"),
+        title: str("title")?.trim() || "إعلان",
+        slug: str("slug"),
+        images: p.images,
+      };
+    })
+    .filter((x): x is AgencyPropertySummary => x !== null);
+
+  const numericPropIds = propertySummaries.map((p) => p.id);
 
   const leads: AgencyLeadRow[] = [];
   for (let i = 0; i < numericPropIds.length; i += IN_CHUNK) {
@@ -106,11 +133,22 @@ export async function fetchAgencyDashboardData(
       return client.from("property_listing_view_events").select(cols).in("property_id", slice).gte("created_at", sinceIso);
     };
 
-    let { data: vRows, error: vErr } = await trySelect("created_at, client_device_hint");
-    if (vErr && (vErr.message ?? "").toLowerCase().includes("client_device_hint")) {
-      const fb = await trySelect("created_at");
+    let { data: vRows, error: vErr } = await trySelect("property_id, created_at, client_device_hint");
+    if (vErr && (vErr.message ?? "").toLowerCase().includes("property_id")) {
+      const fb = await trySelect("created_at, client_device_hint");
       vRows = fb.data;
       vErr = fb.error;
+    }
+    if (vErr && (vErr.message ?? "").toLowerCase().includes("client_device_hint")) {
+      const fb = await trySelect("property_id, created_at");
+      if (!fb.error && fb.data) {
+        vRows = fb.data;
+        vErr = null;
+      } else {
+        const fb2 = await trySelect("created_at");
+        vRows = fb2.data;
+        vErr = fb2.error;
+      }
     }
 
     if (vErr) {
@@ -125,7 +163,7 @@ export async function fetchAgencyDashboardData(
     }
     for (const r of vRows ?? []) {
       if (!r || typeof r !== "object") continue;
-      const row = r as { created_at?: unknown; client_device_hint?: unknown };
+      const row = r as { created_at?: unknown; client_device_hint?: unknown; property_id?: unknown };
       if (typeof row.created_at === "string") {
         const hint =
           row.client_device_hint === "mobile" ||
@@ -133,7 +171,18 @@ export async function fetchAgencyDashboardData(
           row.client_device_hint === "unknown"
             ? row.client_device_hint
             : null;
-        viewEvents.push({ created_at: row.created_at, client_device_hint: hint });
+        const rawPid = row.property_id;
+        const pid =
+          typeof rawPid === "number"
+            ? rawPid
+            : typeof rawPid === "string"
+              ? Number(rawPid)
+              : Number.NaN;
+        viewEvents.push({
+          created_at: row.created_at,
+          client_device_hint: hint,
+          property_id: Number.isFinite(pid) ? pid : undefined,
+        });
       }
     }
   }
@@ -145,5 +194,6 @@ export async function fetchAgencyDashboardData(
     leads,
     viewEvents: viewsTableAvailable ? viewEvents : [],
     viewsTableAvailable,
+    propertySummaries,
   };
 }

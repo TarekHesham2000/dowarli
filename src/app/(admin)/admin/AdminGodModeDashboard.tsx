@@ -4,11 +4,14 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   BarChart3,
   Building2,
   ClipboardList,
   CreditCard,
   Home,
+  Inbox,
   LayoutDashboard,
   Loader2,
   LogOut,
@@ -21,7 +24,19 @@ import {
   Vault,
   X,
 } from "lucide-react";
-import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { supabase } from "@/lib/supabase";
 import { propertyPathFromRecord } from "@/lib/propertySlug";
 import { safeRouterRefresh } from "@/lib/safeRouterRefresh";
@@ -148,6 +163,20 @@ type Lead = {
   property_title?: string;
   property_area?: string;
   owner_name?: string;
+  property_slug?: string | null;
+};
+
+/** Verified payments — extended for treasury + revenue breakdown */
+type VerifiedTx = {
+  id: number;
+  amount: number;
+  broker_id: string;
+  created_at: string;
+  package_name?: string | null;
+  points_requested?: number | null;
+  sender_phone?: string | null;
+  screenshot_url?: string | null;
+  profiles?: { name: string; phone: string } | null;
 };
 
 type AgencyRow = {
@@ -216,6 +245,38 @@ function startOfToday(): Date {
   return d;
 }
 
+const MS_DAY = 86400000;
+
+function pctTrendVsPreviousWeek(current: number, previous: number): { text: string; up: boolean; muted: boolean } {
+  if (current === 0 && previous === 0) return { text: "0٪", up: true, muted: true };
+  if (previous === 0) return { text: current > 0 ? "+جديد" : "0٪", up: current >= 0, muted: current === 0 };
+  const raw = ((current - previous) / previous) * 100;
+  const rounded = Math.round(raw * 10) / 10;
+  const sign = rounded > 0 ? "+" : "";
+  return { text: `${sign}${rounded}٪`, up: rounded >= 0, muted: false };
+}
+
+const ADMIN_NEON = {
+  teal: "#2dd4bf",
+  purple: "#a78bfa",
+  gold: "#fbbf24",
+  grid: "#334155",
+  tick: "#94a3b8",
+} as const;
+
+const REVENUE_DONUT_COLORS = [ADMIN_NEON.teal, ADMIN_NEON.purple, ADMIN_NEON.gold];
+
+const chartTooltipStyle = {
+  contentStyle: {
+    backgroundColor: "#0f172a",
+    border: "1px solid rgba(167, 139, 250, 0.35)",
+    borderRadius: "12px",
+    fontSize: "12px",
+    color: "#f1f5f9",
+  },
+  labelStyle: { color: "#e2e8f0" },
+};
+
 export default function AdminGodModeDashboard() {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("overview");
@@ -226,7 +287,7 @@ export default function AdminGodModeDashboard() {
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [ledgerRows, setLedgerRows] = useState<LedgerTx[]>([]);
-  const [verifiedTxRows, setVerifiedTxRows] = useState<{ amount: number; created_at: string }[]>([]);
+  const [verifiedTxRows, setVerifiedTxRows] = useState<VerifiedTx[]>([]);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [agencies, setAgencies] = useState<AgencyRow[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -342,7 +403,9 @@ export default function AdminGodModeDashboard() {
           .order("created_at", { ascending: false }),
         supabase
           .from("transactions")
-          .select("amount, broker_id, created_at")
+          .select(
+            "id, amount, broker_id, created_at, package_name, p   oints_requested, sender_phone, screenshot_url, profiles(name, phone)",
+          )
           .eq("status", "verified")
           .order("created_at", { ascending: false })
           .limit(10000),
@@ -376,9 +439,7 @@ export default function AdminGodModeDashboard() {
 
       const props = ((propsRes.data as unknown[]) ?? []).map((row) => normalizeAdminProperty(row));
       const pendingTx = (transRes.data as unknown as Transaction[]) ?? [];
-      const verified = verifiedRes.error
-        ? []
-        : ((verifiedRes.data as { amount: number; broker_id: string; created_at: string }[]) ?? []);
+      const verified = verifiedRes.error ? [] : ((verifiedRes.data as unknown as VerifiedTx[]) ?? []);
       const ledger = (ledgerRes.data as unknown as LedgerTx[]) ?? [];
       const allProfiles = (usersRes.data as UserRow[]) ?? [];
       const agRows = (agenciesRes.data as AgencyRow[]) ?? [];
@@ -405,6 +466,7 @@ export default function AdminGodModeDashboard() {
           property_area:
             [prop?.district, prop?.governorate].filter(Boolean).join(" — ") || prop?.area || "—",
           owner_name: prop?.profiles?.name ?? "—",
+          property_slug: prop?.slug ?? null,
         };
       });
 
@@ -417,9 +479,26 @@ export default function AdminGodModeDashboard() {
       setVerifiedTxRows(
         verifiedRes.error
           ? []
-          : ((verifiedRes.data as { amount: number; created_at: string }[]) ?? []).map((r) => ({
+          : ((verifiedRes.data as unknown as VerifiedTx[]) ?? []).map((r) => ({
+              id: Number(r.id),
               amount: Number(r.amount ?? 0),
-              created_at: r.created_at,
+              broker_id: String(r.broker_id ?? ""),
+              created_at: String(r.created_at ?? ""),
+              package_name: r.package_name != null ? String(r.package_name) : null,
+              points_requested: r.points_requested != null ? Number(r.points_requested) : null,
+              sender_phone: r.sender_phone != null ? String(r.sender_phone) : null,
+              screenshot_url: r.screenshot_url != null ? String(r.screenshot_url) : null,
+              profiles: r.profiles && typeof r.profiles === "object" && !Array.isArray(r.profiles)
+                ? {
+                    name: String((r.profiles as { name?: unknown }).name ?? ""),
+                    phone: String((r.profiles as { phone?: unknown }).phone ?? ""),
+                  }
+                : Array.isArray(r.profiles) && r.profiles[0]
+                  ? {
+                      name: String((r.profiles[0] as { name?: unknown }).name ?? ""),
+                      phone: String((r.profiles[0] as { phone?: unknown }).phone ?? ""),
+                    }
+                  : null,
             })),
       );
       setLedgerRows(ledger);
@@ -560,6 +639,118 @@ export default function AdminGodModeDashboard() {
     }
     return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 12);
   }, [leads, properties, agencyById]);
+
+  const revenueSourceDonut = useMemo(() => {
+    const owners = new Set(agencies.map((a) => a.owner_id));
+    let individual = 0;
+    let agencyOwners = 0;
+    for (const r of verifiedTxRows) {
+      const amt = Number(r.amount ?? 0);
+      if (owners.has(r.broker_id)) agencyOwners += amt;
+      else individual += amt;
+    }
+    const rows = [
+      { name: "أفراد / وسطاء", value: individual },
+      { name: "مالكو وكالات", value: agencyOwners },
+    ].filter((x) => x.value > 0);
+    return rows;
+  }, [verifiedTxRows, agencies]);
+
+  const overviewTrends = useMemo(() => {
+    const now = Date.now();
+    const curStart = now - 7 * MS_DAY;
+    const prevStart = now - 14 * MS_DAY;
+    const prevEnd = curStart;
+
+    const sumVerified = (startMs: number, endMs: number) =>
+      verifiedTxRows.reduce((s, r) => {
+        const t = new Date(r.created_at).getTime();
+        if (!Number.isFinite(t)) return s;
+        if (t >= startMs && t < endMs) return s + Number(r.amount ?? 0);
+        return s;
+      }, 0);
+
+    const revenueCur = sumVerified(curStart, now);
+    const revenuePrev = sumVerified(prevStart, prevEnd);
+
+    const newActivesThis = properties.filter((p) => {
+      if (p.status !== "active" || !p.created_at) return false;
+      const t = new Date(p.created_at).getTime();
+      return t >= curStart && t < now;
+    }).length;
+    const newActivesPrev = properties.filter((p) => {
+      if (p.status !== "active" || !p.created_at) return false;
+      const t = new Date(p.created_at).getTime();
+      return t >= prevStart && t < prevEnd;
+    }).length;
+
+    const signupsCur = users.filter((u) => {
+      if (!u.created_at) return false;
+      const t = new Date(u.created_at).getTime();
+      return t >= curStart && t < now;
+    }).length;
+    const signupsPrev = users.filter((u) => {
+      if (!u.created_at) return false;
+      const t = new Date(u.created_at).getTime();
+      return t >= prevStart && t < prevEnd;
+    }).length;
+
+    const leadsCur = leads.filter((l) => {
+      const t = new Date(l.created_at).getTime();
+      return t >= curStart && t < now;
+    }).length;
+    const leadsPrev = leads.filter((l) => {
+      const t = new Date(l.created_at).getTime();
+      return t >= prevStart && t < prevEnd;
+    }).length;
+
+    return {
+      revenue: pctTrendVsPreviousWeek(revenueCur, revenuePrev),
+      listings: pctTrendVsPreviousWeek(newActivesThis, newActivesPrev),
+      signups: pctTrendVsPreviousWeek(signupsCur, signupsPrev),
+      leads: pctTrendVsPreviousWeek(leadsCur, leadsPrev),
+    };
+  }, [verifiedTxRows, properties, users, leads]);
+
+  const vaultChartData = useMemo(() => {
+    const pad2 = (n: number) => (n < 10 ? `0${n}` : String(n));
+    const localDayKey = (d: Date) =>
+      `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    const map = new Map<string, number>();
+    for (const r of verifiedTxRows) {
+      const k = localDayKey(new Date(r.created_at));
+      map.set(k, (map.get(k) ?? 0) + Number(r.amount ?? 0));
+    }
+    const out: { dayKey: string; labelShort: string; labelFull: string; amount: number }[] = [];
+    for (let i = 13; i >= 0; i--) {
+      const dt = new Date();
+      dt.setHours(12, 0, 0, 0);
+      dt.setDate(dt.getDate() - i);
+      const dayKey = localDayKey(dt);
+      const labelShort = `${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+      const labelFull = dt.toLocaleDateString("ar-EG", {
+        weekday: "short",
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      });
+      out.push({ dayKey, labelShort, labelFull, amount: map.get(dayKey) ?? 0 });
+    }
+    return out;
+  }, [verifiedTxRows]);
+
+  const vaultTransactionLog = useMemo(() => {
+    const owners = new Set(agencies.map((a) => a.owner_id));
+    return [...verifiedTxRows]
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, 50)
+      .map((r) => ({
+        ...r,
+        sourceLabel: owners.has(r.broker_id) ? "وكالة" : "فرد / وسيط",
+        paymentLabel:
+          r.screenshot_url && r.screenshot_url.length > 4 ? "إيصال / لقطة شاشة" : "تحويل (دون إيصال)",
+      }));
+  }, [verifiedTxRows, agencies]);
 
   const pendingQueue = useMemo(
     () => properties.filter((p) => isAwaitingPropertyApproval(p.status)),
@@ -1144,25 +1335,6 @@ export default function AdminGodModeDashboard() {
   };
 
   const vaultTotalRevenue = verifiedTxRows.reduce((s, r) => s + Number(r.amount ?? 0), 0);
-  const vaultDailyBars = (() => {
-    const map = new Map<string, number>();
-    for (const r of verifiedTxRows) {
-      const d = new Date(r.created_at).toISOString().slice(0, 10);
-      map.set(d, (map.get(d) ?? 0) + Number(r.amount ?? 0));
-    }
-    const days: string[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const dt = new Date();
-      dt.setDate(dt.getDate() - i);
-      days.push(dt.toISOString().slice(0, 10));
-    }
-    const maxVal = Math.max(1, ...days.map((d) => map.get(d) ?? 0));
-    return days.map((d) => ({
-      day: d.slice(5),
-      amount: map.get(d) ?? 0,
-      barPx: Math.max(8, Math.round(((map.get(d) ?? 0) / maxVal) * 110)),
-    }));
-  })();
 
   const tryUnlockVault = () => {
     if (vaultPassword === "opensesame") {
@@ -1406,63 +1578,217 @@ export default function AdminGodModeDashboard() {
             {tab === "overview" && (
               <div className="space-y-6">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                  {[
-                    { label: "إيرادات مؤكدة (ج.م)", value: stats.totalCharged.toLocaleString("ar-EG"), tone: "emerald" },
-                    { label: "إعلانات نشطة", value: stats.publishedProperties, tone: "sky" },
-                    { label: "تسجيلات اليوم", value: stats.signupsToday, tone: "violet" },
-                    { label: "عملاء مهتمين", value: stats.totalLeads, tone: "amber" },
-                  ].map((c) => (
-                    <div
-                      key={c.label}
-                      className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 shadow-inner"
-                    >
-                      <div className="text-xs font-bold text-slate-500">{c.label}</div>
-                      <div className="mt-2 text-2xl font-black text-white">{c.value}</div>
-                    </div>
-                  ))}
+                  {(
+                    [
+                      {
+                        label: "إيرادات مؤكدة (ج.م)",
+                        value: stats.totalCharged.toLocaleString("ar-EG"),
+                        trend: overviewTrends.revenue,
+                        tone: "emerald",
+                        trendHint: "إيرادات مؤكدة أُضيفت خلال ٧ أيام مقارنة بالأسبوع السابق",
+                      },
+                      {
+                        label: "إعلانات نشطة",
+                        value: stats.publishedProperties,
+                        trend: overviewTrends.listings,
+                        tone: "sky",
+                        trendHint: "إعلانات نشطة جُددت خلال ٧ أيام مقارنة بالأسبوع السابق",
+                      },
+                      {
+                        label: "تسجيلات اليوم",
+                        value: stats.signupsToday,
+                        trend: overviewTrends.signups,
+                        tone: "violet",
+                        trendHint: "حسابات جديدة خلال ٧ أيام مقارنة بالأسبوع السابق",
+                      },
+                      {
+                        label: "عملاء مهتمين",
+                        value: stats.totalLeads,
+                        trend: overviewTrends.leads,
+                        tone: "amber",
+                        trendHint: "طلبات جديدة خلال ٧ أيام مقارنة بالأسبوع السابق",
+                      },
+                    ] as const
+                  ).map(
+                    (c: {
+                      label: string;
+                      value: string | number;
+                      trend: ReturnType<typeof pctTrendVsPreviousWeek>;
+                      tone: "emerald" | "sky" | "violet" | "amber";
+                      trendHint: string;
+                    }) => {
+                    const ring =
+                      c.tone === "emerald"
+                        ? "ring-teal-500/25"
+                        : c.tone === "sky"
+                          ? "ring-sky-500/25"
+                          : c.tone === "violet"
+                            ? "ring-violet-500/25"
+                            : "ring-amber-500/25";
+                    return (
+                      <div
+                        key={c.label}
+                        className={`relative overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-950/50 p-5 shadow-inner ring-1 ${ring}`}
+                      >
+                        <div className="relative text-xs font-bold tracking-wide text-slate-500">{c.label}</div>
+                        <div className="relative mt-2 font-black tabular-nums tracking-tight text-white text-2xl">
+                          {c.value}
+                        </div>
+                        <div
+                          className={`relative mt-2 flex flex-wrap items-center gap-1 text-xs font-black tabular-nums ${
+                            c.trend.muted ? "text-slate-500" : c.trend.up ? "text-emerald-400" : "text-rose-400"
+                          }`}
+                        >
+                          {c.trend.muted ? null : c.trend.up ? (
+                            <ArrowUpRight className="size-3.5 shrink-0" aria-hidden />
+                          ) : (
+                            <ArrowDownRight className="size-3.5 shrink-0" aria-hidden />
+                          )}
+                          <span>{c.trend.text}</span>
+                          <span className="font-semibold text-slate-500">أسبوع مقابل السابق</span>
+                        </div>
+                        <p className="relative mt-1.5 text-[10px] font-medium leading-relaxed text-slate-500">
+                          {c.trendHint}
+                        </p>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="grid gap-6 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
+
+                <section className="overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-950/40 shadow-lg ring-1 ring-violet-500/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/80 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <Inbox className="size-5 text-violet-400" aria-hidden />
+                      <h2 className="text-base font-black text-white">صندوق الطلبات</h2>
+                    </div>
+                    <span className="text-xs font-bold text-slate-500 tabular-nums">آخر ٥ طلبات</span>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[520px] text-sm tabular-nums">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-right text-[11px] font-black uppercase tracking-wide text-slate-500">
+                          <th className="px-4 py-2.5">المستخدم</th>
+                          <th className="px-4 py-2.5">الإعلان</th>
+                          <th className="px-4 py-2.5">التواصل</th>
+                          <th className="px-4 py-2.5">الوقت</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-800/80">
+                        {leads.slice(0, 5).map((l) => (
+                          <tr key={String(l.id)} className="hover:bg-slate-900/50">
+                            <td className="px-4 py-2.5 font-bold text-white">{l.client_name}</td>
+                            <td className="px-4 py-2.5">
+                              <Link
+                                href={propertyPathFromRecord({ id: l.property_id, slug: l.property_slug ?? null })}
+                                className="line-clamp-2 text-xs font-semibold text-teal-300/95 underline-offset-2 hover:underline"
+                              >
+                                {l.property_title}
+                              </Link>
+                            </td>
+                            <td className="px-4 py-2.5 font-mono text-xs text-sky-300">{l.client_phone}</td>
+                            <td className="px-4 py-2.5 text-xs text-slate-400">
+                              {new Date(l.created_at).toLocaleString("ar-EG", {
+                                dateStyle: "short",
+                                timeStyle: "short",
+                              })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {leads.length === 0 ? (
+                      <p className="px-4 py-6 text-center text-sm text-slate-500">لا طلبات بعد.</p>
+                    ) : null}
+                  </div>
+                </section>
+
+                <div className="grid gap-6 lg:grid-cols-5">
+                  <div className="rounded-2xl border border-slate-800/90 bg-slate-950/40 p-5 shadow-lg ring-1 ring-teal-500/10 lg:col-span-3">
                     <div className="mb-4 flex items-center gap-2">
-                      <BarChart3 className="size-5 text-emerald-400" />
+                      <BarChart3 className="size-5 text-teal-400" aria-hidden />
                       <h2 className="text-base font-black text-white">أداء الوكالات حسب العملاء</h2>
                     </div>
                     {agencyLeadStats.length === 0 ? (
                       <p className="text-sm text-slate-500">لا توجد بيانات عملاء كافية.</p>
                     ) : (
-                      <div className="h-64 w-full min-w-0">
+                      <div className="h-72 w-full min-w-0" dir="ltr">
                         <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={agencyLeadStats} layout="vertical" margin={{ left: 8, right: 8 }}>
-                            <XAxis type="number" stroke="#64748b" tick={{ fill: "#94a3b8", fontSize: 11 }} />
+                          <BarChart data={agencyLeadStats} layout="vertical" margin={{ left: 4, right: 12, top: 4, bottom: 4 }}>
+                            <defs>
+                              <linearGradient id="adminAgencyBar" x1="0" y1="0" x2="1" y2="0">
+                                <stop offset="0%" stopColor={ADMIN_NEON.teal} />
+                                <stop offset="100%" stopColor={ADMIN_NEON.purple} />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="4 4" stroke={ADMIN_NEON.grid} horizontal={false} opacity={0.5} />
+                            <XAxis type="number" stroke="#64748b" tick={{ fill: ADMIN_NEON.tick, fontSize: 11 }} />
                             <YAxis
                               type="category"
                               dataKey="name"
-                              width={120}
+                              width={132}
                               stroke="#64748b"
-                              tick={{ fill: "#cbd5e1", fontSize: 10 }}
+                              tick={{ fill: "#e2e8f0", fontSize: 10 }}
                             />
-                            <Tooltip
-                              contentStyle={{ background: "#0f172a", border: "1px solid #334155", borderRadius: 12 }}
-                              labelStyle={{ color: "#e2e8f0" }}
-                            />
-                            <Bar dataKey="count" fill="#34d399" radius={[0, 6, 6, 0]} name="عملاء" />
+                            <Tooltip {...chartTooltipStyle} />
+                            <Bar dataKey="count" fill="url(#adminAgencyBar)" radius={[0, 8, 8, 0]} name="عملاء" />
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
                     )}
                   </div>
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/40 p-5">
-                    <h2 className="mb-3 text-base font-black text-white">شحنات معلقة</h2>
-                    <p className="text-3xl font-black text-rose-300">{stats.pendingTransactions}</p>
-                    <p className="mt-2 text-sm text-slate-400">راجع تبويب «سجل المدفوعات» للموافقة السريعة.</p>
-                    <button
-                      type="button"
-                      onClick={() => setTab("ledger")}
-                      className="mt-4 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-500"
-                    >
-                      فتح السجل
-                    </button>
+                  <div className="rounded-2xl border border-slate-800/90 bg-slate-950/40 p-5 shadow-lg ring-1 ring-amber-500/10 lg:col-span-2">
+                    <h2 className="mb-1 text-base font-black text-white">مصادر الإيراد</h2>
+                    <p className="mb-3 text-[11px] font-medium text-slate-500">فرد / وسيط مقابل مالكي وكالات (حسب المستلم)</p>
+                    {revenueSourceDonut.length === 0 ? (
+                      <p className="text-sm text-slate-500">لا شحنات مؤكدة بعد.</p>
+                    ) : (
+                      <div className="h-64 w-full min-w-0" dir="ltr">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={revenueSourceDonut}
+                              dataKey="value"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={52}
+                              outerRadius={82}
+                              paddingAngle={2}
+                              stroke="#020617"
+                              strokeWidth={1}
+                            >
+                              {revenueSourceDonut.map((_, i) => (
+                                <Cell key={String(i)} fill={REVENUE_DONUT_COLORS[i % REVENUE_DONUT_COLORS.length]} />
+                              ))}
+                            </Pie>
+                            <Tooltip
+                              {...chartTooltipStyle}
+                              formatter={(value) => {
+                                const v = typeof value === "number" ? value : Number(value ?? 0);
+                                return [`${v.toLocaleString("ar-EG")} ج.م`, "المبلغ"];
+                              }}
+                            />
+                            <Legend wrapperStyle={{ fontSize: 11, color: "#cbd5e1" }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-3 rounded-2xl border border-slate-800/90 bg-slate-950/40 p-5 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-base font-black text-white">شحنات معلقة</h2>
+                    <p className="mt-1 text-3xl font-black tabular-nums text-rose-300">{stats.pendingTransactions}</p>
+                    <p className="mt-1 text-sm text-slate-400">راجع تبويب «سجل المدفوعات» للموافقة السريعة.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTab("ledger")}
+                    className="shrink-0 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-emerald-950/30 hover:bg-emerald-500"
+                  >
+                    فتح السجل
+                  </button>
                 </div>
               </div>
             )}
@@ -2038,53 +2364,132 @@ export default function AdminGodModeDashboard() {
             )}
 
             {tab === "vault" && (
-              <div className="max-w-lg rounded-2xl border border-slate-800 bg-slate-900/40 p-6">
-                <h2 className="mb-4 flex items-center gap-2 text-lg font-black">
-                  <Vault className="size-5 text-amber-400" />
-                  الخزنة
+              <div className="mx-auto max-w-5xl space-y-6 rounded-2xl border border-slate-800/90 bg-slate-950/45 p-6 shadow-xl ring-1 ring-amber-500/15">
+                <h2 className="flex items-center gap-2 text-lg font-black tracking-tight text-white">
+                  <Vault className="size-5 text-amber-400" aria-hidden />
+                  الخزنة — المالية
                 </h2>
                 {!vaultUnlocked ? (
-                  <div className="space-y-3">
+                  <div className="max-w-md space-y-3">
                     <input
                       type="password"
                       value={vaultPassword}
                       onChange={(e) => setVaultPassword(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && tryUnlockVault()}
-                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm"
+                      className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm tabular-nums"
                       placeholder="كلمة المرور"
                     />
                     <button
                       type="button"
                       onClick={tryUnlockVault}
-                      className="w-full rounded-xl bg-amber-600 py-2 text-sm font-black text-white"
+                      className="w-full rounded-xl bg-amber-600 py-2 text-sm font-black text-white hover:bg-amber-500"
                     >
                       فتح
                     </button>
                   </div>
                 ) : (
-                  <div>
-                    <p className="text-sm text-slate-400">إجمالي الشحنات المؤكدة</p>
-                    <p className="text-3xl font-black text-emerald-300">
-                      {vaultTotalRevenue.toLocaleString("ar-EG")} ج.م
-                    </p>
-                    <div className="mt-6 flex h-36 items-end gap-1">
-                      {vaultDailyBars.map((b) => (
-                        <div key={b.day} className="flex flex-1 flex-col items-center gap-1">
-                          <div
-                            className="w-full rounded-t bg-gradient-to-t from-emerald-800 to-emerald-400"
-                            style={{ height: b.barPx }}
-                            title={`${b.day}: ${b.amount}`}
-                          />
-                          <span className="text-[9px] text-slate-500">{b.day}</span>
-                        </div>
-                      ))}
+                  <div className="space-y-8">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-400">إجمالي الشحنات المؤكدة</p>
+                      <p className="mt-1 text-3xl font-black tabular-nums tracking-tight text-emerald-300">
+                        {vaultTotalRevenue.toLocaleString("ar-EG")} ج.م
+                      </p>
                     </div>
+
+                    <section className="rounded-2xl border border-slate-800/90 bg-slate-900/35 p-4 ring-1 ring-teal-500/10">
+                      <h3 className="mb-1 text-sm font-black text-white">إيراد يومي (آخر ١٤ يوماً)</h3>
+                      <p className="mb-4 text-[11px] font-medium text-slate-500">
+                        مرّر المؤشر لعرض التاريخ الكامل والمبلغ — المحور أفقي بتنسيق MM-DD
+                      </p>
+                      <div className="h-72 w-full min-w-0" dir="ltr">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={vaultChartData} margin={{ top: 10, right: 12, left: 4, bottom: 4 }}>
+                            <defs>
+                              <linearGradient id="vaultBarNeon" x1="0" y1="1" x2="0" y2="0">
+                                <stop offset="0%" stopColor="#0f766e" />
+                                <stop offset="55%" stopColor="#7c3aed" />
+                                <stop offset="100%" stopColor="#2dd4bf" />
+                              </linearGradient>
+                            </defs>
+                            <CartesianGrid strokeDasharray="4 4" stroke={ADMIN_NEON.grid} vertical={false} opacity={0.45} />
+                            <XAxis
+                              dataKey="labelShort"
+                              tick={{ fill: ADMIN_NEON.tick, fontSize: 10, fontFamily: "ui-monospace, monospace" }}
+                              axisLine={{ stroke: "#475569" }}
+                            />
+                            <YAxis
+                              tick={{ fill: ADMIN_NEON.tick, fontSize: 11 }}
+                              axisLine={{ stroke: "#475569" }}
+                              tickFormatter={(v) => Number(v).toLocaleString("ar-EG")}
+                            />
+                            <Tooltip
+                              contentStyle={chartTooltipStyle.contentStyle}
+                              labelStyle={chartTooltipStyle.labelStyle}
+                              labelFormatter={(_l, payload) =>
+                                String((payload?.[0]?.payload as { labelFull?: string })?.labelFull ?? "")
+                              }
+                              formatter={(value) => [
+                                `${Number(value).toLocaleString("ar-EG")} ج.م`,
+                                "إجمالي اليوم",
+                              ]}
+                            />
+                            <Bar dataKey="amount" fill="url(#vaultBarNeon)" radius={[6, 6, 0, 0]} name="إيراد" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </section>
+
+                    <section className="overflow-hidden rounded-2xl border border-slate-800/90 bg-slate-900/30 ring-1 ring-violet-500/10">
+                      <div className="border-b border-slate-800/80 px-4 py-3">
+                        <h3 className="text-sm font-black text-white">سجل المعاملات</h3>
+                        <p className="mt-0.5 text-[11px] text-slate-500">آخر ٥٠ عملية مؤكدة — المصدر والوسم استنتاجية من البيانات المتاحة</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[720px] text-sm tabular-nums">
+                          <thead>
+                            <tr className="border-b border-slate-800 text-right text-[11px] font-black uppercase tracking-wide text-slate-500">
+                              <th className="px-3 py-2.5">التاريخ</th>
+                              <th className="px-3 py-2.5">المبلغ</th>
+                              <th className="px-3 py-2.5">المصدر</th>
+                              <th className="px-3 py-2.5">طريقة الدفع</th>
+                              <th className="px-3 py-2.5">الحالة</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-800/80">
+                            {vaultTransactionLog.map((row) => (
+                              <tr key={row.id} className="hover:bg-slate-900/40">
+                                <td className="px-3 py-2.5 text-xs text-slate-300">
+                                  {new Date(row.created_at).toLocaleString("ar-EG", {
+                                    dateStyle: "medium",
+                                    timeStyle: "short",
+                                  })}
+                                </td>
+                                <td className="px-3 py-2.5 font-black text-teal-200">
+                                  {Number(row.amount).toLocaleString("ar-EG")} ج.م
+                                </td>
+                                <td className="px-3 py-2.5 text-xs font-semibold text-slate-200">{row.sourceLabel}</td>
+                                <td className="px-3 py-2.5 text-xs text-slate-400">{row.paymentLabel}</td>
+                                <td className="px-3 py-2.5">
+                                  <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-[11px] font-black text-emerald-300 ring-1 ring-emerald-500/35">
+                                    مؤكد
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {vaultTransactionLog.length === 0 ? (
+                          <p className="px-4 py-8 text-center text-sm text-slate-500">لا معاملات مؤكدة بعد.</p>
+                        ) : null}
+                      </div>
+                    </section>
+
                     <button
                       type="button"
                       onClick={() => setVaultUnlocked(false)}
-                      className="mt-6 text-sm font-bold text-slate-400 underline"
+                      className="text-sm font-bold text-slate-400 underline underline-offset-2 hover:text-slate-200"
                     >
-                      قفل
+                      قفل الخزنة
                     </button>
                   </div>
                 )}

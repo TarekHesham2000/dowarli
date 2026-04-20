@@ -168,6 +168,15 @@ export function aggregatePieByUnitType(
   return [...map.entries()].map(([name, value]) => ({ name, value }));
 }
 
+/** First image URL from `properties.images` (string[] in DB). */
+export function firstPropertyImageUrl(images: unknown): string | null {
+  if (!Array.isArray(images)) return null;
+  for (const x of images) {
+    if (typeof x === "string" && x.trim()) return x.trim();
+  }
+  return null;
+}
+
 export function aggregateBarByLocation(
   rows: { governorate?: string | null; district?: string | null; area?: string | null }[],
   topN = 8,
