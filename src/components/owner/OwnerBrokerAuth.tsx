@@ -13,6 +13,7 @@ function looksLikeEmail(s: string): boolean {
 }
 
 const OAUTH_USER_TYPE_COOKIE = "dowarli_oauth_user_type";
+const OAUTH_IS_SIGNUP_COOKIE = "dowarli_oauth_is_signup";
 
 function parseLoginIdentifier(raw: string):
   | { kind: "email"; email: string }
@@ -73,6 +74,8 @@ export default function OwnerBrokerAuth({
       setError("إعدادات الخادم غير مكتملة.");
     } else if (err === "no_user") {
       setError("لم يتم العثور على المستخدم بعد المصادقة.");
+    } else if (err === "database_error") {
+      setError("تعذّر إكمال التسجيل بسبب خطأ في قاعدة البيانات. جرّب مرة أخرى أو سجّل بالبريد ورقم الهاتف.");
     }
   }, [searchParams]);
 
@@ -92,6 +95,7 @@ export default function OwnerBrokerAuth({
     if (tab !== "login" || typeof globalThis.document === "undefined") return;
     const secure = globalThis.location?.protocol === "https:" ? ";Secure" : "";
     globalThis.document.cookie = `${OAUTH_USER_TYPE_COOKIE}=;Path=/;Max-Age=0;SameSite=Lax${secure}`;
+    globalThis.document.cookie = `${OAUTH_IS_SIGNUP_COOKIE}=;Path=/;Max-Age=0;SameSite=Lax${secure}`;
   }, [tab]);
 
   const validatePhone = (phone: string): string => validateEgyptianPhone(phone) ?? "";
@@ -105,7 +109,7 @@ export default function OwnerBrokerAuth({
     const base = `${w.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
     // Register flow: pass user_type for auth/callback (may survive redirect); cookie is the reliable fallback.
     if (tab === "register") {
-      return `${base}&user_type=${encodeURIComponent(oauthAccountKind)}`;
+      return `${base}&isSignup=true&user_type=${encodeURIComponent(oauthAccountKind)}`;
     }
     return base;
   };
@@ -117,8 +121,10 @@ export default function OwnerBrokerAuth({
       const secure = globalThis.location?.protocol === "https:" ? ";Secure" : "";
       if (tab === "register") {
         globalThis.document.cookie = `${OAUTH_USER_TYPE_COOKIE}=${encodeURIComponent(oauthAccountKind)};Path=/;Max-Age=600;SameSite=Lax${secure}`;
+        globalThis.document.cookie = `${OAUTH_IS_SIGNUP_COOKIE}=true;Path=/;Max-Age=600;SameSite=Lax${secure}`;
       } else {
         globalThis.document.cookie = `${OAUTH_USER_TYPE_COOKIE}=;Path=/;Max-Age=0;SameSite=Lax${secure}`;
+        globalThis.document.cookie = `${OAUTH_IS_SIGNUP_COOKIE}=;Path=/;Max-Age=0;SameSite=Lax${secure}`;
       }
     }
     const { error: oErr } = await supabase.auth.signInWithOAuth({
