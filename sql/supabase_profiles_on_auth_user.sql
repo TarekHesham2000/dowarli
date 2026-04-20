@@ -50,8 +50,17 @@ BEGIN
     END
   );
 
-  -- نفس تنسيق النموذج (محلي 01…) لتفادي تعارض UNIQUE مع upsert من الواجهة
-  v_phone := NULLIF(trim(new.raw_user_meta_data ->> 'phone'), '');
+  -- نفس تنسيق النموذج (محلي 01…) لتفادي تعارض UNIQUE مع upsert من الواجهة.
+  -- يُفضَّل تمرير phone/name عبر signUp({ options: { data: { phone, name } } }) حتى يملأ
+  -- المشغّل الصف قبل طلب الواجهة؛ وإلا يُستخدم رقم auth.users.phone إن وُجد (تسجيل بالهاتف).
+  v_phone := COALESCE(
+    NULLIF(trim(new.raw_user_meta_data ->> 'phone'), ''),
+    CASE
+      WHEN new.phone IS NOT NULL AND btrim(new.phone) <> '' THEN
+        regexp_replace(new.phone, '[^0-9]', '', 'g')
+      ELSE NULL
+    END
+  );
 
   -- جوجل: avatar_url أو picture نصي — فيسبوك: picture.data.url
   v_avatar := COALESCE(

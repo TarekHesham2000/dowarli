@@ -278,9 +278,20 @@ export default function OwnerBrokerAuth({
       return;
     }
 
+    const displayName = regForm.name.trim();
     const { data, error: signUpError } = await supabase.auth.signUp({
       email: emailNorm,
       password: regForm.password,
+      options: {
+        // `public.handle_new_user()` runs on auth.users INSERT and reads phone/name from
+        // raw_user_meta_data before the client upsert. If phone is NOT NULL on profiles,
+        // omitting this causes Supabase: "Database error saving new user".
+        data: {
+          name: displayName,
+          full_name: displayName,
+          phone: cleanedPhone,
+        },
+      },
     });
 
     if (signUpError) {
