@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import Banner from "@/components/shared/Banner";
 import Image from "next/image";
+import { Bath, Bed, Ruler } from "lucide-react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import AdBanner from '@/components/ads/AdBanner'
 import ChatBot from '@/components/shared/ChatBot'
@@ -14,7 +15,17 @@ import type { HomeAgencyPartner } from "@/lib/fetchHomeAgencyPartners";
 import { type ParsedFilters, type UnitType, parseSearchQuery } from "@/lib/parseHomeSearchQuery";
 import type { SavedSearchFiltersV1 } from "@/lib/matchSavedSearch";
 import { propertyPathFromRecord } from "@/lib/propertySlug";
-import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
+import {
+  isMissingExpiresAtColumnError,
+  maybeClientPublicListingExpiryOr,
+  suppressClientListingExpiryFilterIfMissingColumn,
+} from "@/lib/publicListingExpiry";
+import { agencyLogoUrlFromJoin, type AgencyJoinRow } from "@/lib/agencyListingBranding";
+import { formatRelativeTimeAr } from "@/lib/formatRelativeTimeAr";
+import { Z_INDEX_MOBILE_BOTTOM_NAV } from "@/lib/floatingFabLayout";
+
+type HomeListingTab = "rent" | "buy" | "commercial";
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Property = {
   id: number;
@@ -33,7 +44,12 @@ type Property = {
   /** إيجار / بيع — يُملأ من قاعدة البيانات عند توفر العمود */
   listing_type?: string | null;
   listing_purpose?: string | null;
+  created_at?: string | null;
+  beds_count?: number | null;
+  rental_unit?: string | null;
   profiles: { name: string; phone: string };
+  agency_id?: string | null;
+  agencies?: AgencyJoinRow | AgencyJoinRow[] | null;
 };
 
 function listingLocationLine(p: Pick<Property, "governorate" | "district" | "sub_area" | "area">): string {
@@ -51,12 +67,24 @@ function effectiveListingKind(p: Pick<Property, "listing_type" | "listing_purpos
   return raw === "sale" ? "sale" : "rent";
 }
 
+function cardBedLabel(p: Pick<Property, "beds_count" | "rental_unit" | "unit_type">): string {
+  if (typeof p.beds_count === "number" && p.beds_count > 0) return String(p.beds_count);
+  if (p.unit_type === "studio") return "1";
+  if (p.rental_unit === "bed") return "1+";
+  return "—";
+}
+
+function cardBathLabel(p: Pick<Property, "unit_type">): string {
+  if (p.unit_type === "studio") return "1";
+  return "—";
+}
+
 /** أعمدة واضحة + active فقط في الاستعلام (لا نعتمد على select *) */
 const HOME_PROPERTY_SELECT =
-  "id, title, description, price, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, listing_type, listing_purpose, availability_status, created_at, profiles(name, phone, low_trust)";
+  "id, title, description, price, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, listing_type, listing_purpose, availability_status, created_at, beds_count, rental_unit, agency_id, agencies(logo_url, name, slug), profiles(name, phone, low_trust)";
 
 const HOME_PROPERTY_SELECT_FALLBACK =
-  "id, title, description, price, area, governorate, district, landmark, address, unit_type, images, slug, availability_status, created_at, profiles(name, phone, low_trust)";
+  "id, title, description, price, area, governorate, district, landmark, address, unit_type, images, slug, availability_status, created_at, beds_count, rental_unit, agency_id, agencies(logo_url, name, slug), profiles(name, phone, low_trust)";
 
 function filterHomeLowTrustRows(rows: unknown[]): Property[] {
   const filtered = rows.filter((row) => {
@@ -75,6 +103,7 @@ async function fetchActiveHomeProperties(
   client: typeof supabase,
   parsed: ParsedFilters,
   selectedType: string,
+  listingTab: HomeListingTab,
 ): Promise<Property[]> {
   const rawKw = parsed.keywords?.trim() || "";
   const cleanKeywords = rawKw
@@ -83,11 +112,9 @@ async function fetchActiveHomeProperties(
 
   const applyFilters = (selectList: string, whereSubArea: boolean) => {
     // Market-wide home feed: no .eq("agency_id", …). Agency-scoped lists use agency_id on /agency/[slug] and broker /agency.
-    let q = client
-      .from("properties")
-      .select(selectList)
-      .eq("status", "active")
-      .or(orPublicListingNotExpired());
+    const exp = maybeClientPublicListingExpiryOr();
+    let q = client.from("properties").select(selectList).eq("status", "active");
+    if (exp) q = q.or(exp);
     const g = (parsed.governorate ?? "").trim();
     const d = (parsed.district ?? "").trim();
     const a = (parsed.area ?? "").trim();
@@ -104,6 +131,13 @@ async function fetchActiveHomeProperties(
     }
     if (parsed.maxPrice) q = q.lte("price", parsed.maxPrice);
     if (selectedType && selectedType !== "all") q = q.eq("unit_type", selectedType);
+    if (listingTab === "buy") {
+      q = q.or("listing_purpose.eq.sale,listing_type.eq.sale");
+    } else if (listingTab === "commercial") {
+      q = q.eq("unit_type", "employee");
+    } else {
+      q = q.neq("listing_purpose", "sale");
+    }
     if (cleanKeywords.length > 2) {
       q = whereSubArea
         ? q.or(
@@ -124,14 +158,25 @@ async function fetchActiveHomeProperties(
   ];
 
   let lastMsg = "";
-  for (const a of attempts) {
-    let q = applyFilters(a.sel, a.whereSubArea);
-    if (a.avail) q = q.eq("availability_status", "available");
-    const { data, error } = await q.order("created_at", { ascending: false });
-    if (!error) {
-      return filterHomeLowTrustRows(data || []);
+  const tryAllAttempts = async (): Promise<Property[] | null> => {
+    for (const a of attempts) {
+      let q = applyFilters(a.sel, a.whereSubArea);
+      if (a.avail) q = q.eq("availability_status", "available");
+      const { data, error } = await q.order("created_at", { ascending: false });
+      if (!error) {
+        return filterHomeLowTrustRows(data || []);
+      }
+      lastMsg = error.message || String(error);
     }
-    lastMsg = error.message || String(error);
+    return null;
+  };
+
+  let rows = await tryAllAttempts();
+  if (rows) return rows;
+  if (isMissingExpiresAtColumnError({ message: lastMsg })) {
+    suppressClientListingExpiryFilterIfMissingColumn({ message: lastMsg });
+    rows = await tryAllAttempts();
+    if (rows) return rows;
   }
   console.error("Home properties fetch failed:", lastMsg);
   return [];
@@ -181,13 +226,13 @@ const TYPE_LABELS: Record<UnitType, string> = {
   employee: 'سكن موظفين',
 };
 
-const TYPE_COLORS: Record<UnitType, { bg: string; text: string; border: string }> = {
-  student: { bg: "rgba(0,211,141,0.08)", text: "#00a86b", border: "rgba(0,211,141,0.35)" },
-  family: { bg: "rgba(59,130,246,0.08)", text: "#2563eb", border: "rgba(59,130,246,0.3)" },
-  studio: { bg: "rgba(167,139,250,0.1)", text: "#9333ea", border: "rgba(167,139,250,0.35)" },
-  shared: { bg: "rgba(251,146,60,0.1)", text: "#ea580c", border: "rgba(251,146,60,0.35)" },
-  employee: { bg: "rgba(234,179,8,0.12)", text: "#ca8a04", border: "rgba(234,179,8,0.35)" },
-};
+/** عرض نوع الوحدة على الكارت — الستوديو يُذكر صراحةً بالعربي والإنجليزي. */
+function listingCardUnitTypeLabel(unitType: Property["unit_type"] | string | null | undefined): string {
+  const u = (unitType ?? "").trim() as UnitType
+  if (u === "studio") return "ستوديو (Studio)"
+  if (u && u in TYPE_LABELS) return TYPE_LABELS[u as UnitType]
+  return (unitType ?? "").trim() || "—"
+}
 
 // ─── Framer Motion Variants ───────────────────────────────────────────────────
 const heroVariants: Variants = {
@@ -256,6 +301,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
   const [leadSubmitted, setLeadSubmitted]   = useState(false);
   const [leadLoading, setLeadLoading]       = useState(false);
   const [activeFilter, setActiveFilter] = useState<UnitType | "all">("all");
+  const [listingTab, setListingTab] = useState<HomeListingTab>("rent");
   const [mobileChatFocus, setMobileChatFocus] = useState(false);
   const [chatOpenSignal, setChatOpenSignal] = useState(0);
   const [listLayoutMobile, setListLayoutMobile] = useState(false);
@@ -266,7 +312,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
     void loadProperties();
     // Only refetch when unit-type chip changes; search uses submitHeroToAi / loadProperties() directly.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally omit loadProperties/searchQuery
-  }, [activeFilter]);
+  }, [activeFilter, listingTab]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -306,7 +352,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
             ? activeFilter
             : parsed.unitType;
 
-      const rows = await fetchActiveHomeProperties(supabase, parsed, selectedType);
+      const rows = await fetchActiveHomeProperties(supabase, parsed, selectedType, listingTab);
       setProperties(rows);
     } catch (error: unknown) {
       console.error("Search Error:", error instanceof Error ? error.message : error);
@@ -364,8 +410,6 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
     setLeadForm({ name: "", phone: "" });
   };
 
-  const tc = (unitType: UnitType) => TYPE_COLORS[unitType] || TYPE_COLORS.family;
-
   const saveSearchAlert = async () => {
     if (!searchQuery.trim() && activeFilter === "all") {
       setSaveAlertTip("اكتب بحثاً أو اختر نوع وحدة أولاً");
@@ -418,7 +462,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
         @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap');
         *, *::before, *::after { box-sizing: border-box; }
         html { scroll-behavior: smooth; }
-        body { font-family: var(--font-cairo), 'Cairo', sans-serif; background: #f9fdfc; }
+        body { font-family: var(--font-cairo), 'Cairo', sans-serif; background: #f9fafb; }
 
         ::-webkit-scrollbar       { width: 5px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -475,7 +519,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
         dir="rtl"
         style={{
           minHeight: "100vh",
-          background: "#f9fdfc",
+          background: "#f9fafb",
           fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
           color: "#0f172a",
           overflowX: "hidden",
@@ -494,7 +538,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
         {/* Soft green gradient band: nav + hero + search sit above mint page bg */}
         <div
           style={{
-            background: "linear-gradient(180deg, rgba(0, 211, 141, 0.14) 0%, rgba(0, 211, 141, 0.07) 28%, rgba(249, 253, 252, 0.92) 72%, #f9fdfc 100%)",
+            background: "linear-gradient(180deg, rgba(248, 250, 252, 1) 0%, #f9fafb 55%, #f9fafb 100%)",
           }}
         >
         {/* ══════════════════ NAVIGATION ══════════════════ */}
@@ -535,7 +579,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
             }}
           >
             <span style={{ fontSize: 10 }}>●</span>
-            منصة الإيجار الأولى في مصر
+            منصة العقارات الأولى في مصر
           </motion.div>
 
           {/* H1 */}
@@ -571,6 +615,41 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
             aria-label="بحث ذكي عن عقارات"
             style={{ maxWidth: 780, margin: "0 auto" }}
           >
+            {/* Quick filters — إيجار / للبيع / تجاري */}
+            <div
+              role="tablist"
+              aria-label="نوع العرض"
+              className="mb-4 flex flex-wrap justify-center gap-2"
+            >
+              {(
+                [
+                  { id: "rent" as const, label: "إيجار" },
+                  { id: "buy" as const, label: "بيع" },
+                  { id: "commercial" as const, label: "تجاري" },
+                ] as const
+              ).map((tab) => {
+                const active = listingTab === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setListingTab(tab.id)}
+                    className={[
+                      "rounded-full border px-5 py-2 text-sm font-bold transition-colors",
+                      active
+                        ? "border-emerald-500 bg-white text-slate-900 shadow-sm shadow-slate-200/80"
+                        : "border-slate-200/90 bg-white/80 text-slate-600 hover:border-slate-300 hover:text-slate-800",
+                    ].join(" ")}
+                    style={{ fontFamily: "var(--font-cairo), 'Cairo', sans-serif" }}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Marketing text */}
             <motion.p
               initial={{ opacity: 0, y: 8 }}
@@ -644,14 +723,20 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
                     setActiveFilter("all");
                     setLoading(true);
                     try {
-                      const rows = await fetchActiveHomeProperties(supabase, {
-                        area: "",
-                        district: "",
-                        governorate: "",
-                        maxPrice: null,
-                        unitType: "",
-                        keywords: "",
-                      }, "");
+                      setListingTab("rent");
+                      const rows = await fetchActiveHomeProperties(
+                        supabase,
+                        {
+                          area: "",
+                          district: "",
+                          governorate: "",
+                          maxPrice: null,
+                          unitType: "",
+                          keywords: "",
+                        },
+                        "",
+                        "rent",
+                      );
                       setProperties(rows);
                     } finally {
                       setLoading(false);
@@ -891,7 +976,9 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
               }
             >
               {properties.flatMap((p, i) => {
-                const colors = tc(p.unit_type);
+                const agencyLogo = agencyLogoUrlFromJoin(p.agencies);
+                const posted = formatRelativeTimeAr(p.created_at);
+                const sale = effectiveListingKind(p) === "sale";
                 const card = (
                   <motion.article
                     key={p.id}
@@ -899,17 +986,13 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
                     whileHover={
                       listLayoutMobile
                         ? undefined
-                        : { scale: 1.03, transition: { duration: 0.25, ease: [0.22, 1, 0.36, 1] as any } }
+                        : { scale: 1.02, transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] as any } }
                     }
                     onClick={() => router.push(propertyPathFromRecord(p))}
                     aria-label={`عقار: ${p.title}`}
+                    className="overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm shadow-slate-200/40 transition-colors hover:border-emerald-300/80"
                     style={{
-                      background: "#ffffff",
-                      border: "1px solid #e5e7eb",
-                      borderRadius: 12,
-                      overflow: "hidden",
                       cursor: "pointer",
-                      transition: "border-color 0.2s",
                       ...(listLayoutMobile
                         ? {
                             flex: "0 0 min(86vw, 320px)",
@@ -920,164 +1003,76 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
                           }
                         : {}),
                     }}
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor = "rgba(0,211,141,0.45)";
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLElement).style.borderColor = "#e5e7eb";
-                    }}
                   >
-                    {/* Image */}
-                    <div style={{ position: "relative", height: listLayoutMobile ? 200 : 210, overflow: "hidden" }}>
+                    <div className="relative aspect-[4/3] w-full bg-slate-100">
                       {p.images?.[0] ? (
                         <Image
                           src={p.images[0]}
-                          alt={`صورة عقار: ${p.title} في ${listingLocationLine(p)}`}
+                          alt=""
                           fill
                           sizes="(max-width: 768px) 86vw, 33vw"
-                          style={{ objectFit: "cover" }}
+                          className="object-cover"
                           loading="lazy"
                           quality={72}
                           priority={false}
                         />
                       ) : (
                         <div
-                          aria-hidden="true"
-                          style={{
-                            height: "100%",
-                            background: "linear-gradient(135deg, rgba(0,211,141,0.06), rgba(0,211,141,0.12))",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            fontSize: 54,
-                          }}
+                          aria-hidden
+                          className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 text-5xl text-slate-300"
                         >
                           🏠
                         </div>
                       )}
-                      {/* Bottom fade */}
                       <div
-                        aria-hidden="true"
-                        style={{
-                          position: "absolute",
-                          inset: 0,
-                          background: "linear-gradient(to top, rgba(15,23,42,0.45) 0%, transparent 55%)",
-                        }}
+                        aria-hidden
+                        className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-900/50 via-transparent to-transparent"
                       />
-                      {/* Type badge */}
-                      <span
-                        style={{
-                          position: "absolute",
-                          top: 14,
-                          right: 14,
-                          display: "flex",
-                          flexWrap: "wrap",
-                          gap: 6,
-                          justifyContent: "flex-end",
-                          maxWidth: "calc(100% - 28px)",
-                        }}
-                      >
-                        <span
-                          style={{
-                            background: colors.bg,
-                            color: colors.text,
-                            border: `1px solid ${colors.border}`,
-                            borderRadius: 99,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            padding: "4px 13px",
-                          }}
-                        >
-                          {TYPE_LABELS[p.unit_type]}
-                        </span>
-                        <span
-                          style={{
-                            background: "rgba(255,255,255,0.92)",
-                            color: effectiveListingKind(p) === "sale" ? "#ca8a04" : "#059669",
-                            border: "1px solid #e5e7eb",
-                            borderRadius: 99,
-                            fontSize: 11,
-                            fontWeight: 700,
-                            padding: "4px 13px",
-                          }}
-                        >
-                          {effectiveListingKind(p) === "sale" ? "🏷️ بيع" : "🔑 إيجار"}
-                        </span>
+                      <span className="absolute end-3 top-3 rounded-full border border-white/30 bg-white/95 px-3 py-1 text-[11px] font-bold text-slate-800 shadow-sm">
+                        {sale ? "بيع" : "إيجار"}
                       </span>
-                    </div>
-
-                    {/* Body */}
-                    <div style={{ padding: "1.25rem 1.4rem 1.4rem" }}>
-                      <h2
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: "#0f172a",
-                          marginBottom: "0.45rem",
-                          lineHeight: 1.45,
-                        }}
-                      >
-                        {p.title}
-                      </h2>
-                      <p
-                        style={{
-                          fontSize: 12,
-                          color: "#64748b",
-                          marginBottom: "1.1rem",
-                          display: "flex",
-                          alignItems: "center",
-                          gap: "0.3rem",
-                        }}
-                      >
-                        <svg width="12" height="12" viewBox="0 0 24 24" aria-hidden="true">
-                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="var(--brand-500)"/>
-                          <circle cx="12" cy="9" r="2.5" fill="#ffffff"/>
-                        </svg>
-                        {listingLocationLine(p)}
-                        {listingDetailLine(p) ? ` — ${listingDetailLine(p)}` : ""}
-                      </p>
-
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          borderTop: "1px solid #f1f5f9",
-                          paddingTop: "1rem",
-                        }}
-                      >
-                        <div>
-                          <span style={{ fontSize: 22, fontWeight: 900, color: "var(--brand-500)" }}>
-                            {p.price.toLocaleString()}
-                          </span>
-                          <span style={{ fontSize: 12, color: "#64748b", marginRight: 4 }}>
-                            {effectiveListingKind(p) === "sale" ? "ج.م" : "ج.م/شهر"}
-                          </span>
-                        </div>
-                        <button
-                          onClick={(e) => { e.stopPropagation(); router.push(propertyPathFromRecord(p)); }}
-                          style={{
-                            background: "#00d38d",
-                            color: "#fff",
-                            border: "none",
-                            borderRadius: 8,
-                            fontSize: 12,
-                            fontWeight: 700,
-                            padding: "8px 16px",
-                            cursor: "pointer",
-                            fontFamily: "var(--font-cairo), 'Cairo', sans-serif",
-                            transition: "opacity 0.2s, background 0.2s",
-                          }}
-                          onMouseEnter={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "#00bf7f";
-                          }}
-                          onMouseLeave={(e) => {
-                            (e.currentTarget as HTMLButtonElement).style.background = "#00d38d";
-                          }}
+                      {agencyLogo ? (
+                        <div
+                          title="إعلان وكالة"
+                          className="absolute bottom-2 start-2 size-9 overflow-hidden rounded-full border-2 border-white bg-white shadow-md ring-1 ring-slate-200/80"
                         >
-                          تفاصيل ←
-                        </button>
+                          <Image src={agencyLogo} alt="" width={36} height={36} className="object-cover" sizes="36px" />
+                        </div>
+                      ) : null}
+                    </div>
+                    <div className="px-4 pb-4 pt-3" style={{ fontFamily: "var(--font-cairo), 'Cairo', sans-serif" }}>
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0">
+                        <span className="text-xl font-bold tracking-tight text-slate-900">
+                          {p.price.toLocaleString("ar-EG")}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-500">
+                          {sale ? "ج.م" : "ج.م / شهر"}
+                        </span>
                       </div>
+                      <p className="mt-1.5 text-[12px] font-semibold leading-snug text-slate-500">
+                        {listingCardUnitTypeLabel(p.unit_type)}
+                      </p>
+                      <p className="mt-1 line-clamp-2 text-sm font-medium leading-snug text-slate-600">
+                        {listingLocationLine(p)}
+                        {listingDetailLine(p) ? ` · ${listingDetailLine(p)}` : ""}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-xs font-semibold text-slate-500">
+                        <span className="inline-flex items-center gap-1.5">
+                          <Bed className="size-4 shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
+                          {cardBedLabel(p)}
+                        </span>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Bath className="size-4 shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
+                          {cardBathLabel(p)}
+                        </span>
+                        <span className="inline-flex min-w-0 items-center gap-1.5">
+                          <Ruler className="size-4 shrink-0 text-slate-400" strokeWidth={2} aria-hidden />
+                          <span className="truncate">{(p.area ?? "").trim() || "—"}</span>
+                        </span>
+                      </div>
+                      {posted ? (
+                        <p className="mt-2.5 text-[11px] font-medium text-slate-400">{posted}</p>
+                      ) : null}
                     </div>
                   </motion.article>
                 );
@@ -1424,7 +1419,7 @@ export default function PublicPageClient({ agencyPartners = [] }: { agencyPartne
             display: "flex",
             justifyContent: "space-around",
             padding: "0.65rem 0 calc(0.85rem + env(safe-area-inset-bottom))",
-            zIndex: 150,
+            zIndex: Z_INDEX_MOBILE_BOTTOM_NAV,
           }}
         >
           {(

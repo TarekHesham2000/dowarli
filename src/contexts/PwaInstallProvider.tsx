@@ -26,6 +26,11 @@ export function usePwaInstall(): PwaInstallContextValue {
   return ctx;
 }
 
+/** Same as {@link usePwaInstall} but never throws (e.g. Footer in partial/error recovery trees). */
+export function usePwaInstallOptional(): PwaInstallContextValue | null {
+  return useContext(PwaInstallContext);
+}
+
 export function PwaInstallProvider({ children }: Readonly<{ children: ReactNode }>) {
   const deferredRef = useRef<BeforeInstallPromptEvent | null>(null);
   const [isInstallable, setIsInstallable] = useState(false);

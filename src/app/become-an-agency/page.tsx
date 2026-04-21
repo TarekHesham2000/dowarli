@@ -107,7 +107,6 @@ export default function BecomeAgencyPage() {
           bio: bio.trim() || null,
           logo_url: null,
           owner_id: user.id,
-          subscription_status: "free",
           is_verified: false,
         })
         .select("id")

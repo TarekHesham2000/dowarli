@@ -4,5 +4,13 @@ import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
 export const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  getSupabaseGlobalClientOptions(),
+  {
+    ...getSupabaseGlobalClientOptions(),
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      flowType: "pkce",
+    },
+  },
 );

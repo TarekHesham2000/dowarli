@@ -209,7 +209,28 @@ type AgencyRow = {
   owner_id: string;
   is_verified?: boolean | null;
   is_active?: boolean | null;
+  subscription_status?: string | null;
+  trial_expires_at?: string | null;
+  subscription_end_date?: string | null;
+  subscription_expires_at?: string | null;
+  plan_type?: string | null;
 };
+
+function effectiveAgencySubscriptionExpiresIso(a: AgencyRow): string | null {
+  const pick =
+    (a.subscription_expires_at && String(a.subscription_expires_at).trim()) ||
+    (a.trial_expires_at && String(a.trial_expires_at).trim()) ||
+    (a.subscription_end_date && String(a.subscription_end_date).trim()) ||
+    "";
+  return pick || null;
+}
+
+function formatAgencySubscriptionEndDisplay(iso: string | null): string {
+  if (!iso) return "—";
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return iso;
+  return t.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" });
+}
 
 type Stats = {
   totalUsers: number;
@@ -375,6 +396,7 @@ export default function AdminGodModeDashboard() {
   const [agencyDrafts, setAgencyDrafts] = useState<
     Record<string, { name: string; slug: string; is_verified: boolean; is_active: boolean }>
   >({});
+  const [agencyExtendDays, setAgencyExtendDays] = useState<Record<string, string>>({});
   const [savingAgencyId, setSavingAgencyId] = useState<string | null>(null);
   const [syncingAgencyId, setSyncingAgencyId] = useState<string | null>(null);
 
@@ -434,7 +456,7 @@ export default function AdminGodModeDashboard() {
         supabase
           .from("transactions")
           .select(
-            "id, amount, broker_id, created_at, package_name, p   oints_requested, sender_phone, screenshot_url, profiles(name, phone)",
+            "id, amount, broker_id, created_at, package_name, points_requested, sender_phone, screenshot_url, profiles(name, phone)",
           )
           .eq("status", "verified")
           .order("created_at", { ascending: false })
@@ -450,7 +472,11 @@ export default function AdminGodModeDashboard() {
           .from("profiles")
           .select("id, name, phone, points, is_active, role, created_at")
           .neq("id", "00000000-0000-0000-0000-000000000000"),
-        supabase.from("agencies").select("id, name, slug, owner_id, is_verified, is_active"),
+        supabase
+          .from("agencies")
+          .select(
+            "id, name, slug, owner_id, is_verified, is_active, subscription_status, trial_expires_at, subscription_end_date, subscription_expires_at, plan_type",
+          ),
         supabase
           .from("leads")
           .select("id, client_name, client_phone, created_at, property_id")
@@ -1194,6 +1220,35 @@ export default function AdminGodModeDashboard() {
         return;
       }
       showToast("تم تحديث الموقع العقاري", "success");
+      await loadAll();
+      safeRouterRefresh(router);
+    } finally {
+      setSavingAgencyId(null);
+    }
+  };
+
+  const extendAgencyProDays = async (agencyId: string) => {
+    if (savingAgencyId) return;
+    const raw = (agencyExtendDays[agencyId] ?? "30").trim();
+    const days = Number.parseInt(raw, 10);
+    if (!Number.isFinite(days) || days <= 0 || days > 3650) {
+      showToast("أدخل عدد أيام تمديد صالحاً (1–3650)", "error");
+      return;
+    }
+    setSavingAgencyId(agencyId);
+    try {
+      const res = await fetch("/api/admin/agency", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ agency_id: agencyId, extend_pro_days: days }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
+      if (!res.ok) {
+        showToast(j.message || j.error || "تعذر تمديد الاشتراك", "error");
+        return;
+      }
+      showToast(`تم تمديد Pro بـ ${days} يوماً`, "success");
       await loadAll();
       safeRouterRefresh(router);
     } finally {
@@ -2286,14 +2341,17 @@ export default function AdminGodModeDashboard() {
                   {agencies.length === 0 ? (
                     <p className="text-sm text-slate-500">لا توجد وكالات مسجّلة.</p>
                   ) : (
-                    <table className="w-full min-w-[1040px] text-sm text-slate-200">
+                    <table className="w-full min-w-[1280px] text-sm text-slate-200">
                       <thead>
                         <tr className="border-b border-slate-800 text-right text-xs font-black text-slate-500">
                           <th className="px-2 py-2">الاسم الرسمي</th>
                           <th className="px-2 py-2">slug</th>
+                          <th className="px-2 py-2">الحالة</th>
+                          <th className="px-2 py-2">ينتهي Pro (UTC)</th>
                           <th className="px-2 py-2">موثّق</th>
                           <th className="px-2 py-2">ظهور</th>
                           <th className="px-2 py-2">المالك</th>
+                          <th className="px-2 py-2">تمديد +أيام</th>
                           <th className="px-2 py-2">الدليل</th>
                           <th className="px-2 py-2">حفظ</th>
                         </tr>
@@ -2334,6 +2392,15 @@ export default function AdminGodModeDashboard() {
                                   className="w-full min-w-[120px] rounded border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs"
                                 />
                               </td>
+                              <td className="px-2 py-2 whitespace-nowrap text-xs text-slate-400">
+                                {a.subscription_status ?? "—"}
+                                {a.plan_type ? (
+                                  <span className="text-slate-600"> · {a.plan_type}</span>
+                                ) : null}
+                              </td>
+                              <td className="px-2 py-2 text-xs text-slate-300 whitespace-nowrap" title="subscription_expires_at ثم التجربة ثم subscription_end_date">
+                                {formatAgencySubscriptionEndDisplay(effectiveAgencySubscriptionExpiresIso(a))}
+                              </td>
                               <td className="px-2 py-2 text-center">
                                 <input
                                   type="checkbox"
@@ -2363,6 +2430,29 @@ export default function AdminGodModeDashboard() {
                               </td>
                               <td className="px-2 py-2 text-xs text-slate-400">
                                 {owner?.name ?? a.owner_id.slice(0, 8)}
+                              </td>
+                              <td className="px-2 py-2">
+                                <div className="flex flex-wrap items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min={1}
+                                    max={3650}
+                                    value={agencyExtendDays[a.id] ?? "30"}
+                                    onChange={(e) =>
+                                      setAgencyExtendDays((prev) => ({ ...prev, [a.id]: e.target.value }))
+                                    }
+                                    className="w-16 rounded border border-slate-700 bg-slate-950 px-1 py-1 text-center text-xs font-bold text-slate-200"
+                                    aria-label="عدد أيام التمديد"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={savingAgencyId === a.id}
+                                    onClick={() => void extendAgencyProDays(a.id)}
+                                    className="whitespace-nowrap rounded-lg border border-violet-600/50 bg-violet-950/50 px-2 py-1 text-[11px] font-black text-violet-200 hover:bg-violet-900/40 disabled:opacity-50"
+                                  >
+                                    تمديد Pro
+                                  </button>
+                                </div>
                               </td>
                               <td className="px-2 py-2">
                                 <button

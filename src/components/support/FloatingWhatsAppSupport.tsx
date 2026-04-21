@@ -1,8 +1,11 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
+  FLOATING_FAB_MOBILE_MAX_WIDTH_PX,
   FLOATING_WHATSAPP_FAB_BOTTOM,
+  FLOATING_WHATSAPP_FAB_BOTTOM_MOBILE,
   Z_INDEX_FLOATING_WHATSAPP,
 } from "@/lib/floatingFabLayout";
 
@@ -19,6 +22,19 @@ function shouldHideOnRoute(pathname: string | null): boolean {
 
 export default function FloatingWhatsAppSupport() {
   const pathname = usePathname();
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(
+      `(max-width: ${FLOATING_FAB_MOBILE_MAX_WIDTH_PX - 1}px)`,
+    );
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
   if (shouldHideOnRoute(pathname)) return null;
 
   return (
@@ -28,7 +44,9 @@ export default function FloatingWhatsAppSupport() {
       rel="noopener noreferrer"
       className="chat-invite-pulse fixed flex h-14 w-14 items-center justify-center rounded-full shadow-md md:h-[3.25rem] md:w-[3.25rem]"
       style={{
-        bottom: FLOATING_WHATSAPP_FAB_BOTTOM,
+        bottom: isMobile
+          ? FLOATING_WHATSAPP_FAB_BOTTOM_MOBILE
+          : FLOATING_WHATSAPP_FAB_BOTTOM,
         left: "max(1rem, env(safe-area-inset-left, 0px))",
         right: "auto",
         zIndex: Z_INDEX_FLOATING_WHATSAPP,

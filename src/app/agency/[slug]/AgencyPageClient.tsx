@@ -18,7 +18,9 @@ import {
 import Footer from "@/components/shared/Footer";
 import ChatBot from "@/components/shared/ChatBot";
 import {
+  FLOATING_FAB_MOBILE_MAX_WIDTH_PX,
   FLOATING_WHATSAPP_FAB_BOTTOM,
+  FLOATING_WHATSAPP_FAB_BOTTOM_MOBILE,
   Z_INDEX_FLOATING_WHATSAPP,
 } from "@/lib/floatingFabLayout";
 import { agencyLandingThemeStyle } from "@/lib/agencyTheme";
@@ -137,6 +139,7 @@ export default function AgencyPageClient({
   const [typeFilter, setTypeFilter] = useState<"all" | UnitType>("all");
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">("idle");
   const [shareToastVisible, setShareToastVisible] = useState(false);
+  const [fabMobileLayout, setFabMobileLayout] = useState(false);
   const shareResetRef = useRef<number | null>(null);
   const shareToastRef = useRef<number | null>(null);
 
@@ -145,6 +148,17 @@ export default function AgencyPageClient({
       if (shareResetRef.current) window.clearTimeout(shareResetRef.current);
       if (shareToastRef.current) window.clearTimeout(shareToastRef.current);
     };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia(
+      `(max-width: ${FLOATING_FAB_MOBILE_MAX_WIDTH_PX - 1}px)`,
+    );
+    const sync = () => setFabMobileLayout(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
   }, []);
 
   const phone = useMemo(() => normalizePhone(contactPhone), [contactPhone]);
@@ -906,7 +920,9 @@ export default function AgencyPageClient({
             className="fixed flex h-14 w-14 items-center justify-center rounded-full shadow-2xl transition hover:brightness-110"
             style={{
               right: "max(20px, env(safe-area-inset-right, 0px))",
-              bottom: FLOATING_WHATSAPP_FAB_BOTTOM,
+              bottom: fabMobileLayout
+                ? FLOATING_WHATSAPP_FAB_BOTTOM_MOBILE
+                : FLOATING_WHATSAPP_FAB_BOTTOM,
               zIndex: Z_INDEX_FLOATING_WHATSAPP,
               background: "var(--agency-primary)",
               boxShadow: "var(--agency-primary-fab-ring)",

@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
-import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
+import { orPublicListingNotExpired, withListingExpiryQuery } from "@/lib/publicListingExpiry";
 import AgenciesDirectoryClient, { type AgencyListRow } from "./AgenciesDirectoryClient";
 
 export const metadata: Metadata = {
@@ -38,12 +38,11 @@ export default async function AgenciesDirectoryPage() {
   for (let i = 0; i < ids.length; i += AGENCY_ID_CHUNK) {
     const slice = ids.slice(i, i + AGENCY_ID_CHUNK);
     if (slice.length === 0) continue;
-    const { data: props, error: pErr } = await supabase
-      .from("properties")
-      .select("agency_id")
-      .in("agency_id", slice)
-      .eq("status", "active")
-      .or(orPublicListingNotExpired());
+    const { data: props, error: pErr } = await withListingExpiryQuery((includeExpiry) => {
+      let pq = supabase.from("properties").select("agency_id").in("agency_id", slice).eq("status", "active");
+      if (includeExpiry) pq = pq.or(orPublicListingNotExpired());
+      return pq;
+    });
     if (pErr) {
       console.error("Agencies directory listing counts:", pErr);
       continue;

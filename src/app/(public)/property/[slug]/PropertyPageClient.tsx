@@ -1,12 +1,31 @@
 'use client'
 import { Suspense, useEffect, useState, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
-import { orPublicListingNotExpired } from '@/lib/publicListingExpiry'
+import {
+  agencyLogoUrlFromJoin,
+  agencyNameFromJoin,
+  agencySlugFromJoin,
+  type AgencyJoinRow,
+} from '@/lib/agencyListingBranding'
+import {
+  isMissingExpiresAtColumnError,
+  maybeClientPublicListingExpiryOr,
+  suppressClientListingExpiryFilterIfMissingColumn,
+} from '@/lib/publicListingExpiry'
+import { EGYPTIAN_MOBILE_HINT_AR, toLocalEgyptianMobile } from '@/lib/egyptianPhone'
+import {
+  AMENITY_DEFINITIONS,
+  AMENITY_KEYS,
+  hasActiveAmenity,
+  parseStoredAmenities,
+} from '@/lib/propertyAmenities'
 import { useParams, usePathname, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { motion, AnimatePresence } from 'framer-motion'
 import AdBanner from '@/components/ads/AdBanner'
 import OwnerBrokerAuth from '@/components/owner/OwnerBrokerAuth'
+import { Phone } from 'lucide-react'
 
 // ──────────────────────────────────────────────────────────────
 // Types
@@ -38,6 +57,12 @@ type Property = {
   listing_type?: string | null
   listing_purpose?: string | null
   slug?: string | null
+  agency_id?: string | null
+  agencies?: AgencyJoinRow | AgencyJoinRow[] | null
+  /** رقم تواصل خاص بالإعلان (وكالات) — إن وُجد يُعرض بدل هاتف الملف الشخصي */
+  contact_phone?: string | null
+  contact_name?: string | null
+  amenities?: Record<string, unknown> | null
 }
 
 function propertyLocationLine(p: Pick<Property, 'governorate' | 'district' | 'area'>): string {
@@ -81,6 +106,18 @@ function getProfile(profiles: Property['profiles']): { name: string; phone: stri
   if (!profiles) return { name: '', phone: '' }
   if (Array.isArray(profiles)) return profiles[0] ?? { name: '', phone: '' }
   return profiles
+}
+
+/** رقم الاتصال/واتساب المعروض للزائر: `contact_phone` على العقار ثم هاتف المالك. */
+function listingContactLocalPhone(p: Property): string {
+  const listed = (p.contact_phone ?? '').trim()
+  if (listed) {
+    const normalized = toLocalEgyptianMobile(listed)
+    if (normalized) return normalized
+    return listed.replace(/\s|-/g, '')
+  }
+  const prof = getProfile(p.profiles)
+  return toLocalEgyptianMobile(prof.phone ?? '') ?? (prof.phone ?? '').replace(/\s|-/g, '').trim()
 }
 
 function effectiveListingKind(p: Pick<Property, 'listing_type' | 'listing_purpose'>): 'rent' | 'sale' {
@@ -194,7 +231,9 @@ export default function PropertyPageClient() {
           video_url, rental_unit, beds_count,
           listing_type, listing_purpose,
           availability_status, report_count, last_verified_at, owner_id,
-          slug,
+          slug, agency_id,
+          contact_phone, contact_name, amenities,
+          agencies(logo_url, name, slug),
           profiles(name, phone)
         `)
 
@@ -204,9 +243,17 @@ export default function PropertyPageClient() {
         q = q.eq('slug', segment)
       }
 
-      q = q.or(orPublicListingNotExpired())
+      const applyExpiryOr = () => {
+        const exp = maybeClientPublicListingExpiryOr()
+        return exp ? q.or(exp) : q
+      }
 
-      const { data } = await q.maybeSingle()
+      let res = await applyExpiryOr().maybeSingle()
+      if (res.error && isMissingExpiresAtColumnError(res.error)) {
+        suppressClientListingExpiryFilterIfMissingColumn(res.error)
+        res = await q.maybeSingle()
+      }
+      const { data } = res
       const row = data as unknown as Property | null
       if (row?.slug && !isNumeric && decodePathSegment(slugParam) !== row.slug) {
         router.replace(`/property/${row.slug}`)
@@ -267,12 +314,9 @@ export default function PropertyPageClient() {
     if (!property) return
     setPhoneError('')
 
-    // 1. Validation رقم الهاتف المصري
-    const EGYPTIAN_PHONE_REGEX = /^(010|011|012|015)\d{8}$/
-    const cleanedPhone = leadForm.phone.replace(/\s|-/g, '')
-
-    if (!EGYPTIAN_PHONE_REGEX.test(cleanedPhone)) {
-      setPhoneError('عفواً، رقم الهاتف غير صحيح. يجب أن يبدأ بـ 010، 011، 012 أو 015 ويتكون من 11 رقم.')
+    const cleanedPhone = toLocalEgyptianMobile(leadForm.phone)
+    if (!cleanedPhone) {
+      setPhoneError(`عفواً، رقم هاتفك غير صحيح. ${EGYPTIAN_MOBILE_HINT_AR}`)
       return
     }
 
@@ -305,8 +349,7 @@ export default function PropertyPageClient() {
 
     // 4. فتح واتساب بالصيغة الدولية
     setTimeout(() => {
-      const prof    = getProfile(property.profiles)
-      const waPhone = toInternationalEG(prof.phone ?? '')
+      const waPhone = toInternationalEG(listingContactLocalPhone(property))
       const message = `أنا مهتم بالعقار "${property.title}" في ${propertyLocationLine(property)}.\nالاسم: ${leadForm.name}\nرقم الهاتف: ${cleanedPhone}`
       window.open('https://wa.me/' + waPhone + '?text=' + encodeURIComponent(message), '_blank')
     }, 500)
@@ -479,6 +522,9 @@ export default function PropertyPageClient() {
   const meta      = TYPE_META[property.unit_type] ?? TYPE_META.family
   const hasImg    = property.images?.length > 0
   const profile   = getProfile(property.profiles)
+  const agencyLogo = agencyLogoUrlFromJoin(property.agencies)
+  const agencyName = agencyNameFromJoin(property.agencies)
+  const agencySlug = agencySlugFromJoin(property.agencies)
   const embedUrl  = getEmbedUrl(property.video_url)
   const isTikTok  = isTikTokUrl(property.video_url)
 
@@ -489,6 +535,9 @@ export default function PropertyPageClient() {
   const availability = property.availability_status ?? "available"
   const showAvailabilityBanner =
     property.status === "active" && availability !== "available"
+
+  const isCompanyListing = Boolean(property.agency_id)
+  const parsedAmenities = parseStoredAmenities(property.amenities)
 
   // بناء قائمة Details ديناميكياً — لماذا؟
   // → بدل ما نكتب if/else في الـ JSX، نبني الـ array مرة وتتعمل map نظيف
@@ -557,7 +606,7 @@ export default function PropertyPageClient() {
           .hero-img    { height: 260px !important; }
           /* Extra space so fixed AI + WhatsApp FABs don't cover the lead / WhatsApp CTA */
           .property-page-scroll {
-            padding-bottom: calc(11rem + env(safe-area-inset-bottom, 0px)) !important;
+            padding-bottom: calc(12rem + env(safe-area-inset-bottom, 0px)) !important;
           }
         }
       `}</style>
@@ -660,6 +709,34 @@ export default function PropertyPageClient() {
                         ▶ فيديو متاح
                       </div>
                     )}
+                    {property.agency_id && agencyLogo ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          bottom: 14,
+                          insetInlineStart: 14,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
+                          maxWidth: 'min(72%, 280px)',
+                          padding: '6px 10px 6px 6px',
+                          borderRadius: 12,
+                          background: 'rgba(255,255,255,0.94)',
+                          border: '1px solid rgba(15,23,42,0.08)',
+                          boxShadow: '0 4px 18px rgba(15,23,42,0.12)',
+                        }}
+                      >
+                        <span style={{ position: 'relative', display: 'block', width: 36, height: 36, flexShrink: 0, borderRadius: 8, overflow: 'hidden' }}>
+                          <Image src={agencyLogo} alt="" fill sizes="36px" style={{ objectFit: 'cover' }} />
+                        </span>
+                        <div style={{ minWidth: 0, textAlign: 'right' }}>
+                          <p style={{ margin: 0, fontSize: 10, fontWeight: 800, color: '#0f766e', letterSpacing: 0.2 }}>إعلان وكالة</p>
+                          {agencyName ? (
+                            <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: '#0f172a', lineHeight: 1.25, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{agencyName}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : null}
                   </>
                 ) : (
                   <div aria-hidden style={{ height: '100%', background: 'linear-gradient(135deg, rgba(27,120,60,.08), rgba(5,150,105,.18))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 90 }}>🏠</div>
@@ -746,6 +823,161 @@ export default function PropertyPageClient() {
                 </div>
               </div>
 
+              {isCompanyListing ? (
+                <div className="fade-up-4" style={{ display: 'flex', flexDirection: 'column', gap: 14, marginBottom: '1.5rem' }}>
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 16,
+                      padding: '1.25rem 1.5rem',
+                      boxShadow: '0 2px 12px rgba(15,23,42,0.04)',
+                    }}
+                  >
+                    <h2
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        margin: '0 0 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          background: 'linear-gradient(135deg, rgba(0,211,141,0.15), rgba(251,191,36,0.12))',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 14,
+                        }}
+                      >
+                        ⭐
+                      </span>
+                      مواصفات مميزة
+                    </h2>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {[
+                        { icon: meta.icon, label: 'نوع الوحدة', value: TYPE_LABELS[property.unit_type] },
+                        {
+                          icon: isSaleListing ? '🏷️' : '🔑',
+                          label: isSaleListing ? 'نوع العرض' : 'نوع العرض',
+                          value: isSaleListing ? 'بيع' : 'إيجار',
+                        },
+                        {
+                          icon: '📐',
+                          label: 'المساحة / المنطقة',
+                          value: (property.area ?? '').trim() || '—',
+                        },
+                        {
+                          icon: '📍',
+                          label: 'الموقع',
+                          value: propertyLocationLine(property) || '—',
+                        },
+                      ].map((chip) => (
+                        <div
+                          key={chip.label}
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            padding: '10px 14px',
+                            borderRadius: 12,
+                            border: '1px solid #e5e7eb',
+                            background: '#f8fafc',
+                            minWidth: 0,
+                          }}
+                        >
+                          <span style={{ fontSize: 16 }} aria-hidden>
+                            {chip.icon}
+                          </span>
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ fontSize: 10, fontWeight: 700, color: '#64748b', margin: '0 0 2px' }}>{chip.label}</p>
+                            <p style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', margin: 0, lineHeight: 1.35 }}>
+                              {chip.value}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      background: '#ffffff',
+                      border: '1px solid #e5e7eb',
+                      borderRadius: 16,
+                      padding: '1.25rem 1.5rem',
+                      boxShadow: '0 2px 12px rgba(15,23,42,0.04)',
+                    }}
+                  >
+                    <h2
+                      style={{
+                        fontSize: 15,
+                        fontWeight: 800,
+                        color: '#0f172a',
+                        margin: '0 0 12px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 8,
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: 8,
+                          background: `${meta.accent}18`,
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: 14,
+                        }}
+                      >
+                        🛎️
+                      </span>
+                      وسائل الراحة
+                    </h2>
+                    {hasActiveAmenity(parsedAmenities) ? (
+                      <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {AMENITY_KEYS.filter((k) => parsedAmenities[k]).map((k) => {
+                          const d = AMENITY_DEFINITIONS[k]
+                          return (
+                            <li
+                              key={k}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 12,
+                                padding: '12px 14px',
+                                borderRadius: 12,
+                                border: '1px solid rgba(0,211,141,0.25)',
+                                background: 'rgba(0,211,141,0.06)',
+                              }}
+                            >
+                              <span style={{ fontSize: 22 }} aria-hidden>
+                                {d.icon}
+                              </span>
+                              <span style={{ fontSize: 14, fontWeight: 800, color: '#0f172a' }}>{d.labelAr}</span>
+                              <span style={{ marginRight: 'auto', fontSize: 12, fontWeight: 800, color: '#059669' }}>✓ متوفر</span>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : (
+                      <p style={{ fontSize: 13, color: '#64748b', margin: 0, lineHeight: 1.75 }}>
+                        لم تُسجَّل وسائل راحة إضافية لهذا الإعلان — يمكن للوكالة تحديثها من لوحة الرفع.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+
               {/* Description */}
               {property.description && (
                 <div className="fade-up-4" style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 16, padding: '1.5rem' }}>
@@ -800,6 +1032,36 @@ export default function PropertyPageClient() {
                   </p>
                 </div>
               </div>
+
+              {property.agency_id && (agencyLogo || agencyName) ? (
+                <div className="fade-up-3" style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '1.1rem 1.25rem', marginBottom: '1rem' }}>
+                  <p style={{ fontSize: 11, fontWeight: 800, color: '#64748b', margin: '0 0 8px' }}>الوكالة</p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {agencyLogo ? (
+                      <span style={{ position: 'relative', display: 'block', width: 40, height: 40, borderRadius: 10, overflow: 'hidden', flexShrink: 0, border: '1px solid #e5e7eb' }}>
+                        <Image src={agencyLogo} alt="" fill sizes="40px" style={{ objectFit: 'cover' }} />
+                      </span>
+                    ) : null}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <p style={{ margin: 0, fontSize: 14, fontWeight: 800, color: '#0f172a', lineHeight: 1.3 }}>{agencyName || 'موقع عقاري'}</p>
+                      <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+                        المعلن: <span style={{ fontWeight: 700, color: '#334155' }}>{profile.name}</span>
+                      </p>
+                      {property.contact_name?.trim() ? (
+                        <p style={{ margin: '6px 0 0', fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+                          مسؤول التواصل:{' '}
+                          <span style={{ fontWeight: 700, color: '#334155' }}>{property.contact_name.trim()}</span>
+                        </p>
+                      ) : null}
+                      {agencySlug ? (
+                        <Link href={`/agency/${encodeURIComponent(agencySlug)}`} style={{ marginTop: 8, display: 'inline-block', fontSize: 12, fontWeight: 800, color: '#00d38d', textDecoration: 'none' }}>
+                          صفحة الوكالة ←
+                        </Link>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {/* Contact card */}
               <div className="fade-up-3" style={{ background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '1.6rem' }}>
@@ -979,6 +1241,44 @@ export default function PropertyPageClient() {
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        {(() => {
+          if (!property || property.status !== "active") return null;
+          if ((property.availability_status ?? "available") !== "available") return null;
+          const raw = listingContactLocalPhone(property);
+          const digits = raw.replace(/\D/g, "");
+          if (digits.length < 10) return null;
+          const wa = toInternationalEG(raw);
+          const waMsg = encodeURIComponent(
+            `أنا مهتم بالعقار "${property.title}" في ${propertyLocationLine(property)}.`,
+          );
+          return (
+            <div
+              className="fixed inset-x-0 bottom-0 z-[185] flex gap-2 border-t border-slate-200/90 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_28px_rgba(15,23,42,0.1)] backdrop-blur-md md:hidden"
+              style={{ fontFamily: "var(--font-cairo), 'Cairo', sans-serif" }}
+            >
+              <a
+                href={`tel:${raw}`}
+                className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white py-3.5 text-sm font-black text-slate-800 no-underline active:bg-slate-50"
+              >
+                <Phone className="size-5 shrink-0" strokeWidth={2.25} aria-hidden />
+                اتصال
+              </a>
+              <a
+                href={`https://wa.me/${wa}?text=${waMsg}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex flex-[1.12] items-center justify-center gap-2 rounded-xl bg-[#25D366] py-3.5 text-sm font-black text-white no-underline shadow-sm active:brightness-95"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z" />
+                  <path d="M11.999 2C6.477 2 2 6.478 2 12.004a9.958 9.958 0 001.362 5.042L2 22l5.09-1.34A9.938 9.938 0 0012 22c5.523 0 10-4.478 10-10.004C22 6.478 17.523 2 12 2z" />
+                </svg>
+                واتساب
+              </a>
+            </div>
+          );
+        })()}
 
         <div className="px-4 pb-4 sm:px-6" style={{ maxWidth: 1200, margin: '0 auto', width: '100%' }}>
           <AdBanner slotId="dowarli-property-detail" layout="detail" />

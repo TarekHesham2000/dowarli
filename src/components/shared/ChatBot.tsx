@@ -9,7 +9,15 @@ import {
   isAgencyChatPaywalled,
   type AgencySubscriptionStatus,
 } from '@/lib/agencySubscription'
-import { FLOATING_CHAT_FAB_BOTTOM, FLOATING_CHAT_PANEL_SM_BOTTOM } from '@/lib/floatingFabLayout'
+import {
+  FLOATING_CHAT_FAB_BOTTOM,
+  FLOATING_CHAT_FAB_BOTTOM_MOBILE,
+  FLOATING_CHAT_PANEL_SM_BOTTOM,
+  FLOATING_FAB_MOBILE_MAX_WIDTH_PX,
+  Z_INDEX_CHAT_BACKDROP_MOBILE,
+  Z_INDEX_CHAT_PANEL,
+  Z_INDEX_FLOATING_CHAT,
+} from '@/lib/floatingFabLayout'
 
 type UnitType = 'student' | 'family' | 'studio' | 'shared' | 'employee'
 
@@ -40,6 +48,7 @@ type PropertyResult = {
   slug?: string | null
   last_verified_at?: string
   report_count?: number
+  agency_logo_url?: string | null
 }
 
 type BotResponse = {
@@ -92,6 +101,14 @@ const TYPE_LABELS: Record<UnitType, string> = {
 const MAX_SEND_HISTORY = 28
 const uid = () => Math.random().toString(36).slice(2, 9)
 
+/** Session flag: delayed welcome + bubble run at most once per browser tab session. */
+const PLATFORM_SESSION_WELCOME_KEY = 'dowarli_platform_delayed_welcome_v1'
+const PLATFORM_WELCOME_DELAY_MS = 3000
+const PLATFORM_WELCOME_TYPING_MS = 1500
+
+const PLATFORM_PUBLIC_ASSISTANT_WELCOME =
+  'أهلاً بك في دَورلي! 👋 أنا مساعدك الذكي. محتاج مساعدة في الوصول لعقار أحلامك؟ قولي بتدور على إيه (منطقة، ميزانية، أو غرض) وأنا هفلتر لك السوق في ثواني! 🤖✨'
+
 function buildDefaultAssistantMessage(
   agencyId?: string | null,
   agencyName?: string | null,
@@ -111,11 +128,16 @@ function buildDefaultAssistantMessage(
   const content =
     id && name
       ? `أهلاً بيك 👋 أنا مساعد دَورلي لعروض «${name}». قولّي الميزانية والمنطقة أو أي سؤال عن الوحدات — هنحافظ على سياق عروض هذه الصفحة في الإجابات.`
-      : 'أهلاً بيك في دَورلي 👋\nأنا دليلك العقاري: قولّي الميزانية والمنطقة (أو اسألني أي حاجة) وهظبطلك البحث.'
+      : PLATFORM_PUBLIC_ASSISTANT_WELCOME
   return { id: uid(), role: 'assistant', content, action: null, timestamp: new Date() }
 }
-const MOBILE_MAX_PX = 768
 
+function isPlatformPublicAssistant(
+  agencyId?: string | null,
+  agencySubscriptionStatus?: AgencySubscriptionStatus | null,
+) {
+  return !agencyId?.trim() && !isAgencyChatPaywalled(agencyId, agencySubscriptionStatus)
+}
 function chatLocationLine(r: Pick<PropertyResult, 'governorate' | 'district' | 'area'>): string {
   const parts = [r.governorate, r.district].map((x) => (x ?? '').trim()).filter(Boolean)
   if (parts.length) return parts.join(' — ')
@@ -247,6 +269,14 @@ function PropertySlider({
                     ? <img src={img} alt={r.title} className="absolute inset-0 h-full w-full object-cover" loading="lazy" />
                     : <div className="flex h-full items-center justify-center text-3xl opacity-40">🏠</div>
                   }
+                  {r.agency_logo_url ? (
+                    <span
+                      className="absolute bottom-2 end-2 flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-white/25 bg-white/95 shadow-md"
+                      title="إعلان وكالة"
+                    >
+                      <img src={r.agency_logo_url} alt="" className="h-full w-full object-cover" loading="lazy" />
+                    </span>
+                  ) : null}
                   <span className="absolute top-2 start-2 rounded-lg px-2 py-0.5 text-[10px] font-black text-white"
                     style={{ background: 'var(--brand-gradient-chat)', boxShadow: 'var(--brand-shadow-card)' }}>
                     {r.price.toLocaleString('ar-EG')} ج.م
@@ -337,12 +367,16 @@ export default function ChatBot({
   const [expanded, setExpanded]         = useState(false)
   const [keyboardInset, setKeyboardInset] = useState(0)
   const dragStartY                      = useRef<number | null>(null)
-  const [messages, setMessages]         = useState<Message[]>(() => [
-    buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus),
-  ])
+  const [messages, setMessages]         = useState<Message[]>(() =>
+    isPlatformPublicAssistant(agencyId, agencySubscriptionStatus)
+      ? []
+      : [buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus)],
+  )
   const [input, setInput]   = useState('')
   const [loading, setLoading] = useState(false)
   const [hasNew, setHasNew]   = useState(false)
+  const [welcomeTyping, setWelcomeTyping] = useState(false)
+  const [showWelcomeBubble, setShowWelcomeBubble] = useState(false)
 
   const messagesEndRef    = useRef<HTMLDivElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -350,13 +384,91 @@ export default function ChatBot({
   const sendingRef        = useRef(false)
   const messagesRef       = useRef(messages)
   const sendMessageFn     = useRef<(text: string) => Promise<void>>(async () => {})
+  const isOpenRef         = useRef(isOpen)
+  const welcomeTimersRef  = useRef<{ delay?: ReturnType<typeof setTimeout>; typing?: ReturnType<typeof setTimeout> }>({})
+  const welcomeFlowActiveRef = useRef(false)
 
   useEffect(() => { messagesRef.current = messages }, [messages])
+  useEffect(() => { isOpenRef.current = isOpen }, [isOpen])
   useEffect(() => { setMounted(true) }, [])
+
+  const clearPlatformWelcomeTimers = useCallback(() => {
+    const { delay, typing } = welcomeTimersRef.current
+    if (delay) clearTimeout(delay)
+    if (typing) clearTimeout(typing)
+    welcomeTimersRef.current = {}
+    welcomeFlowActiveRef.current = false
+    setWelcomeTyping(false)
+  }, [])
+
+  const markPlatformWelcomeSessionDone = useCallback(() => {
+    try {
+      globalThis.sessionStorage?.setItem(PLATFORM_SESSION_WELCOME_KEY, '1')
+    } catch {
+      /* private mode */
+    }
+  }, [])
+
+  useEffect(() => {
+    if (isOpen) setShowWelcomeBubble(false)
+  }, [isOpen])
+
+  useEffect(() => {
+    if (!mounted || !isPlatformPublicAssistant(agencyId, agencySubscriptionStatus)) return
+
+    let cancelled = false
+    const schedule = () => {
+      try {
+        if (globalThis.sessionStorage?.getItem(PLATFORM_SESSION_WELCOME_KEY)) {
+          setMessages((prev) =>
+            prev.length > 0
+              ? prev
+              : [buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus)],
+          )
+          return
+        }
+      } catch {
+        /* ignore */
+      }
+
+      welcomeFlowActiveRef.current = true
+      welcomeTimersRef.current.delay = globalThis.setTimeout(() => {
+        if (cancelled) return
+        setWelcomeTyping(true)
+        welcomeTimersRef.current.typing = globalThis.setTimeout(() => {
+          if (cancelled) return
+          setWelcomeTyping(false)
+          const welcomeMsg = buildDefaultAssistantMessage(
+            agencyId,
+            agencyName,
+            agencySubscriptionStatus,
+          )
+          const hadThread = messagesRef.current.length > 0
+          setMessages((prev) => (prev.length > 0 ? prev : [welcomeMsg]))
+          markPlatformWelcomeSessionDone()
+          welcomeFlowActiveRef.current = false
+          if (!hadThread && !isOpenRef.current) setShowWelcomeBubble(true)
+        }, PLATFORM_WELCOME_TYPING_MS)
+      }, PLATFORM_WELCOME_DELAY_MS)
+    }
+
+    schedule()
+    return () => {
+      cancelled = true
+      clearPlatformWelcomeTimers()
+    }
+  }, [
+    mounted,
+    agencyId,
+    agencyName,
+    agencySubscriptionStatus,
+    clearPlatformWelcomeTimers,
+    markPlatformWelcomeSessionDone,
+  ])
 
   useEffect(() => {
     if (!mounted || typeof window === 'undefined') return
-    const mq   = window.matchMedia(`(max-width: ${MOBILE_MAX_PX - 1}px)`)
+    const mq   = window.matchMedia(`(max-width: ${FLOATING_FAB_MOBILE_MAX_WIDTH_PX - 1}px)`)
     const sync = () => setIsMobile(mq.matches)
     sync(); mq.addEventListener('change', sync)
     return () => mq.removeEventListener('change', sync)
@@ -401,6 +513,16 @@ export default function ChatBot({
     if (!trimmed || sendingRef.current) return
     sendingRef.current = true
     const userMsg: Message = { id: uid(), role: 'user', content: trimmed, timestamp: new Date() }
+    const platform = isPlatformPublicAssistant(agencyId, agencySubscriptionStatus)
+    const prior = messagesRef.current
+    const platformEmptyThread = platform && prior.length === 0
+
+    if (platformEmptyThread) {
+      clearPlatformWelcomeTimers()
+      markPlatformWelcomeSessionDone()
+      setWelcomeTyping(false)
+      setShowWelcomeBubble(false)
+    }
 
     if (isAgencyChatPaywalled(agencyId, agencySubscriptionStatus)) {
       const botMsg: Message = {
@@ -417,13 +539,21 @@ export default function ChatBot({
       return
     }
 
-    setMessages((prev) => [...prev, userMsg])
+    const welcomeBaseline = buildDefaultAssistantMessage(
+      agencyId,
+      agencyName,
+      agencySubscriptionStatus,
+    )
+    setMessages((prev) =>
+      platformEmptyThread ? [welcomeBaseline, userMsg] : [...prev, userMsg],
+    )
     setInput('')
     setLoading(true)
     const controller = new AbortController()
     const timeoutId  = setTimeout(() => controller.abort(), 22_000)
     try {
-      const history = [...messagesRef.current, userMsg].slice(-MAX_SEND_HISTORY).map((m) => ({ role: m.role, content: m.content }))
+      const historyTail = platformEmptyThread ? [welcomeBaseline, userMsg] : [...prior, userMsg]
+      const history = historyTail.slice(-MAX_SEND_HISTORY).map((m) => ({ role: m.role, content: m.content }))
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -452,7 +582,15 @@ export default function ChatBot({
       const errMsg  = err instanceof Error && err.message ? err.message : isAbort ? 'الاتصال اتأخر — جرّب تاني 🔄' : 'في مشكلة مؤقتة، جرب بعد لحظة 🙏'
       setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content: errMsg, action: null, timestamp: new Date() }])
     } finally { sendingRef.current = false; setLoading(false) }
-  }, [isOpen, applyAction, agencyId, agencySubscriptionStatus])
+  }, [
+    isOpen,
+    applyAction,
+    agencyId,
+    agencyName,
+    agencySubscriptionStatus,
+    clearPlatformWelcomeTimers,
+    markPlatformWelcomeSessionDone,
+  ])
 
   sendMessageFn.current = sendMessage
 
@@ -468,7 +606,7 @@ export default function ChatBot({
     const el = messagesScrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
     else messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isOpen, loading])
+  }, [messages, isOpen, loading, welcomeTyping])
 
   useEffect(() => {
     if (isOpen) { setHasNew(false); setTimeout(() => inputRef.current?.focus(), 280) }
@@ -476,8 +614,12 @@ export default function ChatBot({
 
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); void sendMessage(input) }
 
-  const clearChat = () =>
+  const clearChat = () => {
+    clearPlatformWelcomeTimers()
+    setShowWelcomeBubble(false)
+    setWelcomeTyping(false)
     setMessages([buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus)])
+  }
 
   if (!mounted) return null
 
@@ -487,52 +629,112 @@ export default function ChatBot({
     ? { type: 'spring' as const, stiffness: 440, damping: 38, mass: 0.85 }
     : { type: 'spring' as const, stiffness: 380, damping: 32 }
 
+  const fabBottom = isMobile ? FLOATING_CHAT_FAB_BOTTOM_MOBILE : FLOATING_CHAT_FAB_BOTTOM
+  const fabRight = 'max(20px, env(safe-area-inset-right, 0px))'
+
   return (
     <>
-      {/* ══════════ FAB ══════════ */}
-      <motion.button
-        type="button" layoutId="chat-fab"
-        onClick={() => setIsOpen((v) => !v)}
-        aria-label={
-          isOpen
-            ? 'إغلاق مساعد دَورلي'
-            : agencyName?.trim()
-              ? `فتح مساعد دَورلي — عروض ${agencyName.trim()}`
-              : 'فتح مساعد دَورلي'
-        }
-        className={[
-          'fixed z-[9999] flex h-14 w-14 items-center justify-center rounded-full overflow-hidden',
-          isMobile && isOpen ? 'hidden' : '',
-          !isOpen ? 'chat-invite-pulse' : '',
-        ].join(' ')}
+      {/* ══════════ FAB + optional welcome bubble ══════════ */}
+      <div
+        className="fixed flex flex-col items-end gap-2"
         style={{
-          bottom: '100px',
-          right: 'max(20px, env(safe-area-inset-right, 0px))',
+          bottom: fabBottom,
+          right: fabRight,
           left: 'auto',
-          background: 'var(--brand-gradient-fab)',
-          boxShadow: 'var(--brand-shadow-fab)',
+          zIndex: Z_INDEX_FLOATING_CHAT,
+          pointerEvents: 'none',
         }}
       >
-        <motion.div
-          animate={isOpen ? { rotate: 90, scale: 0.88 } : { rotate: 0, scale: 1 }}
-          transition={{ type: 'spring', stiffness: 400, damping: 25 }}
-          className="flex items-center justify-center text-white"
+        <AnimatePresence>
+          {!isOpen && (welcomeTyping || showWelcomeBubble) && (
+            <motion.div
+              key="welcome-fab-hint"
+              role="status"
+              initial={{ opacity: 0, y: 10, scale: 0.92 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+              className="flex max-w-[min(16rem,calc(100vw-5rem))] flex-col items-end pointer-events-auto"
+            >
+              <button
+                type="button"
+                onClick={() => setIsOpen(true)}
+                className="w-full rounded-2xl px-3.5 py-2.5 text-right shadow-lg outline-none ring-1 transition hover:brightness-105 focus-visible:ring-2 focus-visible:ring-emerald-400/80"
+                style={{
+                  background: 'rgba(15,23,42,0.96)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  boxShadow: '0 12px 40px rgba(0,0,0,0.45)',
+                  color: '#e2e8f0',
+                }}
+              >
+                {welcomeTyping ? (
+                  <span className="flex flex-col items-stretch gap-2">
+                    <span className="text-[11px] font-semibold" style={{ color: 'var(--brand-400)' }}>
+                      المساعد يكتب…
+                    </span>
+                    <TypingOrb />
+                  </span>
+                ) : (
+                  <span className="block text-[12px] font-bold leading-snug">
+                    اهلا بيك في دَورلي - اقدر اساعدك بايه👋
+                  </span>
+                )}
+              </button>
+              <span
+                aria-hidden
+                className="pointer-events-none mx-3 block h-0 w-0 self-end border-x-8 border-t-[9px] border-x-transparent"
+                style={{ borderTopColor: 'rgba(15,23,42,0.96)' }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <motion.button
+          type="button"
+          layoutId="chat-fab"
+          onClick={() => setIsOpen((v) => !v)}
+          aria-label={
+            isOpen
+              ? 'إغلاق مساعد دَورلي'
+              : agencyName?.trim()
+                ? `فتح مساعد دَورلي — عروض ${agencyName.trim()}`
+                : 'فتح مساعد دَورلي'
+          }
+          className={[
+            'pointer-events-auto relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-full',
+            isMobile && isOpen ? 'hidden' : '',
+            !isOpen ? 'chat-invite-pulse' : '',
+          ].join(' ')}
+          style={{
+            background: 'var(--brand-gradient-fab)',
+            boxShadow: 'var(--brand-shadow-fab)',
+          }}
         >
-          {isOpen ? <X size={20} strokeWidth={2.5} /> : <Sparkles size={20} strokeWidth={2} />}
-        </motion.div>
-        {hasNew && !isOpen && (
-          <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
-            className="absolute -left-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-rose-500 ring-2 ring-white" />
-        )}
-      </motion.button>
+          <motion.div
+            animate={isOpen ? { rotate: 90, scale: 0.88 } : { rotate: 0, scale: 1 }}
+            transition={{ type: 'spring', stiffness: 400, damping: 25 }}
+            className="flex items-center justify-center text-white"
+          >
+            {isOpen ? <X size={20} strokeWidth={2.5} /> : <Sparkles size={20} strokeWidth={2} />}
+          </motion.div>
+          {hasNew && !isOpen && (
+            <motion.span initial={{ scale: 0 }} animate={{ scale: 1 }}
+              className="absolute -left-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-rose-500 ring-2 ring-white" />
+          )}
+        </motion.button>
+      </div>
 
       <AnimatePresence>
         {/* ══════════ Backdrop ══════════ */}
         {isOpen && isMobile && (
           <motion.div key="chat-backdrop"
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.22 }}
-            className="fixed inset-0 z-[9997] md:hidden"
-            style={{ background: 'rgba(0,0,0,0.82)', backdropFilter: 'blur(6px)' }}
+            className="fixed inset-0 md:hidden"
+            style={{
+              zIndex: Z_INDEX_CHAT_BACKDROP_MOBILE,
+              background: 'rgba(0,0,0,0.82)',
+              backdropFilter: 'blur(6px)',
+            }}
             aria-hidden onClick={() => setIsOpen(false)}
           />
         )}
@@ -547,7 +749,7 @@ export default function ChatBot({
             exit={isMobile ? { y: '100%' } : { opacity: 0, y: 16, scale: 0.98 }}
             transition={sheetTransition}
             className={[
-              'fixed z-[9998] flex flex-col overflow-hidden',
+              'fixed flex flex-col overflow-hidden',
               isMobile
                 ? 'inset-x-0 bottom-0 h-[90dvh] max-h-[90vh] w-full rounded-t-[1.75rem]'
                 : [
@@ -556,6 +758,7 @@ export default function ChatBot({
                   ].join(' '),
             ].join(' ')}
             style={{
+              zIndex: Z_INDEX_CHAT_PANEL,
               background: 'rgba(4,12,22,0.97)',
               border: '1px solid rgba(255,255,255,0.07)',
               backdropFilter: 'blur(40px)',
@@ -563,7 +766,7 @@ export default function ChatBot({
               boxShadow: '0 40px 100px rgba(0,0,0,0.75), 0 0 0 1px var(--brand-a06)',
               ...(isMobile
                 ? {}
-                : { bottom: '110px' }),
+                : { bottom: FLOATING_CHAT_PANEL_SM_BOTTOM }),
             }}
           >
             <AnimatedBackground />
@@ -653,6 +856,39 @@ export default function ChatBot({
               ].join(' ')}
             >
               {messages.map((msg) => <ChatBubble key={msg.id} msg={msg} />)}
+
+              {welcomeTyping && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                  className="mb-4 flex items-end gap-2.5"
+                >
+                  <div
+                    className="mb-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
+                    style={{
+                      background: 'var(--brand-gradient-chat)',
+                      boxShadow: '0 2px 10px rgba(27, 120, 60, 0.3)',
+                      flexShrink: 0,
+                    }}
+                    aria-hidden
+                  >
+                    ✦
+                  </div>
+                  <div
+                    className="rounded-2xl rounded-bl-sm px-4 py-3"
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      border: '1px solid rgba(255,255,255,0.09)',
+                    }}
+                  >
+                    <p className="mb-2 text-[11px] font-semibold" style={{ color: 'var(--brand-400)' }}>
+                      جاري الكتابة…
+                    </p>
+                    <TypingOrb />
+                  </div>
+                </motion.div>
+              )}
 
               {loading && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}

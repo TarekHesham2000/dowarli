@@ -12,6 +12,8 @@ type Body = {
   slug?: string;
   is_verified?: boolean;
   is_active?: boolean;
+  /** When set with a positive number, extends Pro from the latest of now / current trial / current subscription end. */
+  extend_pro_days?: number;
 };
 
 export async function PATCH(request: Request) {
@@ -102,6 +104,30 @@ export async function PATCH(request: Request) {
   if (typeof body.is_verified === "boolean") patch.is_verified = body.is_verified;
   if (typeof body.is_active === "boolean") patch.is_active = body.is_active;
 
+  const ext = body.extend_pro_days;
+  if (typeof ext === "number" && Number.isFinite(ext) && ext > 0 && ext <= 3650) {
+    const msDay = 86400000;
+    const parseMs = (v: unknown): number | null => {
+      if (typeof v !== "string" || !v.trim()) return null;
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : null;
+    };
+    let base = Date.now();
+    const trialEnd = parseMs(cur.trial_expires_at);
+    const subExp = parseMs(
+      (cur as Record<string, unknown>).subscription_expires_at ??
+        (cur as Record<string, unknown>).subscription_end_date,
+    );
+    for (const t of [trialEnd, subExp]) {
+      if (t != null && t > base) base = t;
+    }
+    const newEnd = new Date(base + ext * msDay).toISOString();
+    patch.subscription_status = "pro";
+    patch.plan_type = "pro";
+    patch.trial_expires_at = newEnd;
+    patch.subscription_expires_at = newEnd;
+  }
+
   let upd = await svc.from("agencies").update(patch).eq("id", agencyId).select("*").maybeSingle();
   if (
     upd.error &&
@@ -109,6 +135,14 @@ export async function PATCH(request: Request) {
     (upd.error.code === "42703" || String(upd.error.message).toLowerCase().includes("is_active"))
   ) {
     const { is_active: _ia, ...rest } = patch;
+    upd = await svc.from("agencies").update(rest).eq("id", agencyId).select("*").maybeSingle();
+  }
+  if (
+    upd.error &&
+    "subscription_expires_at" in patch &&
+    (upd.error.code === "42703" || String(upd.error.message).toLowerCase().includes("subscription_expires_at"))
+  ) {
+    const { subscription_expires_at: _se, ...rest } = patch;
     upd = await svc.from("agencies").update(rest).eq("id", agencyId).select("*").maybeSingle();
   }
   if (upd.error) {

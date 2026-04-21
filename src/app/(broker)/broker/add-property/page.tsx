@@ -18,6 +18,19 @@ import {
   BLOCK_PHONE_IN_LISTING_MESSAGE,
   listingTextContainsPhoneSequence,
 } from '@/lib/blockPhoneInListingText'
+import {
+  EGYPTIAN_MOBILE_HINT_AR,
+  isValidEgyptianMobileInput,
+  toLocalEgyptianMobile,
+} from '@/lib/egyptianPhone'
+import {
+  AMENITY_DEFINITIONS,
+  AMENITY_KEYS,
+  canEditPremiumPropertyAmenities,
+  emptyAmenitiesState,
+  type PropertyAmenitiesState,
+  toAmenitiesJson,
+} from '@/lib/propertyAmenities'
 
 // ──────────────────────────────────────────────────────────────
 // Constants
@@ -90,6 +103,12 @@ export default function AddPropertyPage() {
   const [checkingDevice, setCheckingDevice]             = useState(true)
   const [userPoints, setUserPoints]                     = useState(0)
   const [successMessage, setSuccessMessage]             = useState('')
+  const [isAgencyPublisher, setIsAgencyPublisher]       = useState(false)
+  const [accountPhoneHint, setAccountPhoneHint]         = useState('')
+  const [agencyContactName, setAgencyContactName]       = useState('')
+  const [agencyContactPhone, setAgencyContactPhone]     = useState('')
+  const [userProfileRole, setUserProfileRole]           = useState<string | null>(null)
+  const [amenities, setAmenities]                       = useState<PropertyAmenitiesState>(() => emptyAmenitiesState())
 
   // ── Form State ─────────────────────────────────────────────
   const [listingPurpose, setListingPurpose] = useState<ListingPurpose>('rent')
@@ -131,6 +150,11 @@ export default function AddPropertyPage() {
   )
   const insufficientPointsToPublish = userPoints < activationPointsCost
 
+  const canEditPremiumAmenities = useMemo(
+    () => canEditPremiumPropertyAmenities(isAgencyPublisher, userProfileRole),
+    [isAgencyPublisher, userProfileRole],
+  )
+
   // ── تحميل الإعدادات + فحص الـ Device + رصيد النقاط ─────────
   useEffect(() => {
     const init = async () => {
@@ -150,9 +174,14 @@ export default function AddPropertyPage() {
           setPlatformSettings(PLATFORM_SETTINGS_DEFAULTS)
         }
 
-        const { data: profile } = await supabase.from('profiles').select('points').eq('id', user.id).single()
+        const { data: profile } = await supabase.from('profiles').select('points, phone, role').eq('id', user.id).single()
         const pts = profile?.points ?? 0
         setUserPoints(pts)
+        setAccountPhoneHint(typeof profile?.phone === 'string' ? profile.phone.trim() : '')
+        setUserProfileRole(typeof profile?.role === 'string' ? profile.role : null)
+
+        const { data: agencyRow } = await supabase.from('agencies').select('id').eq('owner_id', user.id).maybeSingle()
+        setIsAgencyPublisher(Boolean(agencyRow?.id))
 
         let deviceCount = 0
         if (did) {
@@ -278,7 +307,7 @@ export default function AddPropertyPage() {
 
       const { data: profile, error: profileError } = await supabase
         .from('profiles')
-        .select('is_active, points')
+        .select('is_active, points, phone, role')
         .eq('id', user.id)
         .single()
 
@@ -313,6 +342,24 @@ export default function AddPropertyPage() {
         )
         setLoading(false)
         return
+      }
+
+      const agencyPhoneTrim = agencyContactPhone.trim()
+      if (isAgencyPublisher && agencyPhoneTrim && !isValidEgyptianMobileInput(agencyPhoneTrim)) {
+        setError(`رقم التواصل للعقار غير صحيح. ${EGYPTIAN_MOBILE_HINT_AR}`)
+        setLoading(false)
+        return
+      }
+      if (isAgencyPublisher) {
+        const fallback = toLocalEgyptianMobile(profile.phone ?? '')
+        const chosen = agencyPhoneTrim ? toLocalEgyptianMobile(agencyPhoneTrim) : fallback
+        if (!chosen) {
+          setError(
+            'أدخل رقم تواصل مصري صالح لهذا الإعلان، أو حدّث رقم الهاتف في ملفك الشخصي ليُستخدم كرقم افتراضي.',
+          )
+          setLoading(false)
+          return
+        }
       }
 
       // بيع: لا نرسل rental_unit / beds إلى الـ RPC (عمود rental_unit enum في DB = NULL)
@@ -402,6 +449,31 @@ export default function AddPropertyPage() {
           .eq('id', insertData.id)
         if (subErr && !String(subErr.message ?? '').includes('does not exist')) {
           console.warn('[add-property] sub_area update:', subErr.message)
+        }
+      }
+
+      const patch: Record<string, unknown> = {}
+      if (isAgencyPublisher) {
+        const agencyPhoneTrim = agencyContactPhone.trim()
+        const localFromField = agencyPhoneTrim ? toLocalEgyptianMobile(agencyPhoneTrim) : null
+        const localFallback = toLocalEgyptianMobile(profile.phone ?? '')
+        const phoneToStore = localFromField ?? localFallback
+        if (phoneToStore) {
+          patch.contact_phone = phoneToStore
+          patch.contact_name = agencyContactName.trim() ? agencyContactName.trim() : null
+        }
+      }
+      if (canEditPremiumAmenities) {
+        patch.amenities = toAmenitiesJson(amenities)
+      }
+      if (Object.keys(patch).length > 0) {
+        const { error: patchErr } = await supabase
+          .from('properties')
+          .update(patch)
+          .eq('id', insertData.id)
+          .eq('owner_id', user.id)
+        if (patchErr) {
+          console.warn('[add-property] property extras update:', patchErr.message)
         }
       }
 
@@ -526,6 +598,69 @@ export default function AddPropertyPage() {
                 onFocus={e => { e.target.style.borderColor = '#16a34a'; e.target.style.background = '#fff' }}
                 onBlur={e => { e.target.style.borderColor = '#e2e8f0'; e.target.style.background = '#fafafa' }} />
             </div>
+
+            {isAgencyPublisher ? (
+              <div
+                style={{
+                  background: 'linear-gradient(135deg, #f8fafc, #f1f5f9)',
+                  border: '1.5px solid #cbd5e1',
+                  borderRadius: 14,
+                  padding: '1rem 1.25rem',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: 12,
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 18 }}>👤</span>
+                  <p style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', margin: 0 }}>بيانات المسؤول عن العقار</p>
+                </div>
+                <p style={{ fontSize: 12, color: '#64748b', margin: 0, lineHeight: 1.65 }}>
+                  اختياري — إن تركت الحقول فارغة سيُعرض للزائر رقم حسابك الأساسي ({accountPhoneHint || 'غير محدّد في الملف'}).
+                </p>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>
+                    اسم الموظف / مسؤول الإعلان
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="مثال: أحمد — مبيعات"
+                    value={agencyContactName}
+                    onChange={(e) => setAgencyContactName(e.target.value)}
+                    style={inputStyle}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#16a34a'
+                      e.target.style.background = '#fff'
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e2e8f0'
+                      e.target.style.background = '#fafafa'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: '#374151', display: 'block', marginBottom: 6 }}>
+                    رقم الواتساب / الاتصال للعقار
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="010 / 011 / 012 / 015 — 11 رقماً"
+                    value={agencyContactPhone}
+                    onChange={(e) => setAgencyContactPhone(e.target.value)}
+                    style={inputStyle}
+                    onFocus={(e) => {
+                      e.target.style.borderColor = '#16a34a'
+                      e.target.style.background = '#fff'
+                    }}
+                    onBlur={(e) => {
+                      e.target.style.borderColor = '#e2e8f0'
+                      e.target.style.background = '#fafafa'
+                    }}
+                  />
+                  <p style={{ fontSize: 11, color: '#64748b', margin: '6px 0 0' }}>{EGYPTIAN_MOBILE_HINT_AR}</p>
+                </div>
+              </div>
+            ) : null}
 
             {/* PRICE + GOVERNORATE */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -777,6 +912,99 @@ export default function AddPropertyPage() {
                 )}
               </div>
             )}
+
+            {/* وسائل راحة متقدمة — وكالات/شركات فقط تعديل؛ للباقي معطّل + ترقية */}
+            <div
+              style={{
+                background: canEditPremiumAmenities
+                  ? 'linear-gradient(135deg, #fffbeb, #fef3c7)'
+                  : 'linear-gradient(135deg, #f8fafc, #f1f5f9)',
+                border: canEditPremiumAmenities ? '1.5px solid #fcd34d' : '1.5px solid #e2e8f0',
+                borderRadius: 14,
+                padding: '1rem 1.25rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                opacity: canEditPremiumAmenities ? 1 : 0.95,
+              }}
+            >
+              <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 18 }}>✨</span>
+                <p style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', margin: 0, flex: 1 }}>وسائل الراحة المتقدمة</p>
+                {!canEditPremiumAmenities ? (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 800,
+                      color: '#92400e',
+                      background: '#fef3c7',
+                      border: '1px solid #fcd34d',
+                      borderRadius: 999,
+                      padding: '4px 12px',
+                    }}
+                  >
+                    ميزة بريميوم للوكالات
+                  </span>
+                ) : null}
+              </div>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0, lineHeight: 1.65 }}>
+                غاز، عداد كهرباء، عداد مياه، موقف، أسانسير، خدمات أمن — تظهر في صفحة الإعلان للإعلانات المرتبطة بوكالة.
+              </p>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                  gap: 10,
+                  pointerEvents: canEditPremiumAmenities ? 'auto' : 'none',
+                }}
+              >
+                {AMENITY_KEYS.map((key) => {
+                  const def = AMENITY_DEFINITIONS[key]
+                  const on = amenities[key]
+                  return (
+                    <label
+                      key={key}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        padding: '10px 12px',
+                        borderRadius: 12,
+                        border: on ? '2px solid #16a34a' : '1.5px solid #e2e8f0',
+                        background: on ? '#ecfdf5' : '#fff',
+                        cursor: canEditPremiumAmenities ? 'pointer' : 'not-allowed',
+                        fontFamily: 'Cairo, sans-serif',
+                        fontSize: 13,
+                        fontWeight: 700,
+                        color: '#0f172a',
+                        userSelect: 'none',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        disabled={!canEditPremiumAmenities}
+                        onChange={() => {
+                          if (!canEditPremiumAmenities) return
+                          setAmenities((prev) => ({ ...prev, [key]: !prev[key] }))
+                        }}
+                        style={{ width: 16, height: 16, accentColor: '#16a34a', flexShrink: 0 }}
+                      />
+                      <span aria-hidden>{def.icon}</span>
+                      <span>{def.labelAr}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              {!canEditPremiumAmenities ? (
+                <p style={{ fontSize: 12, margin: 0, pointerEvents: 'auto' }}>
+                  <Link href="/become-an-agency" style={{ color: '#15803d', fontWeight: 900, textDecoration: 'underline' }}>
+                    أنشئ وكالة على دَورلي
+                  </Link>{' '}
+                  لتفعيل هذه الحقول ولإبراز إعلاناتك.
+                </p>
+              ) : null}
+            </div>
 
             {/* IMAGES */}
             <div>

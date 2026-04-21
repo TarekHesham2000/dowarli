@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
-import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
+import { orPublicListingNotExpired, withListingExpiryQuery } from "@/lib/publicListingExpiry";
 
 /** Canonical production origin for sitemap URLs (Search Console / indexing). */
 const SITE_BASE = "https://dowarly.com";
@@ -39,13 +39,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   let propertyEntries: MetadataRoute.Sitemap = [];
   try {
     const supabase = createSupabaseAnonServer();
-    const { data, error } = await supabase
-      .from("properties")
-      .select("id, slug, created_at")
-      .eq("status", "active")
-      .or(orPublicListingNotExpired())
-      .order("id", { ascending: true })
-      .limit(20_000);
+    const { data, error } = await withListingExpiryQuery((includeExpiry) => {
+      let q = supabase.from("properties").select("id, slug, created_at").eq("status", "active");
+      if (includeExpiry) q = q.or(orPublicListingNotExpired());
+      return q.order("id", { ascending: true }).limit(20_000);
+    });
 
     if (!error && data?.length) {
       propertyEntries = data.map((p) => {

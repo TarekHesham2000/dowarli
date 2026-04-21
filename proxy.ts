@@ -1,87 +1,76 @@
-import { createServerClient } from "@supabase/ssr";
-import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getSupabaseGlobalClientOptions } from "@/lib/supabaseCacheBust";
+import { NextResponse } from "next/server";
 import { isAdminProfile } from "@/lib/isAdmin";
+import {
+  copyCookiesToResponse,
+  createServerClientForRouteGuards,
+  updateSession,
+} from "@/lib/supabase/middleware";
 
 /**
- * Next.js 16+: حماية على حافة الطلب (`proxy` بدل `middleware`).
- * يُفضَّل وضع الملف في **جذر المشروع** (بجانب `package.json`) حتى يُحمَّل تلقائياً
- * مع `src/app` — انظر: https://nextjs.org/docs/app/getting-started/proxy
+ * Next.js 16+: edge handler lives in **`proxy.ts`** (not `middleware.ts` — both files cannot coexist).
+ * Session refresh uses the same cookie contract as `@supabase/ssr` + `updateSession`.
+ *
+ * @see https://nextjs.org/docs/app/getting-started/proxy
+ * @see https://supabase.com/docs/guides/auth/server-side/nextjs
  */
 export async function proxy(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request });
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
-  if (!supabaseUrl || !supabaseAnonKey) {
-    return supabaseResponse;
-  }
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    ...getSupabaseGlobalClientOptions(),
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
-      },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value }) => {
-          request.cookies.set(name, value);
-        });
-        supabaseResponse = NextResponse.next({ request });
-        cookiesToSet.forEach(({ name, value, options }) => {
-          supabaseResponse.cookies.set(name, value, options);
-        });
-      },
-    },
-  });
-
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  const authedUser = authError ? undefined : user;
+  const { response: sessionResponse, userId } = await updateSession(request);
 
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/admin")) {
-    if (!authedUser) {
-      return NextResponse.redirect(new URL("/login", request.url));
+    if (!userId) {
+      const login = NextResponse.redirect(new URL("/login", request.url));
+      copyCookiesToResponse(sessionResponse, login);
+      return login;
     }
+    const supabase = createServerClientForRouteGuards(request, sessionResponse);
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
-      .eq("id", authedUser.id)
+      .eq("id", userId)
       .maybeSingle();
 
     if (!isAdminProfile(profile)) {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      const dash = NextResponse.redirect(new URL("/dashboard", request.url));
+      copyCookiesToResponse(sessionResponse, dash);
+      return dash;
     }
   }
 
   if (pathname.startsWith("/broker") || pathname.startsWith("/dashboard")) {
-    if (!authedUser) {
-      return NextResponse.redirect(new URL("/login", request.url));
+    if (!userId) {
+      const login = NextResponse.redirect(new URL("/login", request.url));
+      copyCookiesToResponse(sessionResponse, login);
+      return login;
     }
+    const supabase = createServerClientForRouteGuards(request, sessionResponse);
     const { data: brokerProf } = await supabase
       .from("profiles")
       .select("phone, role")
-      .eq("id", authedUser.id)
+      .eq("id", userId)
       .maybeSingle();
     const phoneMissing =
       !brokerProf?.phone || !String(brokerProf.phone).replace(/\s|-/g, "").trim();
     if (brokerProf?.role !== "admin" && phoneMissing) {
       const u = new URL("/complete-profile", request.url);
       u.searchParams.set("next", `${pathname}${request.nextUrl.search}`);
-      return NextResponse.redirect(u);
+      const complete = NextResponse.redirect(u);
+      copyCookiesToResponse(sessionResponse, complete);
+      return complete;
     }
   }
 
-  return supabaseResponse;
+  return sessionResponse;
 }
 
 export const config = {
-  // Intentionally excludes `/auth/callback`, `/login`, `/complete-profile` so OAuth PKCE + session cookies are not interrupted.
-  matcher: ["/admin", "/admin/:path*", "/broker", "/broker/:path*", "/dashboard", "/dashboard/:path*"],
+  matcher: [
+    /*
+     * Refresh auth cookies on (almost) all navigations so the browser never keeps a stale
+     * refresh token without a matching HttpOnly cookie — excludes static assets only.
+     */
+    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)",
+  ],
 };

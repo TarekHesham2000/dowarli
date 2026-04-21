@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSupabaseServerClient } from "@/lib/supabaseServer";
-import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
+import { orPublicListingNotExpired, withListingExpiryQuery } from "@/lib/publicListingExpiry";
 import {
   governorateForDistrict,
   matchDistrictInText,
@@ -74,6 +74,8 @@ type PropertyResult = {
   report_count?: number;
   /** ترتيب الدردشة: موثّق من الدليل أولاً */
   agency_is_verified?: boolean;
+  /** شعار الوكالة على كروت الدردشة (من `agencies.logo_url`) */
+  agency_logo_url?: string | null;
   /** ترتيب الدردشة: الأحدث أولاً */
   created_at?: string | null;
 };
@@ -81,7 +83,10 @@ type PropertyResult = {
 type PropertyQueryRow = PropertyResult & {
   profiles?: { low_trust?: boolean | null } | { low_trust?: boolean | null }[] | null;
   owner_id?: string;
-  agencies?: { is_verified?: boolean | null } | { is_verified?: boolean | null }[] | null;
+  agencies?:
+    | { is_verified?: boolean | null; logo_url?: string | null }
+    | { is_verified?: boolean | null; logo_url?: string | null }[]
+    | null;
 };
 
 type ChatResponse = {
@@ -300,10 +305,13 @@ function rowsToMappedResults(rows: PropertyQueryRow[]): PropertyResult[] {
       const ag = row.agencies;
       const ao = ag && (Array.isArray(ag) ? ag[0] : ag);
       const agency_is_verified = ao?.is_verified === true;
+      const agency_logo_raw = typeof ao?.logo_url === "string" ? ao.logo_url.trim() : "";
+      const agency_logo_url = agency_logo_raw || null;
       const { profiles: _pr, owner_id: _o, agencies: _a, ...rest } = row;
       return {
         ...rest,
         agency_is_verified,
+        agency_logo_url,
         created_at: typeof row.created_at === "string" ? row.created_at : null,
       };
     });
@@ -567,7 +575,7 @@ ${agencyBlock}
 }
 
 const SELECT_ROW =
-  "id, title, price, listing_purpose, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, last_verified_at, report_count, owner_id, created_at, agencies(is_verified), profiles(low_trust)";
+  "id, title, price, listing_purpose, area, governorate, district, sub_area, landmark, address, unit_type, images, slug, last_verified_at, report_count, owner_id, created_at, agencies(is_verified, logo_url), profiles(low_trust)";
 
 async function queryTopProperties(
   filters: FilterAction,
@@ -575,49 +583,51 @@ async function queryTopProperties(
   agencyId: string | null = null,
 ): Promise<PropertyResult[]> {
   const supabase = getSupabaseServerClient();
-
-  let q = supabase
-    .from("properties")
-    .select(SELECT_ROW)
-    .eq("status", "active")
-    .eq("availability_status", "available")
-    .or(orPublicListingNotExpired());
-  if (agencyId) q = q.eq("agency_id", agencyId);
-
-  const g = filters.governorate?.trim() ?? "";
-  const d = filters.district?.trim() ?? "";
-  const a = filters.area?.trim() ?? "";
-  if (d) q = q.or(`district.ilike.%${d}%,sub_area.ilike.%${d}%,area.ilike.%${d}%`);
-  if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
-  if (!d && !g && a) {
-    q = q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,sub_area.ilike.%${a}%,area.ilike.%${a}%`);
-  }
-  const lp = filters.listingPurpose?.trim().toLowerCase();
-  if (lp === "rent" || lp === "sale") q = q.eq("listing_purpose", lp);
-  if (filters.unitType) q = q.eq("unit_type", filters.unitType);
-
-  if (filters.priceSearchMode === "higher") {
-    const lo = typeof filters.minPrice === "number" ? filters.minPrice : 0;
-    if (lo > 0) q = q.gte("price", lo);
-    q = q.lte("price", CHAT_PRICE_CEILING);
-  } else if (typeof filters.maxPrice === "number" && filters.maxPrice > 0) {
-    const hi = Math.round(filters.maxPrice * 1.25);
-    const lo = Math.max(0, Math.floor(filters.maxPrice * 0.8));
-    q = q.gte("price", lo).lte("price", hi);
-  }
-
-  const safeKw = sanitizeSearchKeywords(filters.keywords?.trim() ?? "");
-  if (safeKw.length >= 2) {
-    q = q.or(
-      `title.ilike.%${safeKw}%,address.ilike.%${safeKw}%,landmark.ilike.%${safeKw}%,district.ilike.%${safeKw}%,sub_area.ilike.%${safeKw}%`,
-    );
-  }
-
-  // فلترة كاملة أولاً؛ ترتيب أولي بالحداثة لملء العيّنة ثم rankChatPropertyRows (موثّق → جديد → سعر…)
-  q = q.order("created_at", { ascending: false });
-
   const fetchCap = Math.min(200, Math.max(limit * 8, 64));
-  const { data, error } = await q.limit(fetchCap);
+
+  const build = (includeExpiry: boolean) => {
+    let q = supabase
+      .from("properties")
+      .select(SELECT_ROW)
+      .eq("status", "active")
+      .eq("availability_status", "available");
+    if (includeExpiry) q = q.or(orPublicListingNotExpired());
+    if (agencyId) q = q.eq("agency_id", agencyId);
+
+    const g = filters.governorate?.trim() ?? "";
+    const d = filters.district?.trim() ?? "";
+    const a = filters.area?.trim() ?? "";
+    if (d) q = q.or(`district.ilike.%${d}%,sub_area.ilike.%${d}%,area.ilike.%${d}%`);
+    if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
+    if (!d && !g && a) {
+      q = q.or(`governorate.ilike.%${a}%,district.ilike.%${a}%,sub_area.ilike.%${a}%,area.ilike.%${a}%`);
+    }
+    const lp = filters.listingPurpose?.trim().toLowerCase();
+    if (lp === "rent" || lp === "sale") q = q.eq("listing_purpose", lp);
+    if (filters.unitType) q = q.eq("unit_type", filters.unitType);
+
+    if (filters.priceSearchMode === "higher") {
+      const lo = typeof filters.minPrice === "number" ? filters.minPrice : 0;
+      if (lo > 0) q = q.gte("price", lo);
+      q = q.lte("price", CHAT_PRICE_CEILING);
+    } else if (typeof filters.maxPrice === "number" && filters.maxPrice > 0) {
+      const hi = Math.round(filters.maxPrice * 1.25);
+      const lo = Math.max(0, Math.floor(filters.maxPrice * 0.8));
+      q = q.gte("price", lo).lte("price", hi);
+    }
+
+    const safeKw = sanitizeSearchKeywords(filters.keywords?.trim() ?? "");
+    if (safeKw.length >= 2) {
+      q = q.or(
+        `title.ilike.%${safeKw}%,address.ilike.%${safeKw}%,landmark.ilike.%${safeKw}%,district.ilike.%${safeKw}%,sub_area.ilike.%${safeKw}%`,
+      );
+    }
+
+    q = q.order("created_at", { ascending: false });
+    return q.limit(fetchCap);
+  };
+
+  const { data, error } = await withListingExpiryQuery((includeExpiry) => build(includeExpiry));
   if (error) throw error;
   const mapped = rowsToMappedResults((data as PropertyQueryRow[]) ?? []);
   return rankChatPropertyRows(mapped, filters).slice(0, limit);
@@ -656,39 +666,41 @@ async function analyzeMarketTrends(
 ): Promise<string | null> {
   try {
     const supabase = getSupabaseServerClient();
-    let q = supabase
-      .from("properties")
-      .select("price")
-      .eq("status", "active")
-      .eq("availability_status", "available")
-      .or(orPublicListingNotExpired());
-    if (agencyId) q = q.eq("agency_id", agencyId);
-    const g = filters.governorate?.trim() ?? "";
-    const d = filters.district?.trim() ?? "";
-    const ar = filters.area?.trim() ?? "";
-    if (d) q = q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
-    if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
-    if (!d && !g && ar) {
-      q = q.or(`governorate.ilike.%${ar}%,district.ilike.%${ar}%,area.ilike.%${ar}%`);
-    }
-    const lp = filters.listingPurpose?.trim().toLowerCase();
-    if (lp === "rent" || lp === "sale") q = q.eq("listing_purpose", lp);
-    if (
-      filters.priceSearchMode === "band" &&
-      typeof filters.maxPrice === "number" &&
-      filters.maxPrice > 0
-    ) {
-      const lo = Math.max(0, Math.floor(filters.maxPrice * 0.8));
-      const hi = Math.round(filters.maxPrice * 1.25);
-      q = q.gte("price", lo).lte("price", hi);
-    } else if (
-      filters.priceSearchMode === "higher" &&
-      typeof filters.minPrice === "number" &&
-      filters.minPrice > 0
-    ) {
-      q = q.gte("price", filters.minPrice).lte("price", CHAT_PRICE_CEILING);
-    }
-    const { data, error } = await q.limit(120);
+    const { data, error } = await withListingExpiryQuery((includeExpiry) => {
+      let q = supabase
+        .from("properties")
+        .select("price")
+        .eq("status", "active")
+        .eq("availability_status", "available");
+      if (includeExpiry) q = q.or(orPublicListingNotExpired());
+      if (agencyId) q = q.eq("agency_id", agencyId);
+      const g = filters.governorate?.trim() ?? "";
+      const d = filters.district?.trim() ?? "";
+      const ar = filters.area?.trim() ?? "";
+      if (d) q = q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
+      if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
+      if (!d && !g && ar) {
+        q = q.or(`governorate.ilike.%${ar}%,district.ilike.%${ar}%,area.ilike.%${ar}%`);
+      }
+      const lp = filters.listingPurpose?.trim().toLowerCase();
+      if (lp === "rent" || lp === "sale") q = q.eq("listing_purpose", lp);
+      if (
+        filters.priceSearchMode === "band" &&
+        typeof filters.maxPrice === "number" &&
+        filters.maxPrice > 0
+      ) {
+        const lo = Math.max(0, Math.floor(filters.maxPrice * 0.8));
+        const hi = Math.round(filters.maxPrice * 1.25);
+        q = q.gte("price", lo).lte("price", hi);
+      } else if (
+        filters.priceSearchMode === "higher" &&
+        typeof filters.minPrice === "number" &&
+        filters.minPrice > 0
+      ) {
+        q = q.gte("price", filters.minPrice).lte("price", CHAT_PRICE_CEILING);
+      }
+      return q.limit(120);
+    });
     if (error || !data?.length) return null;
     const prices = data
       .map((r) => Number((r as { price: number }).price))
@@ -1172,47 +1184,51 @@ async function queryExploratorySuggestions(
   agencyId: string | null = null,
 ): Promise<PropertyResult[]> {
   const supabase = getSupabaseServerClient();
-  let q = supabase
-    .from("properties")
-    .select(SELECT_ROW)
-    .eq("status", "active")
-    .eq("availability_status", "available")
-    .or(orPublicListingNotExpired());
-  if (agencyId) q = q.eq("agency_id", agencyId);
 
-  const g = filters.governorate?.trim() ?? "";
-  const d = filters.district?.trim() ?? "";
-  const ar = filters.area?.trim() ?? "";
-  if (d) q = q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
-  if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
-  if (!d && !g && ar) {
-    q = q.or(`governorate.ilike.%${ar}%,district.ilike.%${ar}%,area.ilike.%${ar}%`);
-  }
-  const lp = filters.listingPurpose?.trim().toLowerCase();
-  if (lp === "rent" || lp === "sale") q = q.eq("listing_purpose", lp);
-  const maxP = filters.maxPrice;
-  const explicitUnitType = filters.unitType?.trim() ?? "";
+  const build = (includeExpiry: boolean) => {
+    let q = supabase
+      .from("properties")
+      .select(SELECT_ROW)
+      .eq("status", "active")
+      .eq("availability_status", "available");
+    if (includeExpiry) q = q.or(orPublicListingNotExpired());
+    if (agencyId) q = q.eq("agency_id", agencyId);
 
-  if (
-    filters.priceSearchMode === "higher" &&
-    typeof filters.minPrice === "number" &&
-    filters.minPrice > 0
-  ) {
-    q = q.gte("price", filters.minPrice).lte("price", CHAT_PRICE_CEILING);
-  } else if (typeof maxP === "number" && maxP < 2200) {
-    q = q.lte("price", Math.max(maxP * 2, 2800));
-    if (!explicitUnitType) {
-      q = q.in("unit_type", ["shared", "student"]);
-    } else {
-      q = q.eq("unit_type", explicitUnitType);
+    const g = filters.governorate?.trim() ?? "";
+    const d = filters.district?.trim() ?? "";
+    const ar = filters.area?.trim() ?? "";
+    if (d) q = q.or(`district.ilike.%${d}%,area.ilike.%${d}%`);
+    if (g) q = q.or(`governorate.ilike.%${g}%,area.ilike.%${g}%`);
+    if (!d && !g && ar) {
+      q = q.or(`governorate.ilike.%${ar}%,district.ilike.%${ar}%,area.ilike.%${ar}%`);
     }
-  } else if (typeof maxP === "number") {
-    q = q.lte("price", Math.round(maxP * 1.6));
-  }
+    const lp = filters.listingPurpose?.trim().toLowerCase();
+    if (lp === "rent" || lp === "sale") q = q.eq("listing_purpose", lp);
+    const maxP = filters.maxPrice;
+    const explicitUnitType = filters.unitType?.trim() ?? "";
 
-  q = q.order("created_at", { ascending: false });
+    if (
+      filters.priceSearchMode === "higher" &&
+      typeof filters.minPrice === "number" &&
+      filters.minPrice > 0
+    ) {
+      q = q.gte("price", filters.minPrice).lte("price", CHAT_PRICE_CEILING);
+    } else if (typeof maxP === "number" && maxP < 2200) {
+      q = q.lte("price", Math.max(maxP * 2, 2800));
+      if (!explicitUnitType) {
+        q = q.in("unit_type", ["shared", "student"]);
+      } else {
+        q = q.eq("unit_type", explicitUnitType);
+      }
+    } else if (typeof maxP === "number") {
+      q = q.lte("price", Math.round(maxP * 1.6));
+    }
 
-  const { data, error } = await q.limit(64);
+    q = q.order("created_at", { ascending: false });
+    return q.limit(64);
+  };
+
+  const { data, error } = await withListingExpiryQuery((includeExpiry) => build(includeExpiry));
   if (error) throw error;
   const mapped = rowsToMappedResults((data as PropertyQueryRow[]) ?? []);
   return rankChatPropertyRows(mapped, filters).slice(0, 8);

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { getSiteUrl } from "@/lib/site";
 import { createSupabaseAnonServer } from "@/lib/supabaseAnonServer";
-import { orPublicListingNotExpired } from "@/lib/publicListingExpiry";
+import { orPublicListingNotExpired, withListingExpiryQuery } from "@/lib/publicListingExpiry";
 import PropertyPageClient from "./PropertyPageClient";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -44,14 +44,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   if (/^\d+$/.test(segment)) {
     const numericId = Number(segment);
-    const { data } = await supabase
-      .from("properties")
-      .select(
-        "slug, title, description, images, area, governorate, district, price, status, availability_status, listing_purpose, listing_type",
-      )
-      .eq("id", numericId)
-      .or(orPublicListingNotExpired())
-      .maybeSingle();
+    const { data } = await withListingExpiryQuery((includeExpiry) => {
+      let q = supabase
+        .from("properties")
+        .select(
+          "slug, title, description, images, area, governorate, district, price, status, availability_status, listing_purpose, listing_type",
+        )
+        .eq("id", numericId);
+      if (includeExpiry) q = q.or(orPublicListingNotExpired());
+      return q.maybeSingle();
+    });
     const row = data as (PropertyMetaRow & { slug: string | null }) | null;
     if (row?.slug) {
       const canonical = `${baseUrl}/property/${row.slug}`;
@@ -65,14 +67,16 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return { title: "عقار | دَورلي", robots: { index: false, follow: false } };
   }
 
-  const { data } = await supabase
-    .from("properties")
-    .select(
-      "title, description, images, area, governorate, district, price, status, availability_status, slug, listing_purpose, listing_type",
-    )
-    .eq("slug", segment)
-    .or(orPublicListingNotExpired())
-    .maybeSingle();
+  const { data } = await withListingExpiryQuery((includeExpiry) => {
+    let q = supabase
+      .from("properties")
+      .select(
+        "title, description, images, area, governorate, district, price, status, availability_status, slug, listing_purpose, listing_type",
+      )
+      .eq("slug", segment);
+    if (includeExpiry) q = q.or(orPublicListingNotExpired());
+    return q.maybeSingle();
+  });
   const row = data as PropertyMetaRow | null;
 
   if (!row) {
@@ -129,12 +133,11 @@ export default async function PropertyPage({ params }: Props) {
   const supabase = createSupabaseAnonServer();
 
   if (/^\d+$/.test(segment)) {
-    const { data } = await supabase
-      .from("properties")
-      .select("slug")
-      .eq("id", Number(segment))
-      .or(orPublicListingNotExpired())
-      .maybeSingle();
+    const { data } = await withListingExpiryQuery((includeExpiry) => {
+      let q = supabase.from("properties").select("slug").eq("id", Number(segment));
+      if (includeExpiry) q = q.or(orPublicListingNotExpired());
+      return q.maybeSingle();
+    });
     const s = (data as { slug: string | null } | null)?.slug;
     if (s) {
       permanentRedirect(`/property/${s}`);
@@ -142,12 +145,11 @@ export default async function PropertyPage({ params }: Props) {
     notFound();
   }
 
-  const { data } = await supabase
-    .from("properties")
-    .select("id")
-    .eq("slug", segment)
-    .or(orPublicListingNotExpired())
-    .maybeSingle();
+  const { data } = await withListingExpiryQuery((includeExpiry) => {
+    let q = supabase.from("properties").select("id").eq("slug", segment);
+    if (includeExpiry) q = q.or(orPublicListingNotExpired());
+    return q.maybeSingle();
+  });
   if (!data) {
     notFound();
   }

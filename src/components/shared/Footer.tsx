@@ -1,9 +1,11 @@
 "use client";
 
-import { usePwaInstall } from "@/contexts/PwaInstallProvider";
+import { usePwaInstallOptional } from "@/contexts/PwaInstallProvider";
 
 export default function Footer() {
-  const { isInstallable, promptInstall } = usePwaInstall();
+  const pwa = usePwaInstallOptional();
+  const isInstallable = pwa?.isInstallable ?? false;
+  const promptInstall = pwa?.promptInstall ?? (async () => {});
 
   return (
     <footer
@@ -19,7 +21,7 @@ export default function Footer() {
         <span style={{ color: "#64748b", fontSize: 15, fontWeight: 600 }}>Dowarly</span>
       </div>
       <p style={{ fontSize: 12, color: "#64748b", marginBottom: "2rem" }}>
-        منصة الإيجار الأولى في مصر
+        منصة العقارات الأولى في مصر
       </p>
 
       {isInstallable ? (
