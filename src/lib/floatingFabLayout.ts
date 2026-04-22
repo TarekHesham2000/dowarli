@@ -32,8 +32,9 @@ export const FLOATING_WHATSAPP_FAB_BOTTOM =
   `calc(1.25rem + ${FLOATING_FAB_SIZE} + ${FLOATING_FAB_GAP} + env(safe-area-inset-bottom, 0px))` as const;
 
 /**
- * WhatsApp — mobile: stays on the left; bottom offset stacks it above the chat
- * FAB (which sits on the right) so the two columns do not collide vertically.
+ * WhatsApp — mobile: used when a second WA sits on the **same side** as chat
+ * (e.g. agency listing) so it stacks above the chat FAB. Platform support WA on
+ * the left uses `FLOATING_CHAT_FAB_BOTTOM_MOBILE` instead to stay aligned with chat.
  */
 export const FLOATING_WHATSAPP_FAB_BOTTOM_MOBILE =
   `calc(${MOBILE_BOTTOM_NAV_RESERVE} + ${MOBILE_FAB_NAV_CLEARANCE} + ${FLOATING_FAB_SIZE} + ${FLOATING_FAB_GAP} + env(safe-area-inset-bottom, 0px))` as const;

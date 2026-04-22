@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import {
+  FLOATING_CHAT_FAB_BOTTOM,
+  FLOATING_CHAT_FAB_BOTTOM_MOBILE,
   FLOATING_FAB_MOBILE_MAX_WIDTH_PX,
-  FLOATING_WHATSAPP_FAB_BOTTOM,
-  FLOATING_WHATSAPP_FAB_BOTTOM_MOBILE,
   Z_INDEX_FLOATING_WHATSAPP,
 } from "@/lib/floatingFabLayout";
 
@@ -44,9 +44,7 @@ export default function FloatingWhatsAppSupport() {
       rel="noopener noreferrer"
       className="chat-invite-pulse fixed flex h-14 w-14 items-center justify-center rounded-full shadow-md md:h-[3.25rem] md:w-[3.25rem]"
       style={{
-        bottom: isMobile
-          ? FLOATING_WHATSAPP_FAB_BOTTOM_MOBILE
-          : FLOATING_WHATSAPP_FAB_BOTTOM,
+        bottom: isMobile ? FLOATING_CHAT_FAB_BOTTOM_MOBILE : FLOATING_CHAT_FAB_BOTTOM,
         left: "max(1rem, env(safe-area-inset-left, 0px))",
         right: "auto",
         zIndex: Z_INDEX_FLOATING_WHATSAPP,

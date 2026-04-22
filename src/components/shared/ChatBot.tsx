@@ -101,10 +101,8 @@ const TYPE_LABELS: Record<UnitType, string> = {
 const MAX_SEND_HISTORY = 28
 const uid = () => Math.random().toString(36).slice(2, 9)
 
-/** Session flag: delayed welcome + bubble run at most once per browser tab session. */
-const PLATFORM_SESSION_WELCOME_KEY = 'dowarli_platform_delayed_welcome_v1'
-const PLATFORM_WELCOME_DELAY_MS = 3000
-const PLATFORM_WELCOME_TYPING_MS = 1500
+const WELCOME_INTRO_DELAY_MS = 3000
+const WELCOME_INTRO_TYPING_MS = 1500
 
 const PLATFORM_PUBLIC_ASSISTANT_WELCOME =
   'أهلاً بك في دَورلي! 👋 أنا مساعدك الذكي. محتاج مساعدة في الوصول لعقار أحلامك؟ قولي بتدور على إيه (منطقة، ميزانية، أو غرض) وأنا هفلتر لك السوق في ثواني! 🤖✨'
@@ -132,11 +130,12 @@ function buildDefaultAssistantMessage(
   return { id: uid(), role: 'assistant', content, action: null, timestamp: new Date() }
 }
 
-function isPlatformPublicAssistant(
+/** ترحيب مؤجل + كتابة + فقاعة: للصفحة الرئيسية والوكالات طالما المحادثة غير محجوبة. */
+function usesDelayedWelcomeIntro(
   agencyId?: string | null,
   agencySubscriptionStatus?: AgencySubscriptionStatus | null,
 ) {
-  return !agencyId?.trim() && !isAgencyChatPaywalled(agencyId, agencySubscriptionStatus)
+  return !isAgencyChatPaywalled(agencyId, agencySubscriptionStatus)
 }
 function chatLocationLine(r: Pick<PropertyResult, 'governorate' | 'district' | 'area'>): string {
   const parts = [r.governorate, r.district].map((x) => (x ?? '').trim()).filter(Boolean)
@@ -368,7 +367,7 @@ export default function ChatBot({
   const [keyboardInset, setKeyboardInset] = useState(0)
   const dragStartY                      = useRef<number | null>(null)
   const [messages, setMessages]         = useState<Message[]>(() =>
-    isPlatformPublicAssistant(agencyId, agencySubscriptionStatus)
+    usesDelayedWelcomeIntro(agencyId, agencySubscriptionStatus)
       ? []
       : [buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus)],
   )
@@ -392,7 +391,7 @@ export default function ChatBot({
   useEffect(() => { isOpenRef.current = isOpen }, [isOpen])
   useEffect(() => { setMounted(true) }, [])
 
-  const clearPlatformWelcomeTimers = useCallback(() => {
+  const clearWelcomeIntroTimers = useCallback(() => {
     const { delay, typing } = welcomeTimersRef.current
     if (delay) clearTimeout(delay)
     if (typing) clearTimeout(typing)
@@ -401,70 +400,38 @@ export default function ChatBot({
     setWelcomeTyping(false)
   }, [])
 
-  const markPlatformWelcomeSessionDone = useCallback(() => {
-    try {
-      globalThis.sessionStorage?.setItem(PLATFORM_SESSION_WELCOME_KEY, '1')
-    } catch {
-      /* private mode */
-    }
-  }, [])
-
   useEffect(() => {
     if (isOpen) setShowWelcomeBubble(false)
   }, [isOpen])
 
   useEffect(() => {
-    if (!mounted || !isPlatformPublicAssistant(agencyId, agencySubscriptionStatus)) return
+    if (!mounted || !usesDelayedWelcomeIntro(agencyId, agencySubscriptionStatus)) return
 
     let cancelled = false
-    const schedule = () => {
-      try {
-        if (globalThis.sessionStorage?.getItem(PLATFORM_SESSION_WELCOME_KEY)) {
-          setMessages((prev) =>
-            prev.length > 0
-              ? prev
-              : [buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus)],
-          )
-          return
-        }
-      } catch {
-        /* ignore */
-      }
-
-      welcomeFlowActiveRef.current = true
-      welcomeTimersRef.current.delay = globalThis.setTimeout(() => {
+    welcomeFlowActiveRef.current = true
+    welcomeTimersRef.current.delay = globalThis.setTimeout(() => {
+      if (cancelled) return
+      setWelcomeTyping(true)
+      welcomeTimersRef.current.typing = globalThis.setTimeout(() => {
         if (cancelled) return
-        setWelcomeTyping(true)
-        welcomeTimersRef.current.typing = globalThis.setTimeout(() => {
-          if (cancelled) return
-          setWelcomeTyping(false)
-          const welcomeMsg = buildDefaultAssistantMessage(
-            agencyId,
-            agencyName,
-            agencySubscriptionStatus,
-          )
-          const hadThread = messagesRef.current.length > 0
-          setMessages((prev) => (prev.length > 0 ? prev : [welcomeMsg]))
-          markPlatformWelcomeSessionDone()
-          welcomeFlowActiveRef.current = false
-          if (!hadThread && !isOpenRef.current) setShowWelcomeBubble(true)
-        }, PLATFORM_WELCOME_TYPING_MS)
-      }, PLATFORM_WELCOME_DELAY_MS)
-    }
+        setWelcomeTyping(false)
+        const welcomeMsg = buildDefaultAssistantMessage(
+          agencyId,
+          agencyName,
+          agencySubscriptionStatus,
+        )
+        const hadThread = messagesRef.current.length > 0
+        setMessages((prev) => (prev.length > 0 ? prev : [welcomeMsg]))
+        welcomeFlowActiveRef.current = false
+        if (!hadThread && !isOpenRef.current) setShowWelcomeBubble(true)
+      }, WELCOME_INTRO_TYPING_MS)
+    }, WELCOME_INTRO_DELAY_MS)
 
-    schedule()
     return () => {
       cancelled = true
-      clearPlatformWelcomeTimers()
+      clearWelcomeIntroTimers()
     }
-  }, [
-    mounted,
-    agencyId,
-    agencyName,
-    agencySubscriptionStatus,
-    clearPlatformWelcomeTimers,
-    markPlatformWelcomeSessionDone,
-  ])
+  }, [mounted, agencyId, agencyName, agencySubscriptionStatus, clearWelcomeIntroTimers])
 
   useEffect(() => {
     if (!mounted || typeof window === 'undefined') return
@@ -513,13 +480,12 @@ export default function ChatBot({
     if (!trimmed || sendingRef.current) return
     sendingRef.current = true
     const userMsg: Message = { id: uid(), role: 'user', content: trimmed, timestamp: new Date() }
-    const platform = isPlatformPublicAssistant(agencyId, agencySubscriptionStatus)
+    const allowDelayedIntro = usesDelayedWelcomeIntro(agencyId, agencySubscriptionStatus)
     const prior = messagesRef.current
-    const platformEmptyThread = platform && prior.length === 0
+    const introEmptyThread = allowDelayedIntro && prior.length === 0
 
-    if (platformEmptyThread) {
-      clearPlatformWelcomeTimers()
-      markPlatformWelcomeSessionDone()
+    if (introEmptyThread) {
+      clearWelcomeIntroTimers()
       setWelcomeTyping(false)
       setShowWelcomeBubble(false)
     }
@@ -545,14 +511,14 @@ export default function ChatBot({
       agencySubscriptionStatus,
     )
     setMessages((prev) =>
-      platformEmptyThread ? [welcomeBaseline, userMsg] : [...prev, userMsg],
+      introEmptyThread ? [welcomeBaseline, userMsg] : [...prev, userMsg],
     )
     setInput('')
     setLoading(true)
     const controller = new AbortController()
     const timeoutId  = setTimeout(() => controller.abort(), 22_000)
     try {
-      const historyTail = platformEmptyThread ? [welcomeBaseline, userMsg] : [...prior, userMsg]
+      const historyTail = introEmptyThread ? [welcomeBaseline, userMsg] : [...prior, userMsg]
       const history = historyTail.slice(-MAX_SEND_HISTORY).map((m) => ({ role: m.role, content: m.content }))
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -588,8 +554,7 @@ export default function ChatBot({
     agencyId,
     agencyName,
     agencySubscriptionStatus,
-    clearPlatformWelcomeTimers,
-    markPlatformWelcomeSessionDone,
+    clearWelcomeIntroTimers,
   ])
 
   sendMessageFn.current = sendMessage
@@ -615,7 +580,7 @@ export default function ChatBot({
   const handleSubmit = (e: React.FormEvent) => { e.preventDefault(); void sendMessage(input) }
 
   const clearChat = () => {
-    clearPlatformWelcomeTimers()
+    clearWelcomeIntroTimers()
     setShowWelcomeBubble(false)
     setWelcomeTyping(false)
     setMessages([buildDefaultAssistantMessage(agencyId, agencyName, agencySubscriptionStatus)])
